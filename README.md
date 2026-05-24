@@ -1,0 +1,2 @@
+# .repo-template
+Template repository
