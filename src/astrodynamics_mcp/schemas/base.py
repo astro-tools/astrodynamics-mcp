@@ -1,3 +1,3 @@
-"""Shared pydantic base models — Epoch, Frame, StateVector, and friends. Implemented in #4."""
+"""Shared pydantic base models — Epoch, Frame, StateVector, and friends."""
 
 from __future__ import annotations

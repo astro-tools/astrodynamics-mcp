@@ -39,9 +39,9 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Physics",
   "Typing :: Typed",
 ]
-# Porkchop backend is deferred — the charter named `interplanetary-porkchop`,
-# which does not exist on PyPI. Issue #15 (the porkchop tool) picks the real
-# backend (e.g. `hapsira.plotting.porkchop`) and adds it to this list.
+# Porkchop backend is deferred — the project charter named
+# `interplanetary-porkchop`, which does not exist on PyPI. The porkchop tool
+# will pick a real backend (e.g. `hapsira.plotting.porkchop`) and add it here.
 dependencies = [
   "mcp>=1.27",
   "sgp4>=2.23",

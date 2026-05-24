@@ -1,3 +1,3 @@
-"""`porkchop` tool — interplanetary porkchop generation. Backend chosen + implemented in #15."""
+"""`porkchop` tool — interplanetary porkchop generation."""
 
 from __future__ import annotations

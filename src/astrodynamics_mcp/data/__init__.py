@@ -1,3 +1,3 @@
-"""Data-source adapters — the single network-integration point for tools. Implemented in #6."""
+"""Data-source adapters — the single network-integration point for tools."""
 
 from __future__ import annotations

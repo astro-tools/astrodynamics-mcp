@@ -1,3 +1,3 @@
-"""CelesTrak TLE-fetch adapter. Implemented in #6."""
+"""CelesTrak TLE-fetch adapter."""
 
 from __future__ import annotations

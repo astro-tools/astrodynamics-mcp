@@ -1,3 +1,3 @@
-"""`bplane_target` tool — B-plane element calculation and one-step targeting. Implemented in #16."""
+"""`bplane_target` tool — B-plane element calculation and one-step targeting."""
 
 from __future__ import annotations

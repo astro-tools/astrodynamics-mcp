@@ -1,8 +1,8 @@
 """Console entry point — `astrodynamics-mcp stdio` and `astrodynamics-mcp http`.
 
 The v0.1 skeleton wires `--help` and the two subcommand stubs. Real transport
-selection (calling `mcp.run(transport=...)` on the server instance) lands in
-issue #8.
+selection (calling `mcp.run(transport=...)` on the server instance) is filled
+in once the server primitive lands.
 """
 
 from __future__ import annotations
@@ -44,12 +44,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _stdio_not_implemented(_args: argparse.Namespace) -> int:
-    print("astrodynamics-mcp stdio: not yet implemented (lands in issue #8).", file=sys.stderr)
+    print("astrodynamics-mcp stdio: not yet implemented.", file=sys.stderr)
     return 2
 
 
 def _http_not_implemented(_args: argparse.Namespace) -> int:
-    print("astrodynamics-mcp http: not yet implemented (lands in issue #8).", file=sys.stderr)
+    print("astrodynamics-mcp http: not yet implemented.", file=sys.stderr)
     return 2
 
 

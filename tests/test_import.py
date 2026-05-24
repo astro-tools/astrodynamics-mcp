@@ -14,7 +14,7 @@ def test_import() -> None:
 
 
 def test_cli_help_resolves(capsys: pytest.CaptureFixture[str]) -> None:
-    """`astrodynamics-mcp --help` must resolve to the stub CLI per issue #1 acceptance."""
+    """`astrodynamics-mcp --help` must resolve to the stub CLI."""
     with pytest.raises(SystemExit) as excinfo:
         main(["--help"])
     assert excinfo.value.code == 0
@@ -34,7 +34,7 @@ def test_cli_no_args_prints_help(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_cli_stdio_stub_exits_nonzero(capsys: pytest.CaptureFixture[str]) -> None:
-    """The stdio subcommand is a placeholder until #8 — exits non-zero with a clear message."""
+    """The stdio subcommand is a placeholder — exits non-zero with a clear message."""
     rc = main(["stdio"])
     err = capsys.readouterr().err
     assert rc == 2
@@ -42,7 +42,7 @@ def test_cli_stdio_stub_exits_nonzero(capsys: pytest.CaptureFixture[str]) -> Non
 
 
 def test_cli_http_stub_exits_nonzero(capsys: pytest.CaptureFixture[str]) -> None:
-    """The http subcommand is a placeholder until #8 — exits non-zero with a clear message."""
+    """The http subcommand is a placeholder — exits non-zero with a clear message."""
     rc = main(["http", "--port", "9999"])
     err = capsys.readouterr().err
     assert rc == 2

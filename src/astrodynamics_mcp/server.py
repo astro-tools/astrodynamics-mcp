@@ -1,3 +1,3 @@
-"""FastMCP server instance and tool-registration plumbing. Implemented in #7."""
+"""FastMCP server instance and tool-registration plumbing."""
 
 from __future__ import annotations
