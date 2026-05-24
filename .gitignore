@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+*.whl
+
+# Environments
+.venv/
+venv/
+env/
+.env
+
+# uv
+.uv-cache/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Docs build
+site/
+.cache/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
