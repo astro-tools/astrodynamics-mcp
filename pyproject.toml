@@ -1,0 +1,149 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "astrodynamics-mcp"
+version = "0.0.0"
+description = "Model Context Protocol server giving any LLM client authoritative astrodynamics tools — TLE/SGP4, Lambert, ground-station access, time/frame conversions, porkchop, B-plane."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Dimitrije Jankovic" }]
+keywords = [
+  "mcp",
+  "model-context-protocol",
+  "llm",
+  "astrodynamics",
+  "orbital-mechanics",
+  "mission-analysis",
+  "sgp4",
+  "tle",
+  "lambert",
+  "ephemeris",
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Astronomy",
+  "Topic :: Scientific/Engineering :: Physics",
+  "Typing :: Typed",
+]
+# Porkchop backend is deferred — the charter named `interplanetary-porkchop`,
+# which does not exist on PyPI. Issue #15 (the porkchop tool) picks the real
+# backend (e.g. `hapsira.plotting.porkchop`) and adds it to this list.
+dependencies = [
+  "mcp>=1.27",
+  "sgp4>=2.23",
+  "lamberthub>=1.0",
+  "skyfield>=1.50",
+  "astropy>=6.0",
+  "httpx>=0.27",
+  "pydantic>=2.6",
+]
+
+# Placeholder extras — body wiring lands in v0.2 ([gmat]) and v0.3 ([spice], [viz]).
+[project.optional-dependencies]
+gmat = []
+spice = []
+viz = []
+
+[project.scripts]
+astrodynamics-mcp = "astrodynamics_mcp.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/astro-tools/astrodynamics-mcp"
+Repository = "https://github.com/astro-tools/astrodynamics-mcp"
+Issues = "https://github.com/astro-tools/astrodynamics-mcp/issues"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "pytest-cov>=5.0",
+  "pytest-xdist>=3.6",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  # charter named >=0.4, but the project still ships as 0.3.x on PyPI; pin to the current line.
+  "inspect-ai>=0.3.200",
+]
+docs = [
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.26",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/astrodynamics_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "B",        # flake8-bugbear
+  "UP",       # pyupgrade
+  "SIM",      # flake8-simplify
+  "RUF",      # ruff-specific
+]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src/astrodynamics_mcp", "tests"]
+
+# sgp4 ships no py.typed marker; tools/propagation.py uses the Satrec surface only.
+[[tool.mypy.overrides]]
+module = ["sgp4", "sgp4.*"]
+ignore_missing_imports = true
+
+# lamberthub ships no py.typed marker; tools/lambert.py treats the solver surface as Any.
+[[tool.mypy.overrides]]
+module = ["lamberthub", "lamberthub.*"]
+ignore_missing_imports = true
+
+# skyfield ships no py.typed marker; tools/access.py uses the API surface (load, Topos, EarthSatellite).
+[[tool.mypy.overrides]]
+module = ["skyfield", "skyfield.*"]
+ignore_missing_imports = true
+
+# inspect-ai is a dev-only eval-suite runner; eval/ scoring imports it lazily.
+[[tool.mypy.overrides]]
+module = ["inspect_ai", "inspect_ai.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# Default to unit tests only. Integration tests (HTTP-transport round-trips, live data-source calls) opt in with `-m integration`.
+addopts = "-ra --strict-markers --strict-config -m 'not integration'"
+markers = [
+  "integration: tests that require live external data sources or a real HTTP transport (deselect with -m 'not integration')",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src/astrodynamics_mcp"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@overload",
+]
