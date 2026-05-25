@@ -214,7 +214,12 @@ class TestElevationFilter:
 
 class TestRangeFilter:
     async def test_max_range_km_drops_apogee_passes(self) -> None:
-        """Acceptance: max_range_km=2000 for a LEO target drops passes where peak range > 2000."""
+        """A tight max_range_km strictly drops the higher-altitude passes.
+
+        10°-mask ISS passes from Madrid run roughly 600 km to 1800 km at
+        peak elevation; capping at 700 km strictly excludes the apogee
+        cluster, exercising the ``continue`` skip in the range filter.
+        """
         unfiltered = await access_windows(
             observer=NamedStation(name="madrid"),
             target_tle=_ISS_TLE,
@@ -228,11 +233,11 @@ class TestRangeFilter:
             start=_WINDOW_START,
             end=_WINDOW_END,
             min_elevation_deg=10.0,
-            max_range_km=2000.0,
+            max_range_km=700.0,
         )
-        assert len(filtered.windows) <= len(unfiltered.windows)
+        assert len(filtered.windows) < len(unfiltered.windows)
         for window in filtered.windows:
-            assert window.range_at_peak.value <= 2000.0
+            assert window.range_at_peak.value <= 700.0
 
     async def test_min_range_km_drops_close_passes(self) -> None:
         # Pick a min that excludes everything — the ISS rarely passes overhead
@@ -329,6 +334,48 @@ class TestErrorPaths:
         envelope = json.loads(str(excinfo.value))
         assert envelope["code"] == "upstream.sgp4_failure"
 
+    async def test_non_number_min_elevation_raises_typed_envelope(self) -> None:
+        """A string elevation trips the type-guard before the range check."""
+        with pytest.raises(ToolError) as excinfo:
+            await access_windows(
+                observer=NamedStation(name="madrid"),
+                target_tle=_ISS_TLE,
+                start=_WINDOW_START,
+                end=_WINDOW_END,
+                min_elevation_deg="high",  # type: ignore[arg-type]
+            )
+        envelope = json.loads(str(excinfo.value))
+        assert envelope["code"] == "invalid_input.value_not_a_number"
+
+    async def test_skyfield_find_events_internal_exception_wrapped(self) -> None:
+        """An exception inside skyfield's find_events surfaces as upstream.sgp4_failure.
+
+        skyfield occasionally raises a bare Exception on degenerate TLEs
+        that pass `Satrec` init but blow up during pass enumeration. The
+        path is hard to trip with real geometry, so we patch the method.
+        """
+        from unittest.mock import patch
+
+        def fail_find_events(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("synthetic skyfield failure inside find_events")
+
+        with (
+            patch(
+                "skyfield.sgp4lib.EarthSatellite.find_events",
+                side_effect=fail_find_events,
+            ),
+            pytest.raises(ToolError) as excinfo,
+        ):
+            await access_windows(
+                observer=NamedStation(name="madrid"),
+                target_tle=_ISS_TLE,
+                start=_WINDOW_START,
+                end=_WINDOW_END,
+                min_elevation_deg=10.0,
+            )
+        envelope = json.loads(str(excinfo.value))
+        assert envelope["code"] == "upstream.sgp4_failure"
+
 
 class TestRegistry:
     """The named-station registry must match the wire-side NamedStationName Literal."""
@@ -398,3 +445,35 @@ class TestSchemaInvariants:
         as_json = resp.model_dump_json()
         rebuilt = AccessWindowsResponse.model_validate_json(as_json)
         assert rebuilt == resp
+
+
+class TestGroupedTriplesHelper:
+    """Direct tests for the `_grouped_triples` partial-pass dropper.
+
+    skyfield can emit interleaved event codes (0/1/2 = rise/culminate/set)
+    where a window edge leaves a partial sequence — e.g. a `set` event
+    without a prior `rise`, or two adjacent `set` events. The helper
+    resets its buffer in those cases so only complete passes propagate.
+    """
+
+    def test_out_of_order_set_event_resets_buffer(self) -> None:
+        """A LOS event arriving without a prior peak resets the buffer."""
+        from astrodynamics_mcp.tools.access import _grouped_triples
+
+        # Clean triple [0, 1, 2] followed by an out-of-order [2, 1, 2]:
+        # the 4th element (a second LOS) is not preceded by a peak, so
+        # the partial buffer is dropped.
+        events = [0, 1, 2, 2, 1, 2]
+        times = list(range(6))
+        triples = _grouped_triples(times, events)
+        assert len(triples) == 1
+        assert triples[0] == (0, 1, 2)
+
+    def test_peak_without_rise_resets_buffer(self) -> None:
+        """A culmination without a preceding rise is dropped."""
+        from astrodynamics_mcp.tools.access import _grouped_triples
+
+        # [1] alone (peak without rise) → buffer reset; no triples.
+        events = [1, 2]
+        times = list(range(2))
+        assert _grouped_triples(times, events) == []

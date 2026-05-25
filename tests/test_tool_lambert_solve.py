@@ -135,6 +135,37 @@ class TestMultiRevolution:
         # M=0 is degenerate in low_path; we emit only the low_path=True row.
         assert resp.all_solutions[0].low_path is True
 
+    async def test_alt_branches_skipped_when_solver_returns_none(self) -> None:
+        """Infeasible alt (M, low_path) combos are dropped silently.
+
+        Patch `_solve_one` so the primary call delegates to the real
+        solver but every subsequent alt-branch call returns None — the
+        loop's ``continue`` skips each, leaving only the primary in
+        ``all_solutions``.
+        """
+        from unittest.mock import patch
+
+        from astrodynamics_mcp.tools.lambert import _solve_one as real_solve_one
+
+        call_count = {"n": 0}
+
+        def stateful(*args: object, **kwargs: object) -> object:
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                return real_solve_one(*args, **kwargs)  # type: ignore[arg-type]
+            return None
+
+        with patch(
+            "astrodynamics_mcp.tools.lambert._solve_one",
+            side_effect=stateful,
+        ):
+            resp = await lambert_solve(r1=self.R1, r2=self.R2, tof=self.TOF, mu="earth", revs=1)
+        # Only the primary (revs=1, low_path=True) survives; the M=0 and
+        # M=1 high-path alts were forced to return None.
+        assert len(resp.all_solutions) == 1
+        assert resp.all_solutions[0].revs.value == 1.0
+        assert resp.all_solutions[0].low_path is True
+
 
 class TestAlgorithms:
     @pytest.mark.parametrize("algorithm", ["izzo", "izzo_revisited", "gooding", "battin"])
@@ -242,6 +273,20 @@ class TestFailureModes:
         envelope = json.loads(str(excinfo.value))
         assert envelope["code"] == "invalid_input.tof_not_positive"
 
+    async def test_nan_tof_raises_invalid_input(self) -> None:
+        """A NaN tof trips the not-finite check before the sign check."""
+        with pytest.raises(ToolError) as excinfo:
+            await lambert_solve(r1=_CURTIS_R1, r2=_CURTIS_R2, tof=float("nan"), mu="earth")
+        envelope = json.loads(str(excinfo.value))
+        assert envelope["code"] == "invalid_input.value_not_a_number"
+
+    async def test_inf_tof_raises_invalid_input(self) -> None:
+        """Infinite tof trips the not-finite check."""
+        with pytest.raises(ToolError) as excinfo:
+            await lambert_solve(r1=_CURTIS_R1, r2=_CURTIS_R2, tof=float("inf"), mu="earth")
+        envelope = json.loads(str(excinfo.value))
+        assert envelope["code"] == "invalid_input.value_not_a_number"
+
     async def test_wrong_length_r1_raises_invalid_input(self) -> None:
         with pytest.raises(ToolError) as excinfo:
             await lambert_solve(r1=[1.0, 2.0], r2=_CURTIS_R2, tof=_CURTIS_TOF, mu="earth")
@@ -322,3 +367,56 @@ class TestSchemaInvariants:
         first = resp.all_solutions[0]
         assert isinstance(first, LambertSolution)
         assert first.revs.unit == "1"
+
+
+class TestClassicalElementsHelper:
+    """Direct tests for the `_classical_elements` r,v → KeplerianElements conversion.
+
+    Lambert solves itself stays close to canonical textbook geometries, so
+    a few r,v paths through ``_classical_elements`` (descending node,
+    descending argument of periapsis, circular orbit) need direct
+    exercise.
+    """
+
+    EARTH_MU: ClassVar[float] = 3.986004418e5
+
+    def test_descending_node_branch(self) -> None:
+        """n[1] < 0 yields raan in (180°, 360°) via the 2π-raan_rad branch."""
+        import numpy as np
+
+        from astrodynamics_mcp.tools.lambert import _classical_elements
+
+        # h = r cross v. With r in xy with y<0 and v along +z, h_x < 0,
+        # so n = k cross h has n[1] = h_x < 0 — the descending-node branch fires.
+        r = np.array([7000.0, -1000.0, 0.0])
+        v = np.array([0.0, 0.0, 7.5])
+        elements = _classical_elements(r, v, self.EARTH_MU)
+        assert elements.raan.value > 180.0
+        assert elements.raan.unit == "deg"
+
+    def test_argp_descending_branch(self) -> None:
+        """e_vec[2] < 0 yields argp in (180°, 360°) via the 2π-argp_rad branch."""
+        import numpy as np
+
+        from astrodynamics_mcp.tools.lambert import _classical_elements
+
+        # Inclined orbit with periapsis below the equator (e_vec[2] < 0).
+        r = np.array([6000.0, 0.0, -2000.0])
+        v = np.array([0.0, 9.0, 1.0])
+        elements = _classical_elements(r, v, self.EARTH_MU)
+        assert elements.argp.value > 180.0
+
+    def test_circular_orbit_zero_anomalies(self) -> None:
+        """A strictly circular orbit (e ≤ eps) drives argp and nu to zero."""
+        import numpy as np
+
+        from astrodynamics_mcp.tools.lambert import _classical_elements
+
+        r_mag = 7000.0
+        v_mag = float(np.sqrt(self.EARTH_MU / r_mag))
+        r = np.array([r_mag, 0.0, 0.0])
+        v = np.array([0.0, v_mag, 0.0])
+        elements = _classical_elements(r, v, self.EARTH_MU)
+        assert elements.e.value == pytest.approx(0.0, abs=1e-9)
+        assert elements.argp.value == 0.0
+        assert elements.nu.value == 0.0

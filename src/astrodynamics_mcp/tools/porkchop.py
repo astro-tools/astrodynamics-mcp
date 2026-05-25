@@ -280,11 +280,6 @@ def _jd_to_utc(jd: float) -> datetime:
     )
 
 
-def _datetime_to_jd(dt: datetime) -> float:
-    seconds = (dt - datetime(1970, 1, 1, tzinfo=timezone.utc)).total_seconds()
-    return _JD_UNIX_EPOCH + seconds / 86400.0
-
-
 def _strip_signed_number(text: str) -> float:
     """Convert a Horizons capture group (may carry a sign with intervening space)."""
     return float(text.replace(" ", ""))
