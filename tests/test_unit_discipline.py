@@ -24,6 +24,7 @@ from astrodynamics_mcp.schemas.base import (
     ObserverCoordinates,
     StateVector,
 )
+from astrodynamics_mcp.tools.access import AccessWindowsResponse
 from astrodynamics_mcp.tools.lambert import LambertSolveResponse
 from astrodynamics_mcp.tools.propagation import Sgp4PropagateResponse
 from astrodynamics_mcp.tools.tle import TleLookupResponse
@@ -47,6 +48,7 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
     TleLookupResponse,
     Sgp4PropagateResponse,
     LambertSolveResponse,
+    AccessWindowsResponse,
 ]
 
 
