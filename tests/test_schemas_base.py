@@ -13,6 +13,7 @@ from astrodynamics_mcp.schemas.base import (
     Epoch,
     Frame,
     Interval,
+    KeplerianElements,
     NamedStation,
     Observer,
     ObserverCoordinates,
@@ -354,6 +355,54 @@ class TestInterval:
                 duration_s=Quantity(value=0.0, unit="s"),
             )
         assert excinfo.value.code == "invalid_input.interval_end_not_after_start"
+
+
+class TestKeplerianElements:
+    def _good(self) -> dict[str, Any]:
+        return {
+            "a": {"value": 24371.0, "unit": "km"},
+            "e": {"value": 0.7, "unit": "1"},
+            "i": {"value": 28.5, "unit": "deg"},
+            "raan": {"value": 45.0, "unit": "deg"},
+            "argp": {"value": 90.0, "unit": "deg"},
+            "nu": {"value": 30.0, "unit": "deg"},
+        }
+
+    def test_round_trips_through_json(self) -> None:
+        kep = KeplerianElements.model_validate(self._good())
+        restored = KeplerianElements.model_validate_json(kep.model_dump_json())
+        assert restored == kep
+
+    def test_eccentricity_unit_must_be_dimensionless(self) -> None:
+        bad = self._good()
+        bad["e"] = {"value": 0.7, "unit": "km"}
+        with pytest.raises(InvalidInputError) as excinfo:
+            KeplerianElements.model_validate(bad)
+        assert excinfo.value.code == "invalid_input.wrong_unit_category"
+
+    def test_semi_major_axis_unit_must_be_length(self) -> None:
+        bad = self._good()
+        bad["a"] = {"value": 24371.0, "unit": "deg"}
+        with pytest.raises(InvalidInputError) as excinfo:
+            KeplerianElements.model_validate(bad)
+        assert excinfo.value.code == "invalid_input.wrong_unit_category"
+
+    @pytest.mark.parametrize("field", ["i", "raan", "argp", "nu"])
+    def test_angle_field_unit_must_be_angle(self, field: str) -> None:
+        bad = self._good()
+        bad[field] = {"value": 1.0, "unit": "km"}
+        with pytest.raises(InvalidInputError) as excinfo:
+            KeplerianElements.model_validate(bad)
+        assert excinfo.value.code == "invalid_input.wrong_unit_category"
+
+    def test_negative_a_is_accepted_for_hyperbolic_arc(self) -> None:
+        """Hyperbolic arcs carry a < 0; schema mustn't reject them."""
+        hyperbolic = self._good()
+        hyperbolic["a"] = {"value": -50000.0, "unit": "km"}
+        hyperbolic["e"] = {"value": 1.5, "unit": "1"}
+        kep = KeplerianElements.model_validate(hyperbolic)
+        assert kep.a.value == -50000.0
+        assert kep.e.value == 1.5
 
 
 class TestComposedSchemasExportRichJsonSchema:

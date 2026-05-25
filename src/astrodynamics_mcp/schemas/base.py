@@ -419,3 +419,75 @@ class Interval(BaseModel):
                 code="invalid_input.interval_end_not_after_start",
             )
         return self
+
+
+# ---------------------------------------------------------------------------
+# Keplerian elements
+# ---------------------------------------------------------------------------
+
+
+class KeplerianElements(BaseModel):
+    """Classical Keplerian orbital elements (a, e, i, RAAN, argp, nu).
+
+    Shared across any tool that emits an orbit's elements — Lambert solve
+    (transfer arc), porkchop (transfer-elements grid), bplane (hyperbolic
+    approach orbit). True anomaly ``nu`` is at the reference epoch (e.g.
+    the start of the Lambert transfer for ``lambert_solve``).
+
+    Semi-major axis ``a`` is negative for hyperbolic orbits and undefined
+    for parabolic ones — callers that need to handle the parabolic edge
+    should branch on eccentricity rather than ``a``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    a: Quantity = Field(
+        ...,
+        description="Semi-major axis. Length unit (km / m / AU).",
+        examples=[{"value": 24371.0, "unit": "km"}],
+    )
+    e: Quantity = Field(
+        ...,
+        description="Eccentricity (dimensionless; unit must be the dimensionless '1').",
+        examples=[{"value": 0.7, "unit": "1"}],
+    )
+    i: Quantity = Field(
+        ...,
+        description="Inclination, deg.",
+        examples=[{"value": 28.5, "unit": "deg"}],
+    )
+    raan: Quantity = Field(
+        ...,
+        description="Right ascension of the ascending node, deg.",
+        examples=[{"value": 45.0, "unit": "deg"}],
+    )
+    argp: Quantity = Field(
+        ...,
+        description="Argument of periapsis, deg.",
+        examples=[{"value": 90.0, "unit": "deg"}],
+    )
+    nu: Quantity = Field(
+        ...,
+        description="True anomaly at the reference epoch, deg.",
+        examples=[{"value": 30.0, "unit": "deg"}],
+    )
+
+    @field_validator("a")
+    @classmethod
+    def _length(cls, v: Quantity) -> Quantity:
+        return _require_unit_in(v, _LENGTH_UNITS, field="a")
+
+    @field_validator("e")
+    @classmethod
+    def _dimensionless(cls, v: Quantity) -> Quantity:
+        if v.unit != "1":
+            raise InvalidInputError(
+                f"eccentricity unit must be '1' (dimensionless), got {v.unit!r}",
+                code="invalid_input.wrong_unit_category",
+            )
+        return v
+
+    @field_validator("i", "raan", "argp", "nu")
+    @classmethod
+    def _angle(cls, v: Quantity) -> Quantity:
+        return _require_unit_in(v, _ANGLE_UNITS, field="angle")
