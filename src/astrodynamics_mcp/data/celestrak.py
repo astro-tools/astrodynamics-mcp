@@ -27,6 +27,7 @@ from sgp4 import omm
 from sgp4.api import Satrec
 from sgp4.exporter import export_tle
 
+from astrodynamics_mcp import __version__
 from astrodynamics_mcp.cache import DEFAULT_TTLS, Cache, default_cache
 from astrodynamics_mcp.errors import DataSourceError, UpstreamError
 from astrodynamics_mcp.schemas.base import TleLines
@@ -34,6 +35,16 @@ from astrodynamics_mcp.schemas.base import TleLines
 _CELESTRAK_GP_URL = "https://celestrak.org/NORAD/elements/gp.php"
 _SOURCE = "celestrak"
 _HTTP_TIMEOUT = 30.0
+
+# Production User-Agent for real CelesTrak traffic. Cloudflare (which fronts
+# celestrak.org) downgrades the bot-score for traffic that identifies itself
+# with a real project name and contact URL — opaque defaults like
+# `python-httpx/x.y` get challenged or dropped from datacenter IP ranges.
+# Tests that hit the live endpoint inject their own clients with a separate
+# `astrodynamics-mcp-tests/...` UA so server-side analytics can distinguish
+# automated test traffic from real user calls.
+_USER_AGENT = f"astrodynamics-mcp/{__version__} (+https://github.com/astro-tools/astrodynamics-mcp)"
+_HTTP_HEADERS: dict[str, str] = {"User-Agent": _USER_AGENT}
 
 # CelesTrak group / category names supported by the v0.1 surface. A query
 # matching one of these (case-insensitive) routes to ``gp.php?GROUP=<name>``;
@@ -212,7 +223,9 @@ async def fetch_tle(
 
     try:
         if client is None:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as owned_client:
+            async with httpx.AsyncClient(
+                timeout=_HTTP_TIMEOUT, headers=_HTTP_HEADERS
+            ) as owned_client:
                 response = await owned_client.get(_CELESTRAK_GP_URL, params=_query_params(query))
                 response.raise_for_status()
                 payload = response.json()
