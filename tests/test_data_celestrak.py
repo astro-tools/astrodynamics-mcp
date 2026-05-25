@@ -487,8 +487,28 @@ class TestDisabledCache:
 class TestLiveCelestrak:
     """Hits the real CelesTrak endpoint; gated behind the integration marker."""
 
+    # Test traffic identifies itself as automated so CelesTrak's server-side
+    # analytics can distinguish it from real-user calls.
+    _TEST_USER_AGENT = (
+        "astrodynamics-mcp-tests/CI "
+        "(integration test; https://github.com/astro-tools/astrodynamics-mcp)"
+    )
+
     async def test_live_iss_fetch(self, cache: Cache) -> None:
-        response = await fetch_tle("25544", cache=cache)
+        async with httpx.AsyncClient(
+            timeout=30.0,
+            headers={"User-Agent": self._TEST_USER_AGENT},
+        ) as client:
+            try:
+                response = await fetch_tle("25544", cache=cache, client=client)
+            except DataSourceError as exc:
+                # GitHub Actions runners occasionally have outbound
+                # connectivity to celestrak.org blocked at the Cloudflare
+                # layer for cloud-datacenter IP ranges. The structural
+                # assertions below have no signal when the network is the
+                # bottleneck — skip rather than fail an unrelated PR on a
+                # runner-specific block.
+                pytest.skip(f"CelesTrak unreachable from this runner: {exc}")
         assert len(response.results) >= 1
         iss = next(r for r in response.results if r.NORAD_CAT_ID == 25544)
         assert iss.OBJECT_NAME.startswith("ISS")

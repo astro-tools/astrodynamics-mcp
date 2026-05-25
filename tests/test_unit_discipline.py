@@ -25,9 +25,20 @@ from astrodynamics_mcp.schemas.base import (
     StateVector,
 )
 from astrodynamics_mcp.tools.access import AccessWindowsResponse
+from astrodynamics_mcp.tools.frames import FrameTransformResponse
 from astrodynamics_mcp.tools.lambert import LambertSolveResponse
 from astrodynamics_mcp.tools.propagation import Sgp4PropagateResponse
 from astrodynamics_mcp.tools.tle import TleLookupResponse
+
+# `time_convert`'s response carries `value: str | float` by design: the value
+# is either an ISO 8601 string or a float in a time-format whose "unit" is
+# the choice of format (JD's "unit" is `days since JD epoch zero`, Unix's is
+# `seconds since 1970-01-01`, etc.). Those format-choice scalars don't fit
+# the {value, unit} physical-quantity envelope that the unit-discipline
+# walker is designed to police, so `TimeConvertResponse` is deliberately
+# not registered below. The `format` and `scale` fields on the response are
+# the time-scalar equivalent of a unit and are enforced by the response's
+# pydantic schema directly.
 from astrodynamics_mcp.units import (
     Quantity,
     QuantityVector,
@@ -49,6 +60,8 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
     Sgp4PropagateResponse,
     LambertSolveResponse,
     AccessWindowsResponse,
+    FrameTransformResponse,
+    # TimeConvertResponse is deliberately excluded — see import-level note above.
 ]
 
 
