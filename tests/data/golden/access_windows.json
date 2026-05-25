@@ -1,0 +1,154 @@
+{
+  "windows": [
+    {
+      "aos": "2024-01-01T01:19:34Z",
+      "duration": {
+        "unit": "s",
+        "value": 277.850273
+      },
+      "los": "2024-01-01T01:24:12Z",
+      "peak_elevation": {
+        "unit": "deg",
+        "value": 17.581102549468763
+      },
+      "peak_elevation_time": "2024-01-01T01:21:53Z",
+      "range_at_aos": {
+        "unit": "km",
+        "value": 1482.744010538488
+      },
+      "range_at_los": {
+        "unit": "km",
+        "value": 1489.9166716867692
+      },
+      "range_at_peak": {
+        "unit": "km",
+        "value": 1108.841665192743
+      }
+    },
+    {
+      "aos": "2024-01-01T02:55:05Z",
+      "duration": {
+        "unit": "s",
+        "value": 392.938806
+      },
+      "los": "2024-01-01T03:01:38Z",
+      "peak_elevation": {
+        "unit": "deg",
+        "value": 51.20093909446571
+      },
+      "peak_elevation_time": "2024-01-01T02:58:21Z",
+      "range_at_aos": {
+        "unit": "km",
+        "value": 1487.143271520461
+      },
+      "range_at_los": {
+        "unit": "km",
+        "value": 1494.2224608569102
+      },
+      "range_at_peak": {
+        "unit": "km",
+        "value": 527.7220712360568
+      }
+    },
+    {
+      "aos": "2024-01-01T04:33:37Z",
+      "duration": {
+        "unit": "s",
+        "value": 248.919913
+      },
+      "los": "2024-01-01T04:37:46Z",
+      "peak_elevation": {
+        "unit": "deg",
+        "value": 15.240174417319585
+      },
+      "peak_elevation_time": "2024-01-01T04:35:42Z",
+      "range_at_aos": {
+        "unit": "km",
+        "value": 1493.4928102999406
+      },
+      "range_at_los": {
+        "unit": "km",
+        "value": 1495.426448271622
+      },
+      "range_at_peak": {
+        "unit": "km",
+        "value": 1213.9358243201893
+      }
+    },
+    {
+      "aos": "2024-01-01T06:11:54Z",
+      "duration": {
+        "unit": "s",
+        "value": 196.018571
+      },
+      "los": "2024-01-01T06:15:10Z",
+      "peak_elevation": {
+        "unit": "deg",
+        "value": 12.883905183538042
+      },
+      "peak_elevation_time": "2024-01-01T06:13:32Z",
+      "range_at_aos": {
+        "unit": "km",
+        "value": 1495.455516979363
+      },
+      "range_at_los": {
+        "unit": "km",
+        "value": 1494.7637205121066
+      },
+      "range_at_peak": {
+        "unit": "km",
+        "value": 1329.1969858328277
+      }
+    },
+    {
+      "aos": "2024-01-01T07:48:06Z",
+      "duration": {
+        "unit": "s",
+        "value": 360.060651
+      },
+      "los": "2024-01-01T07:54:06Z",
+      "peak_elevation": {
+        "unit": "deg",
+        "value": 29.65234172856502
+      },
+      "peak_elevation_time": "2024-01-01T07:51:06Z",
+      "range_at_aos": {
+        "unit": "km",
+        "value": 1494.6240143687694
+      },
+      "range_at_los": {
+        "unit": "km",
+        "value": 1489.6470841751934
+      },
+      "range_at_peak": {
+        "unit": "km",
+        "value": 780.16787945954
+      }
+    },
+    {
+      "aos": "2024-01-01T09:24:47Z",
+      "duration": {
+        "unit": "s",
+        "value": 371.019955
+      },
+      "los": "2024-01-01T09:30:58Z",
+      "peak_elevation": {
+        "unit": "deg",
+        "value": 35.45654143225628
+      },
+      "peak_elevation_time": "2024-01-01T09:27:53Z",
+      "range_at_aos": {
+        "unit": "km",
+        "value": 1491.9050239007186
+      },
+      "range_at_los": {
+        "unit": "km",
+        "value": 1484.5583608387815
+      },
+      "range_at_peak": {
+        "unit": "km",
+        "value": 681.6920202318453
+      }
+    }
+  ]
+}

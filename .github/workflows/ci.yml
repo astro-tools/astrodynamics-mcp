@@ -41,10 +41,20 @@ jobs:
       - name: Run pytest
         # `-m "integration or not integration"` overrides the default
         # marker filter in pyproject.toml so CI runs both unit and
-        # integration suites in a single invocation. Coverage gates are
-        # not wired yet — they become meaningful when the validation
-        # test suite lands. For now the report is informational.
+        # integration suites in a single invocation.
         run: uv run pytest -m "integration or not integration" --cov --cov-report=term-missing
+
+      - name: Enforce coverage gates
+        # Per CONTRIBUTING.md: 90% overall, 95% on the layers whose
+        # correctness the LLM consumer can't sanity-check (units,
+        # schemas, data adapters). Run only on Ubuntu / Python 3.12 to
+        # avoid platform-specific differences inflating misses.
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: |
+          uv run coverage report --fail-under=90
+          uv run coverage report --include='src/astrodynamics_mcp/units.py' --fail-under=95
+          uv run coverage report --include='src/astrodynamics_mcp/schemas/*' --fail-under=95
+          uv run coverage report --include='src/astrodynamics_mcp/data/*' --fail-under=95
 
   lint:
     name: lint

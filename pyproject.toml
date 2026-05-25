@@ -41,10 +41,10 @@ classifiers = [
 ]
 dependencies = [
   "mcp>=1.27",
-  "sgp4>=2.23",
+  "sgp4>=2.25",
   "lamberthub>=1.0",
-  "skyfield>=1.50",
-  "astropy>=6.0",
+  "skyfield>=1.54",
+  "astropy>=6.1",
   "httpx>=0.27",
   "pydantic>=2.6",
   "platformdirs>=4.0",

@@ -1,0 +1,413 @@
+{
+  "ascii_summary": ".:+X\n.:-*\n..:+\n...:",
+  "best": {
+    "arrive_epoch": "2027-11-01T00:00:00Z",
+    "c3": {
+      "unit": "km^2/s^2",
+      "value": 14.223048156374299
+    },
+    "dec_dep_asymptote": {
+      "unit": "deg",
+      "value": 0.0
+    },
+    "depart_epoch": "2026-11-01T00:00:00Z",
+    "tof": {
+      "unit": "days",
+      "value": 365.0
+    },
+    "total_dv": {
+      "unit": "km/s",
+      "value": 8.820659685021688
+    },
+    "v_inf_arrival": {
+      "unit": "km/s",
+      "value": 5.0493140158507615
+    }
+  },
+  "grid": [
+    {
+      "arrive_epoch": "2027-06-01T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 43.65038391982932
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-11-01T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 212.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 10.1072262551258
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 3.500382536690399
+      }
+    },
+    {
+      "arrive_epoch": "2027-06-01T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 84.56554974713535
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-11-21T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 192.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 13.630114152988721
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 4.43416125254739
+      }
+    },
+    {
+      "arrive_epoch": "2027-06-01T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 154.17326840363575
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-12-11T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 172.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 18.304507262468853
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 5.887854396110878
+      }
+    },
+    {
+      "arrive_epoch": "2027-06-01T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 267.1659309891199
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-12-31T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 152.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 24.320528146738635
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 7.975316891171459
+      }
+    },
+    {
+      "arrive_epoch": "2027-07-22T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 31.311677493762193
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-11-01T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 263.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 9.520887689129406
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 3.925203861949551
+      }
+    },
+    {
+      "arrive_epoch": "2027-07-22T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 60.093807198448246
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-11-21T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 243.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 12.433278442727634
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 4.681258886608839
+      }
+    },
+    {
+      "arrive_epoch": "2027-07-22T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 108.45930243142554
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-12-11T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 223.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 16.232347391433223
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 5.8179677924640405
+      }
+    },
+    {
+      "arrive_epoch": "2027-07-22T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 185.1313581644246
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-12-31T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 203.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 20.998699917075324
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 7.3924014430440925
+      }
+    },
+    {
+      "arrive_epoch": "2027-09-11T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 20.86687008690651
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-11-01T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 314.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 9.033110982327853
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 4.465084046449902
+      }
+    },
+    {
+      "arrive_epoch": "2027-09-11T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 39.989921805198314
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-11-21T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 294.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 11.328653093618815
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 5.004894574731624
+      }
+    },
+    {
+      "arrive_epoch": "2027-09-11T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 73.24311980255851
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-12-11T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 274.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 14.421889932302784
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 5.863670502856113
+      }
+    },
+    {
+      "arrive_epoch": "2027-09-11T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 126.27070686633574
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-12-31T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 254.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 18.311874491205153
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 7.074850558404453
+      }
+    },
+    {
+      "arrive_epoch": "2027-11-01T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 14.223048156374299
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-11-01T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 365.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 8.820659685021688
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 5.0493140158507615
+      }
+    },
+    {
+      "arrive_epoch": "2027-11-01T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 24.940885078231716
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-11-21T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 345.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 10.34454347626605
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 5.3504584671546
+      }
+    },
+    {
+      "arrive_epoch": "2027-11-01T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 46.56604276043608
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-12-11T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 325.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 12.770676664603945
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 5.946745044164297
+      }
+    },
+    {
+      "arrive_epoch": "2027-11-01T00:00:00Z",
+      "c3": {
+        "unit": "km^2/s^2",
+        "value": 82.64289107174024
+      },
+      "dec_dep_asymptote": {
+        "unit": "deg",
+        "value": 0.0
+      },
+      "depart_epoch": "2026-12-31T00:00:00Z",
+      "tof": {
+        "unit": "days",
+        "value": 305.0
+      },
+      "total_dv": {
+        "unit": "km/s",
+        "value": 15.943064016187417
+      },
+      "v_inf_arrival": {
+        "unit": "km/s",
+        "value": 6.8522504622891605
+      }
+    }
+  ]
+}

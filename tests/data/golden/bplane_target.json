@@ -1,0 +1,24 @@
+{
+  "asymptote_declination": {
+    "unit": "deg",
+    "value": 0.0
+  },
+  "b_r": {
+    "unit": "km",
+    "value": 0.0
+  },
+  "b_t": {
+    "unit": "km",
+    "value": -8660.254037844386
+  },
+  "dv_required": null,
+  "residual": null,
+  "v_infinity": {
+    "unit": "km/s",
+    "value": [
+      1.4633586368351401,
+      2.5346115086931964,
+      0.0
+    ]
+  }
+}

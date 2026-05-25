@@ -42,7 +42,7 @@ is added in v0.2.
 
 CI enforces coverage gates on the Ubuntu / Python 3.12 cell:
 
-- Overall coverage must be ≥ 80%.
+- Overall coverage must be ≥ 90%.
 - Each of `src/astrodynamics_mcp/units.py`, `src/astrodynamics_mcp/schemas/`,
   and `src/astrodynamics_mcp/data/` must be ≥ 95%.
 
@@ -50,7 +50,7 @@ To reproduce locally:
 
 ```bash
 uv run pytest -m "integration or not integration" --cov
-uv run coverage report --fail-under=80
+uv run coverage report --fail-under=90
 uv run coverage report --include='src/astrodynamics_mcp/units.py' --fail-under=95
 uv run coverage report --include='src/astrodynamics_mcp/schemas/*' --fail-under=95
 uv run coverage report --include='src/astrodynamics_mcp/data/*' --fail-under=95
