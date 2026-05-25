@@ -42,7 +42,7 @@ eval/
 ├── scoring.py            ← Inspect AI Scorer combining the two checks
 ├── tasks.py              ← Inspect AI Task wiring stdio server + react() agent
 └── prompts/
-    └── *.yaml            ← one prompt per file (populated in the prompt-authoring phase)
+    └── *.yaml            ← one prompt per file (30 v0.1 prompts: 20 single-tool + 8 sequential + 2 planning)
 ```
 
 ## Running locally
@@ -92,8 +92,11 @@ The constraint vocabulary is defined in `eval/_constraints.py`
 (`equals`, `one_of`, `case_insensitive_equals`, `case_insensitive_contains`,
 `length`, `numeric_tolerance`, `field_constraints`, `has_fields`).
 The functional-predicate vocabulary is defined in `eval/_functional.py`
-(`equals`, `in_range`, `length`, `present`, `case_insensitive_contains`,
-`starts_with`, `all_equal`, `numeric_tolerance`).
+(`equals`, `in_range`, `l2_in_range`, `length`, `present`,
+`case_insensitive_contains`, `starts_with`, `all_equal`,
+`numeric_tolerance`). `l2_in_range` interprets the path's value as a
+vector and checks the L2 norm lies in the `[min, max]` bracket — used
+for "is this r-vector in the LEO altitude band" type checks.
 
 `permitted_traces` is a list of *alternative* traces; at least one must
 match. Each trace is a list of consecutive `{tool, arg_constraints}`

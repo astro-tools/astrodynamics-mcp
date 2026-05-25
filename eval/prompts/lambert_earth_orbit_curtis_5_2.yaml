@@ -1,0 +1,31 @@
+prompt: |
+  Find the orbital transfer between r1=[5000, 10000, 2100] km and
+  r2=[-14600, 2500, 7000] km with a 1-hour time of flight in Earth orbit.
+  Give me v1 and v2.
+tier: single_tool
+tools_required: [lambert_solve]
+permitted_traces:
+  - - tool: lambert_solve
+      arg_constraints:
+        r1: {equals: [5000, 10000, 2100]}
+        r2: {equals: [-14600, 2500, 7000]}
+        tof: {equals: 3600}
+        mu: {one_of: ["earth", 398600.4418, null]}
+        revs: {one_of: [0, null]}
+functional_answer:
+  - path: "$.v1.unit"
+    equals: "km/s"
+  - path: "$.v2.unit"
+    equals: "km/s"
+  - path: "$.v1.value"
+    numeric_tolerance:
+      expected: [-5.9925, 1.9254, 3.2456]
+      abs: 0.001
+  - path: "$.v2.value"
+    numeric_tolerance:
+      expected: [-3.3125, -4.1966, -0.3853]
+      abs: 0.001
+notes: |
+  Primary single-tool path: Curtis 5.2 textbook problem. Values come from
+  the upstream lamberthub Izzo solver. The textbook answer is NOT in the
+  prompt — the LLM has to call the tool to get the numbers.

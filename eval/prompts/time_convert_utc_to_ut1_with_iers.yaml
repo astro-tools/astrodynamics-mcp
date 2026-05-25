@@ -1,0 +1,23 @@
+prompt: |
+  What's the UT1 equivalent of 2026-05-23T12:00:00 UTC? I need the
+  UT1-UTC offset that you applied.
+tier: single_tool
+tools_required: [time_convert]
+permitted_traces:
+  - - tool: time_convert
+      arg_constraints:
+        from_scale: {equals: "UTC"}
+        to_scale: {equals: "UT1"}
+functional_answer:
+  - path: "$.scale"
+    equals: "UT1"
+  - path: "$.ut1_utc_seconds"
+    present: true
+  - path: "$.ut1_utc_seconds.unit"
+    equals: "s"
+  - path: "$.iers_fetched_at"
+    present: true
+notes: |
+  Off-axis variant — UT1 conversion exercises the IERS-touching path.
+  The response must populate the ut1_utc_seconds offset and
+  iers_fetched_at metadata; functional checks verify both.

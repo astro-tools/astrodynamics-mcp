@@ -1,0 +1,24 @@
+prompt: |
+  Find the Lambert transfer from r1=[5000, 10000, 2100] km to
+  r2=[-14600, 2500, 7000] km over 3600 s in Earth orbit, then express
+  the initial state (r1, v1) at epoch 2026-05-23T12:00:00Z in the ITRS
+  frame.
+tier: sequential
+tools_required: [lambert_solve, frame_transform]
+permitted_traces:
+  - - tool: lambert_solve
+      arg_constraints:
+        tof: {equals: 3600}
+        mu: {one_of: ["earth", 398600.4418, null]}
+    - tool: frame_transform
+      arg_constraints:
+        to_frame: {equals: "ITRS"}
+functional_answer:
+  - path: "$.state.frame"
+    equals: "ITRS"
+  - path: "$.iers_bulletin_a_fetched_at"
+    present: true
+notes: |
+  Cross-tool: Lambert solve produces v1, frame_transform converts the
+  (r1, v1) state at the supplied epoch to ITRS. Functional check runs
+  against frame_transform's response (the final tool in the chain).

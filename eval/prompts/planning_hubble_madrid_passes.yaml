@@ -1,0 +1,33 @@
+prompt: |
+  I want to observe the Hubble Space Telescope from Madrid sometime in
+  the next two days, starting from 2024-01-01T00:00:00Z. When is the
+  next pass that's at least 10 minutes long and reaches more than 10
+  degrees above the horizon? Give me the AOS time, the peak elevation
+  time, the peak elevation, and the slant range at AOS.
+tier: planning
+tools_required: [tle_lookup, access_windows]
+permitted_traces:
+  - - tool: tle_lookup
+      arg_constraints:
+        query:
+          one_of:
+            - "20580"
+            - "HUBBLE"
+            - "Hubble"
+            - "hubble"
+    - tool: access_windows
+      arg_constraints:
+        observer:
+          field_constraints:
+            name: {case_insensitive_equals: "madrid"}
+        min_elevation_deg: {equals: 10}
+functional_answer:
+  - path: "$.windows[*].peak_elevation.value"
+    in_range: [10, 90]
+  - path: "$.windows[*].range_at_aos.unit"
+    all_equal: "km"
+notes: |
+  Planning tier: the user asks an open question and the LLM is expected
+  to decompose it into the (tle_lookup, access_windows) pair, then
+  read AOS/peak/range off the response. Echoes the charter §1 vision
+  prompt verbatim.

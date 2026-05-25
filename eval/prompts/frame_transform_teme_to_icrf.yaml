@@ -1,0 +1,24 @@
+prompt: |
+  I have a TEME state vector r=[8.13, 6795.6, -10.26] km,
+  v=[-4.75, 0.007, 6.01] km/s at epoch 2024-01-01T12:00:00Z. Express it
+  in ICRF.
+tier: single_tool
+tools_required: [frame_transform]
+permitted_traces:
+  - - tool: frame_transform
+      arg_constraints:
+        to_frame: {equals: "ICRF"}
+        state:
+          field_constraints:
+            frame: {equals: "TEME"}
+functional_answer:
+  - path: "$.state.frame"
+    equals: "ICRF"
+  - path: "$.state.r.unit"
+    equals: "km"
+  - path: "$.state.v.unit"
+    equals: "km/s"
+notes: |
+  Primary single-tool path: inertial-frame round-trip (TEME → ICRF).
+  Does not touch IERS Bulletin A (no Earth-rotating frame), distinct
+  from the off-axis ITRS prompt below.

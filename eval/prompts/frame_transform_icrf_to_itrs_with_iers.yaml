@@ -1,0 +1,18 @@
+prompt: |
+  Convert the ICRF state r=[7000, 0, 0] km, v=[0, 7.5, 0] km/s at epoch
+  2024-06-15T08:00:00Z to ITRS.
+tier: single_tool
+tools_required: [frame_transform]
+permitted_traces:
+  - - tool: frame_transform
+      arg_constraints:
+        to_frame: {equals: "ITRS"}
+functional_answer:
+  - path: "$.state.frame"
+    equals: "ITRS"
+  - path: "$.iers_bulletin_a_fetched_at"
+    present: true
+notes: |
+  Off-axis variant — Earth-rotating-frame target (ITRS), which forces
+  the IERS Bulletin A path and populates iers_bulletin_a_fetched_at on
+  the response.

@@ -1,0 +1,18 @@
+prompt: "Convert 2026-05-23T12:00:00 UTC to TAI."
+tier: single_tool
+tools_required: [time_convert]
+permitted_traces:
+  - - tool: time_convert
+      arg_constraints:
+        value: {equals: "2026-05-23T12:00:00"}
+        from_scale: {equals: "UTC"}
+        to_scale: {equals: "TAI"}
+functional_answer:
+  - path: "$.scale"
+    equals: "TAI"
+  - path: "$.value"
+    starts_with: "2026-05-23T12:00:37"
+notes: |
+  Primary single-tool path: scale conversion with default ISO format. The
+  expected output is the UTC time + 37 leap-seconds (the current TAI-UTC
+  delta as of mid-2026, stable for the foreseeable leap-second-free era).

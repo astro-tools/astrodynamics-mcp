@@ -1,0 +1,26 @@
+prompt: |
+  I'm planning a Jupiter flyby. The transfer leg from Earth gives me
+  the spacecraft state at Jupiter arrival: position (2500000, 100000,
+  -30000) km, velocity (-12.0, -8.5, 2.0) km/s relative to Jupiter at
+  2030-08-15T00:00:00Z. Compute the B-plane state and tell me if
+  any Δv is needed to push B·T to -500000 km.
+tier: sequential
+tools_required: [bplane_target]
+permitted_traces:
+  - - tool: bplane_target
+      arg_constraints:
+        target_body: {case_insensitive_equals: "jupiter"}
+        target_btt_km: {numeric_tolerance: {expected: -500000.0, abs: 0.001}}
+functional_answer:
+  - path: "$.dv_required"
+    present: true
+  - path: "$.dv_required.unit"
+    equals: "km/s"
+  - path: "$.b_t.unit"
+    equals: "km"
+notes: |
+  Jupiter approach with B·T targeting. Categorised as sequential
+  because the prompt frames it as the second step of a flyby plan —
+  but the Earth-to-Jupiter Lambert leg is not specified in enough
+  detail to compute, so the LLM is expected to take the supplied
+  planetocentric state at face value and call bplane_target once.

@@ -57,6 +57,7 @@ _KNOWN_PREDICATES: frozenset[str] = frozenset(
     {
         "equals",
         "in_range",
+        "l2_in_range",
         "length",
         "present",
         "case_insensitive_contains",
@@ -119,9 +120,11 @@ def validate_check(check: Any, *, index: int = 0) -> None:
 
 
 def _validate_predicate_value(predicate: str, value: Any, *, path: str) -> None:
-    if predicate == "in_range":
+    if predicate in ("in_range", "l2_in_range"):
         if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 2:
-            raise FunctionalSpecError(f"in_range at {path} requires a two-element [min, max] list")
+            raise FunctionalSpecError(
+                f"{predicate} at {path} requires a two-element [min, max] list"
+            )
         return
     if predicate == "length":
         if isinstance(value, int):
@@ -297,6 +300,17 @@ def _evaluate_scalar(predicate: str, spec: Any, value: Any, *, path: str) -> str
         if lo <= v <= hi:
             return None
         return f"{path}: expected in_range=[{lo}, {hi}], got {v}"
+    if predicate == "l2_in_range":
+        lo, hi = spec
+        if not isinstance(value, (list, tuple)):
+            return f"{path}: l2_in_range requires a vector value, got {type(value).__name__}"
+        try:
+            magnitude = sum(float(c) ** 2 for c in value) ** 0.5
+        except (TypeError, ValueError):
+            return f"{path}: l2_in_range requires numeric components, got {value!r}"
+        if lo <= magnitude <= hi:
+            return None
+        return f"{path}: expected l2_in_range=[{lo}, {hi}], got |v|={magnitude}"
     if predicate == "length":
         if not hasattr(value, "__len__"):
             return f"{path}: length requires a sized value, got {type(value).__name__}"

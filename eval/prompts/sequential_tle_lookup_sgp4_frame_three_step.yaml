@@ -1,0 +1,27 @@
+prompt: |
+  Fetch the current TLE for the ISS (NORAD 25544), propagate it to
+  2024-06-15T08:00:00Z, and give me the resulting state in ITRS using
+  frame_transform so the per-epoch IERS data is applied.
+tier: sequential
+tools_required: [tle_lookup, sgp4_propagate, frame_transform]
+permitted_traces:
+  - - tool: tle_lookup
+      arg_constraints:
+        query: {equals: "25544"}
+    - tool: sgp4_propagate
+      arg_constraints:
+        epochs: {equals: ["2024-06-15T08:00:00Z"]}
+    - tool: frame_transform
+      arg_constraints:
+        to_frame: {equals: "ITRS"}
+functional_answer:
+  - path: "$.state.frame"
+    equals: "ITRS"
+  - path: "$.state.r.unit"
+    equals: "km"
+  - path: "$.iers_bulletin_a_fetched_at"
+    present: true
+notes: |
+  Three-tool chain: tle_lookup → sgp4_propagate → frame_transform.
+  Exercises the canonical end-to-end "from a name to a ground-fixed
+  state vector" flow.

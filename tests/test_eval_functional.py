@@ -15,6 +15,7 @@ class TestValidate:
             {"path": "$", "equals": 1},
             {"path": "$.foo", "equals": "bar"},
             {"path": "$.foo[0]", "in_range": [0, 100]},
+            {"path": "$.foo", "l2_in_range": [0, 100]},
             {"path": "$.foo[*]", "all_equal": "km"},
             {"path": "$.foo", "length": 3},
             {"path": "$.foo", "length": {"min": 1}},
@@ -38,6 +39,7 @@ class TestValidate:
             ({"equals": 1}, "missing required key 'path'"),
             ({"path": "$.foo", "unknown": 1}, "unknown functional predicate"),
             ({"path": "$.foo", "in_range": [1]}, "two-element"),
+            ({"path": "$.foo", "l2_in_range": [1]}, "two-element"),
             ({"path": "$.foo", "length": "huge"}, "requires an int"),
             ({"path": "$.foo", "present": "yes"}, "requires a boolean"),
             ({"path": "$.foo", "starts_with": 1}, "requires a string"),
@@ -83,6 +85,29 @@ class TestEvaluate:
             [{"path": "$.r_magnitude", "in_range": [6500, 7500]}],
         )
         assert passed is False
+
+    def test_l2_in_range_pass(self) -> None:
+        passed, _ = evaluate_checks(
+            {"r": [6700.0, 0.0, 0.0]},
+            [{"path": "$.r", "l2_in_range": [6500, 7500]}],
+        )
+        assert passed is True
+
+    def test_l2_in_range_fail(self) -> None:
+        passed, reasons = evaluate_checks(
+            {"r": [1000.0, 0.0, 0.0]},
+            [{"path": "$.r", "l2_in_range": [6500, 7500]}],
+        )
+        assert passed is False
+        assert any("|v|=1000.0" in r for r in reasons)
+
+    def test_l2_in_range_requires_vector(self) -> None:
+        passed, reasons = evaluate_checks(
+            {"r": 6700.0},
+            [{"path": "$.r", "l2_in_range": [6500, 7500]}],
+        )
+        assert passed is False
+        assert any("requires a vector value" in r for r in reasons)
 
     def test_length_on_array(self) -> None:
         passed, _ = evaluate_checks({"states": [1, 2, 3]}, [{"path": "$.states", "length": 3}])

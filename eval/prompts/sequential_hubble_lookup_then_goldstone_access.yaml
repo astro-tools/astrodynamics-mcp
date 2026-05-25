@@ -1,0 +1,30 @@
+prompt: |
+  Fetch the current TLE for the Hubble Space Telescope and tell me
+  when it next passes over Goldstone above 15 degrees elevation in the
+  next 48 hours from 2024-01-01T00:00:00Z.
+tier: sequential
+tools_required: [tle_lookup, access_windows]
+permitted_traces:
+  - - tool: tle_lookup
+      arg_constraints:
+        query:
+          one_of:
+            - "20580"
+            - "HUBBLE"
+            - "Hubble"
+            - "hubble"
+    - tool: access_windows
+      arg_constraints:
+        observer:
+          field_constraints:
+            name: {case_insensitive_equals: "goldstone"}
+        min_elevation_deg: {equals: 15}
+functional_answer:
+  - path: "$.windows[*].peak_elevation.value"
+    in_range: [15, 90]
+  - path: "$.windows[*].peak_elevation.unit"
+    all_equal: "deg"
+notes: |
+  Cross-tool: tle_lookup feeds access_windows. The 15-degree mask is
+  the DSN-style threshold documented in the access_windows tool
+  description.

@@ -1,0 +1,19 @@
+prompt: "What is 2026-05-23T12:00:00 UTC in Julian Date format?"
+tier: single_tool
+tools_required: [time_convert]
+permitted_traces:
+  - - tool: time_convert
+      arg_constraints:
+        value: {equals: "2026-05-23T12:00:00"}
+        from_scale: {equals: "UTC"}
+        to_scale: {one_of: ["UTC", null]}
+        out_format: {equals: "jd"}
+functional_answer:
+  - path: "$.format"
+    equals: "jd"
+  - path: "$.scale"
+    equals: "UTC"
+notes: |
+  Variant exercising the output-format dispatch ('jd') rather than a
+  scale change. Asserts the response reflects both the requested
+  format and the (unchanged) scale.

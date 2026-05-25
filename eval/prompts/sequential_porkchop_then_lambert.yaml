@@ -1,0 +1,27 @@
+prompt: |
+  Find the cheapest Earth-to-Mars launch in the 2026 window (depart
+  2026-10-01..2026-12-01, arrive 2027-06-01..2027-11-01). For that
+  best (depart, arrive) pair, give me the heliocentric transfer
+  orbit's semi-major axis, eccentricity, and inclination.
+tier: sequential
+tools_required: [porkchop, lambert_solve]
+permitted_traces:
+  - - tool: porkchop
+      arg_constraints:
+        departure_body: {case_insensitive_equals: "earth"}
+        arrival_body: {case_insensitive_equals: "mars"}
+    - tool: lambert_solve
+      arg_constraints:
+        mu: {case_insensitive_equals: "sun"}
+functional_answer:
+  - path: "$.transfer_elements.a.unit"
+    equals: "km"
+  - path: "$.transfer_elements.e.unit"
+    equals: "1"
+  - path: "$.transfer_elements.i.unit"
+    equals: "deg"
+notes: |
+  Cross-tool: porkchop picks the (depart, arrive) pair; lambert_solve
+  recovers the transfer-arc Keplerian elements. The Lambert call must
+  use heliocentric mu (mu='sun') — that's the canonical
+  arg-binding mistake a single check catches.

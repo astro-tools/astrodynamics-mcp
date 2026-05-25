@@ -1,0 +1,22 @@
+prompt: |
+  Compare launch costs for an Earth-to-Venus mission. Sample the depart
+  window of 2027-01-01 through 2027-03-01 against an arrive window of
+  2027-06-01 through 2027-09-01. What is the minimum C3 launch?
+tier: single_tool
+tools_required: [porkchop]
+permitted_traces:
+  - - tool: porkchop
+      arg_constraints:
+        departure_body: {case_insensitive_equals: "earth"}
+        arrival_body: {case_insensitive_equals: "venus"}
+functional_answer:
+  - path: "$.best.c3.unit"
+    equals: "km^2/s^2"
+  - path: "$.best.depart_epoch"
+    present: true
+  - path: "$.best.arrive_epoch"
+    present: true
+notes: |
+  Off-axis variant — different arrival body (Venus, not Mars). Catches
+  the "LLM defaults arrival_body to mars regardless of the ask" trap by
+  asserting the call's arrival_body argument.

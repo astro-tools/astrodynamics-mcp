@@ -1,0 +1,26 @@
+prompt: |
+  Propagate the ISS TLE one hour forward from 2024-01-01T12:00:00Z and give me
+  the state vector. TLE lines:
+    line1='1 25544U 98067A   24001.50000000  .00010000  00000-0  18000-3 0  9990'
+    line2='2 25544  51.6400  90.0000 0001000  90.0000 270.0000 15.50000000000000'
+tier: single_tool
+tools_required: [sgp4_propagate]
+permitted_traces:
+  - - tool: sgp4_propagate
+      arg_constraints:
+        epochs: {equals: ["2024-01-01T13:00:00Z"]}
+        frame: {one_of: ["TEME", null]}
+functional_answer:
+  - path: "$.states"
+    length: 1
+  - path: "$.states[0].r.unit"
+    equals: "km"
+  - path: "$.states[0].v.unit"
+    equals: "km/s"
+  - path: "$.states[0].r.value"
+    l2_in_range: [6500, 7500]
+notes: |
+  Primary single-tool path: single-epoch propagation in the default TEME
+  frame. The TLE is supplied inline so the LLM cannot detour through
+  tle_lookup. The r-magnitude check (6500-7500 km) is a "this isn't
+  garbage" sanity bound — covers the LEO altitude band.
