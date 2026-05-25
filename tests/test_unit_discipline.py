@@ -18,6 +18,11 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel, ConfigDict
 
+from astrodynamics_mcp.schemas.base import (
+    Interval,
+    ObserverCoordinates,
+    StateVector,
+)
 from astrodynamics_mcp.units import (
     Quantity,
     QuantityVector,
@@ -26,7 +31,14 @@ from astrodynamics_mcp.units import (
 
 # Registry of tool output schemas the meta-test should police. Each tool
 # issue appends its top-level output model here.
-OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = []
+OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
+    # Base schemas that compose quantities directly — registering them here
+    # verifies the cross-tool lint runs cleanly against real composed shapes,
+    # not just the self-test fixtures below.
+    StateVector,
+    Interval,
+    ObserverCoordinates,
+]
 
 
 class _GoodSchema(BaseModel):
