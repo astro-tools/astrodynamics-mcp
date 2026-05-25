@@ -632,6 +632,202 @@ class TestEdgeCases:
             "upstream.porkchop_grid_empty",
         }
 
+    async def test_grid_empty_when_every_lambert_call_fails(
+        self, earth_mars_client: Iterator[None]
+    ) -> None:
+        """Mocked Lambert always-raise drops every cell, hitting the empty-grid raise.
+
+        The window-order validator is satisfied (overlapping windows with
+        positive-tof cells), but every ``_solve_cell`` falls through the
+        ``except (AssertionError, ValueError, RuntimeError)`` branch and
+        returns None.
+        """
+        del earth_mars_client  # unused; activate-fixture only
+
+        def izzo_always_raises(*_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError("synthetic lambert failure")
+
+        with (
+            patch(
+                "astrodynamics_mcp.tools.porkchop._izzo2015",
+                return_value=izzo_always_raises,
+            ),
+            pytest.raises(ToolError) as excinfo,
+        ):
+            await porkchop(
+                departure_body="earth",
+                arrival_body="mars",
+                depart_window=_DEPART_WINDOW,
+                arrive_window=_ARRIVE_WINDOW,
+                samples_per_axis=3,
+            )
+        envelope = json.loads(str(excinfo.value))
+        assert envelope["code"] == "upstream.porkchop_grid_empty"
+
+
+class TestInternalHelpers:
+    """Direct tests for the helpers feasibility-loop branches don't reach naturally."""
+
+    def test_parse_iso_epoch_attaches_utc_to_naive_value(self) -> None:
+        """A naive ISO timestamp gets UTC attached before normalisation."""
+        from datetime import timezone
+
+        from astrodynamics_mcp.tools.porkchop import _parse_iso_epoch
+
+        # The schema-level Epoch validator accepts timestamps without a
+        # timezone designator; the porkchop parser then anchors them to UTC.
+        out = _parse_iso_epoch("2026-11-01T00:00:00", field="depart_window[0]")
+        assert out.tzinfo is not None
+        assert out.utcoffset() == timezone.utc.utcoffset(out)
+
+    def test_parse_horizons_vectors_raises_on_unparseable_number(self) -> None:
+        """A ValueError inside `_strip_signed_number` surfaces as upstream error.
+
+        The capture-group regex normally rejects bad numbers, so we patch
+        the stripper to raise unconditionally and assert the wrapping
+        exception lands with the right code.
+        """
+        from datetime import datetime, timezone
+
+        from astrodynamics_mcp.data.horizons import HorizonsResponse
+        from astrodynamics_mcp.errors import UpstreamError
+        from astrodynamics_mcp.tools.porkchop import _parse_horizons_vectors
+
+        body = (
+            "$$SOE\n"
+            " 2460676.500000000 = A.D. 2025-Jan-01 00:00:00.000 TDB\n"
+            " X = 1.0E+08 Y = 2.0E+08 Z = 3.0E+08\n"
+            " VX= 1.0E+01 VY= 2.0E+01 VZ= 3.0E+01\n"
+            "$$EOE\n"
+        )
+        response = HorizonsResponse(
+            signature={
+                "target": "499",
+                "center": "@sun",
+                "start": "x",
+                "stop": "y",
+                "step": "1d",
+            },
+            result=body,
+            fetched_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+
+        with (
+            patch(
+                "astrodynamics_mcp.tools.porkchop._strip_signed_number",
+                side_effect=ValueError("synthetic strip failure"),
+            ),
+            pytest.raises(UpstreamError) as excinfo,
+        ):
+            _parse_horizons_vectors(response)
+        assert excinfo.value.code == "upstream.horizons_unexpected_shape"
+
+    def test_interp_state_returns_endpoints_verbatim(self) -> None:
+        """Targeting the first or last epoch returns that row without interpolation."""
+        from datetime import datetime, timezone
+
+        from astrodynamics_mcp.tools.porkchop import _interp_state
+
+        e0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        e1 = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        positions = np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]])
+        velocities = np.array([[0.1, 0.2, 0.3], [1.0, 2.0, 3.0]])
+
+        r0, v0 = _interp_state(e0, [e0, e1], positions, velocities)
+        np.testing.assert_array_equal(r0, positions[0])
+        np.testing.assert_array_equal(v0, velocities[0])
+
+        r1, v1 = _interp_state(e1, [e0, e1], positions, velocities)
+        np.testing.assert_array_equal(r1, positions[1])
+        np.testing.assert_array_equal(v1, velocities[1])
+
+    def test_interp_state_duplicate_epoch_bracket(self) -> None:
+        """A zero-span bracket (duplicate epochs) falls back to the right edge."""
+        from datetime import datetime, timezone
+
+        from astrodynamics_mcp.tools.porkchop import _interp_state
+
+        e_dup = datetime(2026, 1, 1, 12, tzinfo=timezone.utc)
+        e_late = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        positions = np.array([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0], [10.0, 20.0, 30.0]])
+        velocities = np.array([[0.1, 0.2, 0.3], [0.1, 0.2, 0.3], [1.0, 2.0, 3.0]])
+        r, v = _interp_state(e_dup, [e_dup, e_dup, e_late], positions, velocities)
+        assert np.all(np.isfinite(r))
+        assert np.all(np.isfinite(v))
+
+    def test_interp_state_target_outside_window_raises(self) -> None:
+        """A target before/after the ephemeris window surfaces a typed upstream error."""
+        from datetime import datetime, timezone
+
+        from astrodynamics_mcp.errors import UpstreamError
+        from astrodynamics_mcp.tools.porkchop import _interp_state
+
+        e0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        e1 = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        positions = np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]])
+        velocities = np.array([[0.1, 0.2, 0.3], [1.0, 2.0, 3.0]])
+
+        with pytest.raises(UpstreamError) as excinfo:
+            _interp_state(
+                datetime(2025, 12, 31, tzinfo=timezone.utc),
+                [e0, e1],
+                positions,
+                velocities,
+            )
+        assert excinfo.value.code == "upstream.horizons_window_too_narrow"
+
+    def test_ascii_contour_empty_grid_returns_empty_string(self) -> None:
+        """An all-None / non-finite grid renders as the empty string."""
+        from astrodynamics_mcp.tools.porkchop import _ascii_contour
+
+        assert _ascii_contour([[None, None], [None, None]]) == ""
+
+    def test_solve_cell_zero_v_inf_falls_back_to_zero_declination(self) -> None:
+        """When v_∞_dep magnitude is zero, declination falls back to 0° (no NaN)."""
+        from datetime import datetime, timezone
+
+        from astrodynamics_mcp.tools.porkchop import _solve_cell
+
+        v_body = np.array([0.0, 30.0, 0.0])
+
+        def izzo_zero_vinf(
+            _mu: float, _r1: Any, _r2: Any, _tof: float, **_kw: Any
+        ) -> tuple[np.ndarray, np.ndarray]:
+            # Match the body velocity exactly so v_inf_dep = 0.
+            return v_body.copy(), v_body.copy()
+
+        cell = _solve_cell(
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+            datetime(2026, 6, 1, tzinfo=timezone.utc),
+            np.array([1.5e8, 0.0, 0.0]),
+            v_body,
+            np.array([0.0, 2.3e8, 0.0]),
+            v_body,
+            izzo_zero_vinf,
+        )
+        assert cell is not None
+        assert cell.dec_dep_asymptote.value == 0.0
+
+    def test_solve_cell_returns_none_when_lambert_raises(self) -> None:
+        """`_solve_cell` swallows AssertionError/ValueError/RuntimeError from izzo."""
+        from datetime import datetime, timezone
+
+        from astrodynamics_mcp.tools.porkchop import _solve_cell
+
+        def izzo_raises(*_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError("synthetic lambert failure")
+
+        cell = _solve_cell(
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+            datetime(2026, 6, 1, tzinfo=timezone.utc),
+            np.array([1.5e8, 0.0, 0.0]),
+            np.array([0.0, 30.0, 0.0]),
+            np.array([0.0, 2.3e8, 0.0]),
+            np.array([0.0, 30.0, 0.0]),
+            izzo_raises,
+        )
+        assert cell is None
+
 
 # ---------------------------------------------------------------------------
 # Live Horizons (gated)
