@@ -135,6 +135,32 @@ class TestHappyPaths:
         assert parsed.tzinfo is not None
 
 
+class TestCacheHit:
+    async def test_second_call_within_ttl_serves_from_cache(self, tmp_cache: Cache) -> None:
+        """Two `tle_lookup` calls with the same query → exactly one HTTP request.
+
+        Proves the tool's `fetch_tle` call (which passes no `cache` arg) does
+        fall through to the module-level singleton and that the singleton's
+        6-hour CelesTrak TTL keeps the second call off the wire.
+        """
+        call_count = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            call_count["n"] += 1
+            return httpx.Response(200, json=[_SAMPLE_OMM_ISS])
+
+        with _patched_async_client(handler):
+            first = await tle_lookup(query="25544")
+            second = await tle_lookup(query="25544")
+
+        assert call_count["n"] == 1
+        assert first.results[0].stale is False
+        assert second.results[0].stale is False
+        # The cache files live under the tmp dir the fixture wired in.
+        assert tmp_cache.directory is not None
+        assert (tmp_cache.directory / "celestrak").is_dir()
+
+
 class TestStaleFallback:
     async def test_stale_flag_propagates_per_result(self, tmp_cache: Cache) -> None:
         """When the adapter returns stale=True, every TleResult carries stale=True."""
