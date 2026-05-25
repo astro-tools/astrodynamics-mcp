@@ -127,6 +127,14 @@ ignore_missing_imports = true
 module = ["inspect_ai", "inspect_ai.*"]
 ignore_missing_imports = true
 
+# astropy ships partial type info but the surface we touch (utils.iers,
+# the Bulletin A table indexing pattern) is not annotated. Treat the
+# imports we use as Any inside the small surfaces in data/iers.py.
+[[tool.mypy.overrides]]
+module = ["astropy", "astropy.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
