@@ -1,0 +1,54 @@
+name: Tool request
+description: I want astrodynamics-mcp to compute X — does it fit?
+title: "<short summary of the X you want>"
+labels: ["type:tool-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        astrodynamics-mcp wraps vetted upstream astrodynamics libraries (sgp4,
+        lamberthub, skyfield, astropy, …) so LLM clients can call them as tools.
+        Before filing, please skim `CONTRIBUTING.md` — the "Scope discipline"
+        section names the libraries we wrap and the orthogonal projects that
+        own neighbouring surfaces. If your need is squarely in one of those
+        adjacent projects, you'll get a faster answer there.
+  - type: textarea
+    id: what_i_want
+    attributes:
+      label: What you want to compute
+      description: One or two sentences. What's the natural-language question you'd ask an LLM client that should drop into a tool call?
+      placeholder: "e.g. 'For a TLE I provide, when is the next eclipse of the satellite by Earth?'"
+    validations:
+      required: true
+  - type: textarea
+    id: example_session
+    attributes:
+      label: Example session
+      description: How would you prompt an MCP-enabled client (Claude Code, Cursor, ChatGPT desktop, …) to invoke this? What inputs / units / outputs do you expect?
+      placeholder: |
+        > User: "When does Hubble enter eclipse during the next 7 days?"
+        > # LLM should call: eclipse_predict(tle=..., start=..., duration_days=7)
+        > # Expected output: list of {entry_utc, exit_utc, duration_s, type: umbra|penumbra}
+    validations:
+      required: true
+  - type: textarea
+    id: upstream_library
+    attributes:
+      label: Upstream library that could back this
+      description: Which existing Python library (or libraries) implements the computation? If unsure, say so — we'll dig.
+      placeholder: "e.g. skyfield has eclipse helpers via dark_twilight_day; astropy.coordinates.get_sun + custom shadow geometry."
+  - type: textarea
+    id: what_i_tried
+    attributes:
+      label: What you tried instead
+      description: Did you try to use an existing tool (poorly) or a different MCP server? What broke or felt wrong?
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How important is this to you
+      options:
+        - "Blocker — I can't use astrodynamics-mcp for my work without it."
+        - "Strong wish — I have a workaround but it's awkward."
+        - "Nice to have — drop into the backlog and ship when convenient."
+    validations:
+      required: true
