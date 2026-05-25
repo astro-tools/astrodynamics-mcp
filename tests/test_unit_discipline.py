@@ -20,9 +20,11 @@ from pydantic import BaseModel, ConfigDict
 
 from astrodynamics_mcp.schemas.base import (
     Interval,
+    KeplerianElements,
     ObserverCoordinates,
     StateVector,
 )
+from astrodynamics_mcp.tools.lambert import LambertSolveResponse
 from astrodynamics_mcp.tools.propagation import Sgp4PropagateResponse
 from astrodynamics_mcp.tools.tle import TleLookupResponse
 from astrodynamics_mcp.units import (
@@ -40,9 +42,11 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
     StateVector,
     Interval,
     ObserverCoordinates,
+    KeplerianElements,
     # Tool output schemas.
     TleLookupResponse,
     Sgp4PropagateResponse,
+    LambertSolveResponse,
 ]
 
 
