@@ -257,6 +257,161 @@ class TestOmmRecord:
         assert record.OBJECT_NAME == "ISS (ZARYA)"
 
 
+class TestGroupQueryDispatch:
+    """Group/category keywords route to ``gp.php?GROUP=<name>``."""
+
+    async def test_group_keyword_uses_group_param(self, cache: Cache) -> None:
+        seen_params: dict[str, str] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen_params.update(request.url.params)
+            return httpx.Response(200, json=[_SAMPLE_OMM_ISS])
+
+        client = _mock_client(handler)
+        try:
+            await fetch_tle("weather", client=client, cache=cache)
+        finally:
+            await client.aclose()
+        assert seen_params.get("GROUP") == "weather"
+        assert "NAME" not in seen_params
+        assert "CATNR" not in seen_params
+
+    async def test_group_keyword_case_insensitive(self, cache: Cache) -> None:
+        seen_params: dict[str, str] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen_params.update(request.url.params)
+            return httpx.Response(200, json=[_SAMPLE_OMM_ISS])
+
+        client = _mock_client(handler)
+        try:
+            await fetch_tle("Weather", client=client, cache=cache)
+        finally:
+            await client.aclose()
+        # Case is normalised to lowercase before hitting the wire so the
+        # cache key stays stable across "weather" / "Weather" / "WEATHER".
+        assert seen_params.get("GROUP") == "weather"
+
+    async def test_non_keyword_string_still_falls_through_to_name(self, cache: Cache) -> None:
+        """A query that isn't a digit AND isn't a known group keyword is a NAME lookup."""
+        seen_params: dict[str, str] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen_params.update(request.url.params)
+            return httpx.Response(200, json=[_SAMPLE_OMM_ISS])
+
+        client = _mock_client(handler)
+        try:
+            await fetch_tle("not-a-group-name", client=client, cache=cache)
+        finally:
+            await client.aclose()
+        assert seen_params.get("NAME") == "not-a-group-name"
+        assert "GROUP" not in seen_params
+
+
+class TestThinOmmRecord:
+    """OMM records missing the CCSDS metadata fields parse with defaults."""
+
+    @staticmethod
+    def _thin_record() -> dict[str, Any]:
+        """An OMM payload missing every CCSDS-metadata field with a default."""
+        thin = dict(_SAMPLE_OMM_ISS)
+        for field in (
+            "OBJECT_ID",
+            "EPHEMERIS_TYPE",
+            "CLASSIFICATION_TYPE",
+            "ELEMENT_SET_NO",
+            "REV_AT_EPOCH",
+        ):
+            del thin[field]
+        return thin
+
+    def test_record_missing_metadata_parses_with_ccsds_defaults(self) -> None:
+        record = OmmRecord.model_validate(self._thin_record())
+        assert record.OBJECT_ID == ""
+        assert record.EPHEMERIS_TYPE == 0
+        assert record.CLASSIFICATION_TYPE == "U"
+        assert record.ELEMENT_SET_NO == 0
+        assert record.REV_AT_EPOCH == 0
+        # The mean elements + identifiers are still required and present.
+        assert record.NORAD_CAT_ID == 25544
+        assert record.MEAN_MOTION == 15.5
+
+    async def test_thin_record_round_trips_to_valid_tle(self, cache: Cache) -> None:
+        """A thin CelesTrak response still derives 69-char line1 / line2."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[self._thin_record()])
+
+        client = _mock_client(handler)
+        try:
+            response = await fetch_tle("25544", client=client, cache=cache)
+        finally:
+            await client.aclose()
+
+        assert len(response.results) == 1
+        assert len(response.tle_lines) == 1
+        assert len(response.tle_lines[0].line1) == 69
+        assert len(response.tle_lines[0].line2) == 69
+
+
+class TestMalformedOmmRecord:
+    """A record missing a mean-element field surfaces as UpstreamError, no cache poison."""
+
+    @staticmethod
+    def _broken_record() -> dict[str, Any]:
+        """An OMM payload missing INCLINATION — can't reconstruct a TLE."""
+        broken = dict(_SAMPLE_OMM_ISS)
+        del broken["INCLINATION"]
+        return broken
+
+    async def test_missing_mean_element_raises_upstream_error(self, cache: Cache) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[self._broken_record()])
+
+        client = _mock_client(handler)
+        try:
+            with pytest.raises(UpstreamError) as excinfo:
+                await fetch_tle("25544", client=client, cache=cache)
+        finally:
+            await client.aclose()
+        assert excinfo.value.code == "upstream.celestrak_invalid_record"
+        assert excinfo.value.data["record_index"] == 0
+        assert excinfo.value.data["norad_cat_id"] == 25544
+
+    async def test_malformed_record_does_not_poison_cache(self, cache: Cache) -> None:
+        """The cache must not retain a payload that contains an unparseable record."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[self._broken_record()])
+
+        client = _mock_client(handler)
+        try:
+            with pytest.raises(UpstreamError):
+                await fetch_tle("25544", client=client, cache=cache)
+        finally:
+            await client.aclose()
+        # Cache must be empty for this key — validation runs before cache.put.
+        assert cache.get_stale("celestrak", "catnr:25544") is None
+
+    async def test_second_record_malformed_fails_whole_response(self, cache: Cache) -> None:
+        """First good, second bad → whole response fails (no partial success)."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[_SAMPLE_OMM_ISS, self._broken_record()])
+
+        client = _mock_client(handler)
+        try:
+            with pytest.raises(UpstreamError) as excinfo:
+                await fetch_tle("active", client=client, cache=cache)
+        finally:
+            await client.aclose()
+        assert excinfo.value.code == "upstream.celestrak_invalid_record"
+        assert excinfo.value.data["record_index"] == 1
+        # Cache untouched even though the first record was valid.
+        assert cache.get_stale("celestrak", "group:active") is None
+
+
 class TestDefaultClientAndCachePaths:
     """Exercise the production code paths where no client / cache is injected."""
 

@@ -1,0 +1,31 @@
+{
+  "results": [
+    {
+      "name": "ISS (ZARYA)",
+      "norad_id": "25544",
+      "tle_line1": "1 25544U 98067A   24001.50000000  .00010000  00000-0  18000-3 0  9995",
+      "tle_line2": "2 25544  51.6400  90.0000 0001000  90.0000 270.0000 15.50000000    07",
+      "omm": {
+        "OBJECT_NAME": "ISS (ZARYA)",
+        "OBJECT_ID": "1998-067A",
+        "EPOCH": "2024-01-01T12:00:00.000000",
+        "MEAN_MOTION": 15.5,
+        "ECCENTRICITY": 0.0001,
+        "INCLINATION": 51.64,
+        "RA_OF_ASC_NODE": 90.0,
+        "ARG_OF_PERICENTER": 90.0,
+        "MEAN_ANOMALY": 270.0,
+        "EPHEMERIS_TYPE": 0,
+        "CLASSIFICATION_TYPE": "U",
+        "NORAD_CAT_ID": 25544,
+        "ELEMENT_SET_NO": 999,
+        "REV_AT_EPOCH": 0,
+        "BSTAR": 0.00018,
+        "MEAN_MOTION_DOT": 0.0001,
+        "MEAN_MOTION_DDOT": 0.0
+      },
+      "fetched_at": "<masked-in-test>",
+      "stale": false
+    }
+  ]
+}
