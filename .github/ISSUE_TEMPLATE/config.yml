@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/orgs/astro-tools/discussions
+    about: Open a discussion for usage questions, ideas, or general chat. The astro-tools org runs a single shared discussions space — there is no per-repo discussions board.

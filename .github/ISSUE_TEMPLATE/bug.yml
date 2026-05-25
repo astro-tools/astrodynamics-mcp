@@ -1,0 +1,75 @@
+name: Bug
+description: Report a defect in astrodynamics-mcp.
+title: "<short summary>"
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+      description: Observed behavior. Include error messages, MCP error envelopes, and tracebacks verbatim.
+    validations:
+      required: true
+  - type: textarea
+    id: what_expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: Smallest snippet that triggers the bug. A tool name plus the arguments you called it with (or the natural-language prompt that produced the broken call) is ideal.
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: server_version
+    attributes:
+      label: astrodynamics-mcp version
+      placeholder: "e.g. 0.1.0, or git sha"
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - stdio
+        - http
+        - Both
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      description: Which client surfaced the bug, and its version.
+      placeholder: "e.g. Claude Code 2.4.1, Cursor 0.45, raw Python script using `mcp` SDK"
+    validations:
+      required: true
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      placeholder: "e.g. 3.12.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Server stderr, MCP error payloads, client-side traces.
+      render: shell

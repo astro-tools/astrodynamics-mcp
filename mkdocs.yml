@@ -1,0 +1,49 @@
+site_name: astrodynamics-mcp
+site_description: Model Context Protocol server giving LLM clients authoritative astrodynamics tools.
+site_url: https://astro-tools.github.io/astrodynamics-mcp/
+repo_url: https://github.com/astro-tools/astrodynamics-mcp
+repo_name: astro-tools/astrodynamics-mcp
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+# v0.1 ships a placeholder landing page only; the full site (pick-a-client,
+# tool reference, recipes, eval suite, FAQ, supported-clients matrix,
+# mkdocstrings API) lands with the docs-site work tracked in the v0.1
+# milestone.
+nav:
+  - Home: index.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true

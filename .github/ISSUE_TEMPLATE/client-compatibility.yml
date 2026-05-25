@@ -1,0 +1,81 @@
+name: Client compatibility report
+description: Tell us how astrodynamics-mcp works (or doesn't) inside a specific MCP client.
+title: "<client name + version>: <one-line outcome>"
+labels: ["type:client-compatibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to report on a specific MCP client's behaviour:
+        whether stdio / http transports work, whether tools are visible, whether
+        tool descriptions and units survive the round-trip, and any client-side
+        quirks. These reports populate the "supported clients" matrix in the
+        docs. Even a successful "everything works" report is welcome.
+  - type: input
+    id: client
+    attributes:
+      label: MCP client and version
+      placeholder: "e.g. Claude Code 2.4.1, Cursor 0.45, ChatGPT desktop 1.2024.345, custom LangGraph agent on mcp 1.27.0"
+    validations:
+      required: true
+  - type: input
+    id: server_version
+    attributes:
+      label: astrodynamics-mcp version
+      placeholder: "e.g. 0.1.0, or git sha"
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport used
+      options:
+        - stdio
+        - http (Streamable HTTP)
+        - http (SSE — deprecated, backward-compat only)
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Overall outcome
+      options:
+        - "Works — tools visible, calls succeed, results render."
+        - "Partial — some tools or call patterns are broken."
+        - "Broken — server doesn't load, or no tools visible to the client."
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: Paste the exact MCP server config block (with secrets redacted).
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: tools_observed
+    attributes:
+      label: Tools the client sees
+      description: List which of the v0.1 tools the client surfaces (or "all 8" / "none"). If the client doesn't surface a `tools/list`, paste the closest observable equivalent.
+  - type: textarea
+    id: tools_called
+    attributes:
+      label: Tools you actually called
+      description: One or two example tool calls you ran end-to-end. Include the natural-language prompt that triggered each.
+  - type: textarea
+    id: problems
+    attributes:
+      label: Problems observed
+      description: Quirks, edge cases, broken units, awkward error rendering, slow timeouts — anything that worked but felt wrong.
