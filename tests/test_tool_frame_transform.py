@@ -17,6 +17,12 @@ from mcp.server.fastmcp.exceptions import ToolError
 from astrodynamics_mcp.schemas.base import Frame, StateVector
 from astrodynamics_mcp.server import mcp
 from astrodynamics_mcp.server_lint import check_tool_descriptions
+from astrodynamics_mcp.errors import InvalidInputError
+from astrodynamics_mcp.tools._astropy_frames import (
+    EARTH_ROTATING_FRAMES,
+    SUPPORTED_FRAMES,
+    _astropy_frame_class,
+)
 from astrodynamics_mcp.tools.frames import FrameTransformResponse, frame_transform
 from astrodynamics_mcp.units import QuantityVector
 
@@ -201,6 +207,35 @@ class TestEpochOverride:
         resp = await frame_transform(state=state, to_frame=Frame.ITRS, epoch=override)
         # The transformed state should carry the override epoch.
         assert resp.state.epoch == override
+
+
+class TestAstropyFramesHelper:
+    """Direct coverage for the shared `_astropy_frames` module's defensive paths."""
+
+    def test_supported_and_rotating_frame_sets_are_consistent(self) -> None:
+        """Every Earth-rotating frame is also a supported transform endpoint."""
+        assert EARTH_ROTATING_FRAMES <= SUPPORTED_FRAMES
+
+    @pytest.mark.parametrize("frame", [Frame.TIRS, Frame.IAU_MARS, Frame.IAU_MOON])
+    def test_unsupported_frame_raises_typed_error_in_helper(self, frame: Frame) -> None:
+        """`_astropy_frame_class` rejects frames outside the SUPPORTED_FRAMES set.
+
+        Callers should guard against these before delegating; this defensive
+        check is the helper's last line of defense against a misconfigured
+        dispatch table.
+        """
+        with pytest.raises(InvalidInputError) as excinfo:
+            _astropy_frame_class(frame)
+        assert excinfo.value.code == "invalid_input.unsupported_frame_transform"
+        assert frame.value in str(excinfo.value)
+
+    @pytest.mark.parametrize("frame", sorted(SUPPORTED_FRAMES, key=lambda f: f.value))
+    def test_supported_frames_resolve_to_astropy_class(self, frame: Frame) -> None:
+        astropy_cls, takes_obstime = _astropy_frame_class(frame)
+        assert astropy_cls is not None
+        assert isinstance(takes_obstime, bool)
+        # Only ICRF (astropy ICRS) is the barycentric, obstime-free frame.
+        assert takes_obstime is (frame is not Frame.ICRF)
 
 
 class TestUpstreamFailureWrapping:

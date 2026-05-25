@@ -488,7 +488,14 @@ class TestLiveCelestrak:
     """Hits the real CelesTrak endpoint; gated behind the integration marker."""
 
     async def test_live_iss_fetch(self, cache: Cache) -> None:
-        response = await fetch_tle("25544", cache=cache)
+        try:
+            response = await fetch_tle("25544", cache=cache)
+        except DataSourceError as exc:
+            # GitHub Actions runners occasionally lose outbound connectivity
+            # to celestrak.org — the structural assertions below have no
+            # signal when the network is the bottleneck. Skip rather than
+            # fail a PR on a transient runner issue.
+            pytest.skip(f"CelesTrak unreachable from this runner: {exc}")
         assert len(response.results) >= 1
         iss = next(r for r in response.results if r.NORAD_CAT_ID == 25544)
         assert iss.OBJECT_NAME.startswith("ISS")
