@@ -1,3 +1,33 @@
-"""Pydantic schemas — shared base models and per-tool input/output models."""
+"""Pydantic schemas — shared base models tools compose from."""
 
 from __future__ import annotations
+
+from astrodynamics_mcp.schemas.base import (
+    Body,
+    Epoch,
+    Frame,
+    Interval,
+    NamedStation,
+    Observer,
+    ObserverCoordinates,
+    StateVector,
+    TimeScale,
+    Tle,
+    TleLines,
+    TleOmm,
+)
+
+__all__ = [
+    "Body",
+    "Epoch",
+    "Frame",
+    "Interval",
+    "NamedStation",
+    "Observer",
+    "ObserverCoordinates",
+    "StateVector",
+    "TimeScale",
+    "Tle",
+    "TleLines",
+    "TleOmm",
+]
