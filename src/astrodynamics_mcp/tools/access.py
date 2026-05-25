@@ -2,15 +2,15 @@
 
 Wraps `skyfield`'s `find_events` and `altaz` machinery to enumerate the
 times at which a TLE-defined satellite is visible above a horizon mask
-from a fixed observer (named station from the v0.1 registry or explicit
+from a fixed observer (named station from the closed registry or explicit
 geodetic coordinates). Per-window altitude and range are reported at AOS,
 peak, and LOS so downstream filters (range bounds) and LLM consumers see
 the full pass geometry.
 
 Skyfield's bundled timescale data (leap seconds, deltaT) is sufficient
-for v0.1 — we do not share astropy's IERS cache here. The IERS shim in
+here — we do not share astropy's IERS cache. The IERS shim in
 ``astrodynamics_mcp.data.iers`` is for tools that touch UT1 or
-EOP-dependent frame transforms, which access windows don't.
+EOP-dependent frame transforms, which access windows do not.
 """
 
 from __future__ import annotations
@@ -32,11 +32,11 @@ from astrodynamics_mcp.schemas.base import (
 from astrodynamics_mcp.server import register_tool
 from astrodynamics_mcp.units import Quantity
 
-# Geodetic coordinates (lat_deg, lon_deg, alt_km) for the v0.1 named-station
-# registry. Coordinates are approximate civilian-published values for the
+# Geodetic coordinates (lat_deg, lon_deg, alt_km) for the named-station
+# registry. Values are approximate civilian-published coordinates for the
 # primary site each name refers to (DSS-63 at Madrid, DSS-14 at Goldstone,
-# DSS-43 at Canberra, SvalSat antenna farm, etc.) — good enough for access-
-# pass geometry to the second.
+# DSS-43 at Canberra, SvalSat antenna farm, etc.) — accurate enough for
+# access-pass geometry to the second.
 _STATION_COORDS: dict[str, tuple[float, float, float]] = {
     "madrid": (40.4256, -4.2503, 0.834),
     "goldstone": (35.4267, -116.8900, 1.036),
@@ -116,8 +116,8 @@ class AccessWindowsResponse(BaseModel):
         ...,
         description=(
             "Complete (AOS, peak, LOS) passes inside the requested window. Passes that "
-            "begin before `start` or end after `end` are omitted (v0.1 emits complete "
-            "triples only). Range-filtered out passes are also omitted."
+            "begin before `start` or end after `end` are omitted — only complete "
+            "triples are emitted. Range-filtered passes are also omitted."
         ),
     )
 
@@ -197,8 +197,8 @@ def _grouped_triples(times: Any, events: Any) -> list[tuple[Any, Any, Any]]:
 
     skyfield interleaves event codes 0 / 1 / 2 (rise / culminate / set) but
     can emit partial sequences at window edges — e.g. starting with a `set`
-    if the satellite was already up at the window's start. The v0.1 surface
-    only emits complete passes; partial passes are dropped silently.
+    if the satellite was already up at the window's start. Only complete
+    passes are emitted; partial passes are dropped silently.
     """
     triples: list[tuple[Any, Any, Any]] = []
     buffer: list[tuple[Any, int]] = []
