@@ -29,9 +29,12 @@ from astrodynamics_mcp.schemas.base import Epoch, StateVector
 from astrodynamics_mcp.server import register_tool
 from astrodynamics_mcp.units import Quantity, QuantityVector
 
-# v0.1 body table: μ (km³/s²) and equatorial radius (km). Values from
-# JPL ssd.jpl.nasa.gov; radius is the IAU equatorial radius. Coverage is
-# the same eight bodies the issue calls out — no Sun, no Mercury, no Pluto.
+# Body parameters: μ (km³/s²) and equatorial radius (km). Values from
+# JPL ssd.jpl.nasa.gov; radius is the IAU equatorial radius. Sun, Mercury,
+# and Pluto are deliberately absent — the tool is for planetocentric
+# flybys of major destination bodies, which excludes the Sun (heliocentric
+# is not a flyby) and bodies for which planetocentric mission design is
+# vanishingly rare.
 _BODY_PARAMETERS: dict[str, tuple[float, float]] = {
     "earth": (3.986004418e5, 6378.137),
     "mars": (4.282837e4, 3396.2),
@@ -334,9 +337,9 @@ async def bplane_target(
     mu, _radius_km = _BODY_PARAMETERS[body_key]
     btr_target = _validate_target_scalar(target_btr_km, field="target_btr_km")
     btt_target = _validate_target_scalar(target_btt_km, field="target_btt_km")
-    # `target_epoch` is consumed by the schema's Epoch validator; the v0.1
-    # solver applies its Δv at state.epoch and carries target_epoch only
-    # for traceability. Referenced via `del` so mypy/ruff see it used.
+    # `target_epoch` is consumed by the schema's Epoch validator; the
+    # linear solver applies its Δv at state.epoch and carries target_epoch
+    # only for traceability. Referenced via `del` so mypy/ruff see it used.
     del target_epoch
 
     r_vec, v_vec = _normalise_state(state)

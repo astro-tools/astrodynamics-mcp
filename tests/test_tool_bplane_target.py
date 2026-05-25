@@ -403,7 +403,7 @@ class TestBodyTable:
         ["earth", "mars", "venus", "jupiter", "saturn", "uranus", "neptune", "moon"],
     )
     async def test_every_supported_body_resolves(self, body: str) -> None:
-        """Each v0.1 body has μ and a corresponding hyperbolic flyby works end-to-end."""
+        """Each supported body has μ and a corresponding hyperbolic flyby works end-to-end."""
         mu = _BODY_PARAMETERS[body][0]
         # Construct a hyperbolic state appropriate to the body: r ~ 3x the
         # body's radius, v slightly above local escape speed.
