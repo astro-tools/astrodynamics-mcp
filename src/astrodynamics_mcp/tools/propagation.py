@@ -127,47 +127,19 @@ def _transform_to_frame(
     target: Frame,
     epoch: str,
 ) -> StateVector:
-    """Convert a TEME (r, v) at *epoch_time* into *target* via astropy."""
-    import astropy.units as u
-    from astropy.coordinates import (
-        CIRS,
-        GCRS,
-        ICRS,
-        ITRS,
-        TEME,
-        CartesianDifferential,
-        CartesianRepresentation,
+    """Convert a TEME (r, v) at *epoch_time* into *target* via the shared helper."""
+    from astrodynamics_mcp.tools._astropy_frames import transform_state
+
+    r_out, v_out = transform_state(
+        r_teme,
+        v_teme,
+        from_frame=Frame.TEME,
+        to_frame=target,
+        epoch_time=epoch_time,
     )
-
-    # Build the TEME representation with both position and velocity so the
-    # frame transform carries velocity through. A position-only Representation
-    # silently drops velocity at the target end.
-    r_rep = CartesianRepresentation(r_teme[0] * u.km, r_teme[1] * u.km, r_teme[2] * u.km)
-    v_diff = CartesianDifferential(
-        v_teme[0] * u.km / u.s, v_teme[1] * u.km / u.s, v_teme[2] * u.km / u.s
-    )
-    rep = r_rep.with_differentials(v_diff)
-    teme_state = TEME(rep, obstime=epoch_time)
-
-    target_cls: Any = {
-        Frame.ICRF: ICRS,
-        Frame.GCRS: GCRS,
-        Frame.ITRS: ITRS,
-        Frame.CIRS: CIRS,
-    }[target]
-    # ICRS is barycentric and does not take obstime; the others are
-    # epoch-dependent and need it on the target frame as well.
-    if target is Frame.ICRF:
-        out = teme_state.transform_to(target_cls())
-    else:
-        out = teme_state.transform_to(target_cls(obstime=epoch_time))
-
-    cartesian = out.cartesian
-    r_out = cartesian.xyz.to_value(u.km)
-    v_out = cartesian.differentials["s"].d_xyz.to_value(u.km / u.s)
     return StateVector(
-        r=QuantityVector(value=[float(r_out[0]), float(r_out[1]), float(r_out[2])], unit="km"),
-        v=QuantityVector(value=[float(v_out[0]), float(v_out[1]), float(v_out[2])], unit="km/s"),
+        r=QuantityVector(value=r_out, unit="km"),
+        v=QuantityVector(value=v_out, unit="km/s"),
         frame=target,
         epoch=epoch,
     )
