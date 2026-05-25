@@ -19,7 +19,7 @@ from astrodynamics_mcp.server_lint import (
 
 
 class TestRealServerSurfaceIsClean:
-    """The real module-level instance has no tools at v0.1 → vacuous pass."""
+    """Every tool registered against the real module-level instance must pass lint."""
 
     async def test_v01_surface_passes_lint(self) -> None:
         tools = await real_mcp.list_tools()

@@ -41,10 +41,11 @@ class TestServerInstance:
     async def test_module_singleton_is_fastmcp(self) -> None:
         assert isinstance(mcp, FastMCP)
 
-    async def test_v01_tool_list_is_empty(self) -> None:
-        """No v0.1 tools register against the real instance yet."""
+    async def test_v01_surface_contains_registered_tools(self) -> None:
+        """The real module-level instance carries every tool registered on import."""
         tools = await mcp.list_tools()
-        assert tools == []
+        tool_names = {t.name for t in tools}
+        assert "tle_lookup" in tool_names
 
 
 class TestEnvelopeSerialisation:

@@ -23,6 +23,7 @@ from astrodynamics_mcp.schemas.base import (
     ObserverCoordinates,
     StateVector,
 )
+from astrodynamics_mcp.tools.tle import TleLookupResponse
 from astrodynamics_mcp.units import (
     Quantity,
     QuantityVector,
@@ -38,6 +39,8 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
     StateVector,
     Interval,
     ObserverCoordinates,
+    # Tool output schemas.
+    TleLookupResponse,
 ]
 
 
