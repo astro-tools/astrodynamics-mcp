@@ -79,7 +79,7 @@ make sure the work belongs here.
 - **Lambert's problem →** [`lamberthub`](https://github.com/jorgepiloto/lamberthub).
 - **Ground-station / observer geometry →** [`skyfield`](https://rhodesmill.org/skyfield/).
 - **Time scales and coordinate frames →** [`astropy`](https://www.astropy.org/).
-- **Porkchop and interplanetary mission design →** [`interplanetary-porkchop`](https://github.com/mlewicki/interplanetary-porkchop).
+- **Porkchop and interplanetary mission design →** composed in-repo from [`lamberthub`](https://github.com/jorgepiloto/lamberthub) and the JPL Horizons adapter; no single upstream.
 - **Running a GMAT mission →** v0.2 `[gmat]` extra wraps [`gmat-run`](https://github.com/astro-tools/gmat-run) and [`gmat-sweep`](https://github.com/astro-tools/gmat-sweep).
 - **SPICE kernels and ephemerides →** v0.3 `[spice]` extra wraps [`spiceypy`](https://github.com/AndrewAnnex/SpiceyPy).
 - **Agent orchestration (LangGraph, AutoGen, CrewAI) →** out of scope; we expose
