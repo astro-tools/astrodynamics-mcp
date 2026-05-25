@@ -23,6 +23,7 @@ from astrodynamics_mcp.schemas.base import (
     ObserverCoordinates,
     StateVector,
 )
+from astrodynamics_mcp.tools.propagation import Sgp4PropagateResponse
 from astrodynamics_mcp.tools.tle import TleLookupResponse
 from astrodynamics_mcp.units import (
     Quantity,
@@ -41,6 +42,7 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
     ObserverCoordinates,
     # Tool output schemas.
     TleLookupResponse,
+    Sgp4PropagateResponse,
 ]
 
 
