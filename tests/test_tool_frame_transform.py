@@ -14,10 +14,10 @@ from typing import ClassVar
 import pytest
 from mcp.server.fastmcp.exceptions import ToolError
 
+from astrodynamics_mcp.errors import InvalidInputError
 from astrodynamics_mcp.schemas.base import Frame, StateVector
 from astrodynamics_mcp.server import mcp
 from astrodynamics_mcp.server_lint import check_tool_descriptions
-from astrodynamics_mcp.errors import InvalidInputError
 from astrodynamics_mcp.tools._astropy_frames import (
     EARTH_ROTATING_FRAMES,
     SUPPORTED_FRAMES,
@@ -229,7 +229,10 @@ class TestAstropyFramesHelper:
         assert excinfo.value.code == "invalid_input.unsupported_frame_transform"
         assert frame.value in str(excinfo.value)
 
-    @pytest.mark.parametrize("frame", sorted(SUPPORTED_FRAMES, key=lambda f: f.value))
+    @pytest.mark.parametrize(
+        "frame",
+        [Frame.ICRF, Frame.GCRS, Frame.ITRS, Frame.TEME, Frame.CIRS, Frame.IAU_EARTH],
+    )
     def test_supported_frames_resolve_to_astropy_class(self, frame: Frame) -> None:
         astropy_cls, takes_obstime = _astropy_frame_class(frame)
         assert astropy_cls is not None
