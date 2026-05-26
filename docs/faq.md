@@ -92,9 +92,7 @@ Four layers of validation:
   is the regression contract on tool-description quality.
 
 Together these guard against the numerical, schema, and tool-description
-regression modes independently. See the
-[charter](https://github.com/astro-tools/astrodynamics-mcp/blob/main/README.md)'s
-validation section for the full reasoning.
+regression modes independently.
 
 ## How are upstream-library versions pinned?
 
