@@ -1,10 +1,11 @@
-"""Render the eval-suite PR-comment markdown and enforce the pass threshold.
+"""Render the eval-suite markdown report and enforce the pass threshold.
 
 Reads the most recent Inspect AI log under ``--log-dir``, extracts the
 hybrid scorer's overall accuracy and per-sample failure reasons, and:
 
-1. Emits a markdown report on stdout (consumed by the ``actions/github-script``
-   step that posts a PR comment).
+1. Emits a markdown report on stdout. The eval workflow redirects this
+   into ``GITHUB_STEP_SUMMARY`` so the score lands on the workflow run's
+   Summary panel.
 2. Exits with code 0 when accuracy is at or above ``--threshold``, code 1
    otherwise. The workflow uses that exit code to fail the gate.
 
@@ -95,11 +96,11 @@ def collect_failures(log: Any) -> tuple[float, int, int, tuple[FailingPrompt, ..
 
 
 def render_no_log_markdown(reason: str) -> str:
-    """Render a stand-in PR comment when the eval crashed before producing a log.
+    """Render a stand-in report when the eval crashed before producing a log.
 
-    Returned even when :func:`main` exits with code 2 so the
-    ``actions/github-script`` step has a non-empty body to post — a
-    silent failure on the comment step would otherwise hide the error.
+    Returned even when :func:`main` exits with code 2 so the workflow's
+    run summary still gets a non-empty body — a silent failure would
+    otherwise hide the error behind an empty Summary panel.
     """
     return (
         "## Eval gate: ❌ ERROR\n"
@@ -114,7 +115,7 @@ def render_no_log_markdown(reason: str) -> str:
 
 
 def render_markdown(summary: EvalSummary, threshold: float) -> str:
-    """Render the PR-comment markdown body. Pure function; easy to unit-test."""
+    """Render the markdown report body. Pure function; easy to unit-test."""
     passed_gate = summary.accuracy >= threshold
     status = "✅ PASS" if passed_gate else "❌ FAIL"
 
@@ -188,8 +189,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (FileNotFoundError, ValueError) as exc:
         sys.stderr.write(f"ERROR: {exc}\n")
         # No log means we can't produce a meaningful report; emit a
-        # PR-comment-friendly error block on stdout anyway so the
-        # downstream github-script step has a body to post.
+        # markdown error block on stdout anyway so the workflow's run
+        # summary surfaces the failure rather than appearing empty.
         sys.stdout.write(render_no_log_markdown(str(exc)))
         return 2
 

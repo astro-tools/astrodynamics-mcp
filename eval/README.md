@@ -190,25 +190,21 @@ CI policy:
 ## CI gate behaviour
 
 `.github/workflows/eval.yml` runs the suite against
-`openai-api/github/openai/gpt-4o`, posts a markdown summary as a PR
-comment via `eval/_ci_report.py`, and uploads the Inspect log as a
+`openai-api/github/openai/gpt-4o` and uploads the Inspect log as a
 workflow artefact. The full 30-prompt suite is the default; the
 `workflow_dispatch` trigger accepts an optional `tier` filter that
 delegates to `astrodynamics_mcp_eval_subset` for tier-scoped runs.
 
-**Trigger:** the workflow is currently `workflow_dispatch`-only — fire
-it manually from the Actions tab when a PR or main-branch state
-warrants a fresh score. Automatic triggers (push to main, cron) will
-be re-enabled once the gate's run-to-run stability is established.
+**Trigger:** the workflow is `workflow_dispatch`-only — fire it
+manually from the Actions tab. Automatic triggers (push to main, cron)
+can be re-enabled later once the gate's run-to-run stability is
+established.
 
 **Where the score lives.** After a run completes:
 
-- The full markdown report is appended to the run's **Summary** page —
-  the panel at the top of the Actions run view. This is the primary
-  place to read the score for a manual run.
-- A `PR comment` is also posted automatically when the workflow runs
-  on a `pull_request` event (currently disabled but kept in the
-  workflow for future re-enablement).
+- The full markdown report appears on the run's **Summary** page — the
+  panel at the top of the Actions run view. `eval/_ci_report.py` writes
+  it to `GITHUB_STEP_SUMMARY` directly.
 - The raw Inspect AI log uploads as the `inspect-eval-logs` workflow
   artefact (14-day retention). Download it and run
   `uv run inspect view logs/` locally to replay the conversation
@@ -220,10 +216,6 @@ back to a `MODELS_PAT` repo secret if you've created one. A pre-flight
 probe step calls `gpt-4o` with a 2-token PING and fails fast with the
 HTTP status if neither token has access — this surfaces auth issues
 clearly rather than burying them in the Inspect AI stack trace.
-
-The Inspect AI log is uploaded as the `inspect-eval-logs` workflow
-artefact (14-day retention) so failure investigations can replay the
-conversation.
 
 ### Enabling the workflow token
 
@@ -245,11 +237,11 @@ needed.
 observations above so a single-prompt flake doesn't flip the gate. The
 threshold is revisited once a multi-run history exists.
 
-The PR-comment renderer (`eval/_ci_report.py`) shows the overall
-accuracy, lists the first 15 failing prompts with their short failure
-mode (trace fail / functional fail / both) plus the first reason from
-each side, and links to the workflow artefact for the full Inspect log.
-The script's exit code drives the workflow's pass/fail step: 0 = above
+The report renderer (`eval/_ci_report.py`) shows the overall accuracy,
+lists the first 15 failing prompts with their short failure mode
+(trace fail / functional fail / both) plus the first reason from each
+side, and links to the workflow artefact for the full Inspect log. The
+script's exit code drives the workflow's pass/fail step: 0 = above
 threshold, 1 = below, 2 = no log produced (the eval crashed).
 
 ## Running against other providers

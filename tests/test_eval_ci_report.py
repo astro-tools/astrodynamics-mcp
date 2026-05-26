@@ -215,7 +215,7 @@ class TestMainCli:
         rc = main(["--log-dir", str(tmp_path), "--threshold", "0.8"])
         assert rc == 2
         captured = capsys.readouterr()
-        # Body lands on stdout (PR comment source); reason on stderr (workflow log).
+        # Body lands on stdout (run-summary source); reason on stderr (workflow log).
         assert "ERROR" in captured.out
         assert "ERROR" in captured.err
 

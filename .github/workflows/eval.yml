@@ -15,7 +15,7 @@ on:
 
 concurrency:
   group: eval-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   eval:
@@ -24,10 +24,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       # `models: read` lets the workflow call api.github.com/inference
-      # via the auto-generated GITHUB_TOKEN. `pull-requests: write` is
-      # only used by the comment step.
+      # via the auto-generated GITHUB_TOKEN.
       models: read
-      pull-requests: write
       contents: read
     steps:
       - uses: actions/checkout@v4
@@ -127,33 +125,17 @@ jobs:
       - name: Generate report
         id: report
         if: always()
-        # `set +e` so we capture both stdout and the exit code; the
-        # workflow fails on the exit code in the dedicated step below
-        # so the report is posted even when the gate fails. The report
-        # body is also appended to GITHUB_STEP_SUMMARY so it appears at
-        # the top of the workflow run page — that's where manual
-        # workflow_dispatch runs (no PR context) read the score.
+        # `set +e` so we capture the exit code; the workflow fails on it
+        # in the dedicated step below so the report still lands in the
+        # run summary even when the gate fails. The report body is
+        # appended to GITHUB_STEP_SUMMARY — that's where the score
+        # appears at the top of the workflow run page.
         run: |
           set +e
           uv run python eval/_ci_report.py \
             --log-dir logs \
-            --threshold 0.80 > /tmp/eval_report.md
+            --threshold 0.80 >> "$GITHUB_STEP_SUMMARY"
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
-          cat /tmp/eval_report.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Post PR comment
-        if: github.event_name == 'pull_request' && always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const body = fs.readFileSync('/tmp/eval_report.md', 'utf8');
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body,
-            });
 
       - name: Enforce threshold
         # The report step uses `set +e`, so we fail here based on its exit code.
