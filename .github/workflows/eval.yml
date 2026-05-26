@@ -1,7 +1,9 @@
 name: Eval
 
 on:
-  pull_request:
+  # Manual-only for now while the gate is being shaken down. Once it
+  # passes consistently, add `push: branches: [main]` and a weekly
+  # cron so regressions surface without per-PR cost.
   workflow_dispatch:
     inputs:
       tier:

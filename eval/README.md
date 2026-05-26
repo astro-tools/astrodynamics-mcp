@@ -190,11 +190,16 @@ CI policy:
 ## CI gate behaviour
 
 `.github/workflows/eval.yml` runs the suite against
-`openai-api/github/openai/gpt-4o` on every pull request, then posts a
-markdown summary as a PR comment via `eval/_ci_report.py`. The full
-30-prompt suite runs both on `pull_request` and on `workflow_dispatch`;
-the dispatch trigger accepts an optional `tier` filter that delegates to
-`astrodynamics_mcp_eval_subset` for tier-scoped runs.
+`openai-api/github/openai/gpt-4o`, posts a markdown summary as a PR
+comment via `eval/_ci_report.py`, and uploads the Inspect log as a
+workflow artefact. The full 30-prompt suite is the default; the
+`workflow_dispatch` trigger accepts an optional `tier` filter that
+delegates to `astrodynamics_mcp_eval_subset` for tier-scoped runs.
+
+**Trigger:** the workflow is currently `workflow_dispatch`-only — fire
+it manually from the Actions tab when a PR or main-branch state
+warrants a fresh score. Automatic triggers (push to main, cron) will
+be re-enabled once the gate's run-to-run stability is established.
 
 Authentication uses the workflow's auto-generated `GITHUB_TOKEN` (with
 `permissions: models: read`) when it has GitHub Models access, falling
