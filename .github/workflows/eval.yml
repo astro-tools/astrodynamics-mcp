@@ -99,13 +99,13 @@ jobs:
           #     all samples (covers retries + tool-call turns); 1 below
           #     the 5-concurrent ceiling so a transient retry can fire
           #     without hitting the cap.
-          # * --fail-on-error 5     : tolerate up to 5 sample errors
-          #     before flagging the eval status as 'error'. When the
-          #     threshold is hit, Inspect AI cancels in-flight samples
-          #     (preserving remaining daily quota) but does not retro-
-          #     actively void samples that already scored — those still
-          #     count toward the report. Values > 1 are absolute counts;
-          #     values 0–1 are proportions.
+          # * --no-fail-on-error    : let every sample run to completion
+          #     even when others error. Errored samples count against
+          #     accuracy in eval/_ci_report.py (zero-scored), so the
+          #     gate still fails them; we just don't want to lose data
+          #     from in-flight samples being cancelled when an error
+          #     threshold trips. Inspect AI's default ('fail on any
+          #     error') is too aggressive for a survey gate.
           if [ -n "${{ inputs.tier }}" ]; then
             uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval_subset \
               -T tier="${{ inputs.tier }}" \
@@ -113,7 +113,7 @@ jobs:
               -M strict_tools=false \
               --max-samples 3 \
               --max-connections 4 \
-              --fail-on-error 5 \
+              --no-fail-on-error \
               --temperature 0 \
               --log-dir logs
           else
@@ -122,7 +122,7 @@ jobs:
               -M strict_tools=false \
               --max-samples 3 \
               --max-connections 4 \
-              --fail-on-error 5 \
+              --no-fail-on-error \
               --temperature 0 \
               --log-dir logs
           fi

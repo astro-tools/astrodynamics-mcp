@@ -178,8 +178,10 @@ Two practical implications:
   5-concurrent ceiling. `.github/workflows/eval.yml` uses
   `--max-samples 3 --max-connections 4`, sitting 1–2 slots below the
   cap so multi-turn tool-call bursts within a sample don't push over.
-  `--fail-on-error 5` aborts the run once a quota-blown state is
-  obvious, preserving the rest of the day's quota.
+  `--no-fail-on-error` lets every sample run to completion even when
+  others error; errored samples already count as zero-scored failures
+  in the report, so the gate fails through accuracy rather than
+  through in-flight cancellation losing diagnostic data.
 
 Response-header rate limits (`x-ratelimit-limit-requests` and the like)
 report large bucket sizes that **do not match** the published per-plan
