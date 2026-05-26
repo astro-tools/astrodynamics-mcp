@@ -38,7 +38,7 @@ frame; the tool transforms via astropy with the correct per-epoch
 The model calls `tle_lookup` with `query="HUBBLE"` (or NORAD ID `20580`).
 It then calls `access_windows` with:
 
-- `observer={"name": "madrid"}` — the v0.1 named-station registry covers
+- `observer={"name": "madrid"}` — the named-station registry covers
   Madrid, Goldstone, Canberra, Svalbard, Wallops, Esrange, GSFC, and JPL.
   Pass `observer={"lat": {...}, "lon": {...}, "alt": {...}}` for anything
   else.
@@ -80,7 +80,7 @@ the Lambert solves across the (depart × arrive) grid, and by default
 returns the `summary` shape: the best cell (lowest total Δv), the top
 five cells, and an ASCII contour of the C3 grid. Pass `output="full"` to
 receive every feasible cell. See
-[Output shaping](design/output-shaping.md) for why the default trims the
+[Output shaping](output-shaping.md) for why the default trims the
 grid.
 
 Open the best cell from the summary and feed it straight back into a

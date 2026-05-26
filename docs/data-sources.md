@@ -1,6 +1,6 @@
 # Data sources
 
-The v0.1 tool surface reaches three external no-auth data sources. Each
+The current tool surface reaches three external no-auth data sources. Each
 sits behind an adapter that caches responses on disk so repeated tool
 calls don't hammer the upstream, and each handles network failure by
 falling back to a cached value flagged `stale=true` rather than
@@ -12,8 +12,8 @@ silently returning nothing.
 current TLEs. `tle_lookup` calls the `gp.php` endpoint with the
 caller-supplied query routed to the right CelesTrak parameter — NORAD
 catalogue ID (`CATNR=`), satellite name (`NAME=`), or one of the
-recognised group / category keywords (`GROUP=`). The recognised groups at
-v0.1 are listed in the [tool's description](tool-reference.md#tle_lookup).
+recognised group / category keywords (`GROUP=`). The recognised groups
+are listed in the [tool's description](tool-reference.md#tle_lookup).
 
 CelesTrak honours `If-Modified-Since` for most catalogue endpoints. The
 adapter respects the upstream's soft per-IP cap (~100 MB/day) by caching

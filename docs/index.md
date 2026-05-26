@@ -5,8 +5,8 @@ custom agents) authoritative astrodynamics tools — TLE/SGP4, Lambert,
 ground-station access, time/frame conversions, porkchop, B-plane.
 
 !!! warning "Pre-alpha"
-    The public surface is not yet usable. The v0.1 milestone tracks the
-    work needed to ship the first PyPI release; see the
+    The public surface is not yet usable. The current milestone tracks
+    the work needed to ship the first PyPI release; see the
     [issue tracker](https://github.com/astro-tools/astrodynamics-mcp/issues)
     for progress.
 
@@ -25,8 +25,8 @@ single-satellite questions: `tle_lookup`, `sgp4_propagate`, `lambert_solve`,
 
 ## Quick start
 
-Install the server (pre-alpha — not yet on PyPI; track the v0.1 milestone on
-the [issue tracker](https://github.com/astro-tools/astrodynamics-mcp/issues)):
+Install the server (pre-alpha — not yet on PyPI; track progress on the
+[issue tracker](https://github.com/astro-tools/astrodynamics-mcp/issues)):
 
 ```bash
 uv tool install astrodynamics-mcp     # or: pipx install astrodynamics-mcp

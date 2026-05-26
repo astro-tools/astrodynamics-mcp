@@ -60,8 +60,7 @@ nav:
   - Eval suite: eval-suite.md
   - Supported clients: supported-clients.md
   - FAQ: faq.md
-  - Design:
-    - Output shaping: design/output-shaping.md
+  - Output shaping: output-shaping.md
 
 markdown_extensions:
   - admonition

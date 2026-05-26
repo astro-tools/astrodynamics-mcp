@@ -10,7 +10,7 @@ payload from a 30×30 porkchop scan (~250 KB / ~63k tokens) or a 24-hour
 fail with `413 tokens_limit_reached` when the model is asked to interpret
 the result.
 
-The other v0.1 tools (`bplane_target`, `lambert_*`, `tle_lookup`,
+The other tools (`bplane_target`, `lambert_*`, `tle_lookup`,
 `time_convert`, `frame_transform`, `access_windows`, single-state
 `sgp4`) stay comfortably under that cap — none exceed ~6 KB per call —
 so the convention below applies only to tools whose output is
