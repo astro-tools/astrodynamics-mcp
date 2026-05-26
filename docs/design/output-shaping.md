@@ -73,6 +73,4 @@ discriminated union for the two response shapes, summary chosen so a
 
 A future option — MCP resource attachment — could let `output="full"`
 attach the bulk payload as a separate resource the client fetches on
-demand, rather than carrying it inline. That layer is out of scope for
-v0.1; revisit when a downstream consumer materialises that benefits from
-the resource model (paper figures, agent flows that explicitly opt in).
+demand, rather than carrying it inline.
