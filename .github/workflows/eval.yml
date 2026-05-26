@@ -1,0 +1,105 @@
+name: Eval
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Optional tier filter (single_tool | sequential | planning). Empty runs the full suite."
+        required: false
+        default: ""
+        type: choice
+        options: ['', 'single_tool', 'sequential', 'planning']
+
+concurrency:
+  group: eval-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  eval:
+    name: eval
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # `models: read` lets the workflow call api.github.com/inference
+      # via the auto-generated GITHUB_TOKEN. `pull-requests: write` is
+      # only used by the comment step.
+      models: read
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --all-groups
+
+      - name: Run eval suite
+        env:
+          # The openai-api/github/* provider in Inspect AI derives env vars
+          # from the segment after the slash; here `github` maps to GITHUB_*.
+          GITHUB_API_KEY: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_BASE_URL: https://models.github.ai/inference
+        run: |
+          if [ -n "${{ inputs.tier }}" ]; then
+            uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval_subset \
+              -T tier="${{ inputs.tier }}" \
+              --model openai-api/github/openai/gpt-4o \
+              --temperature 0 \
+              --log-dir logs
+          else
+            uv run inspect eval eval/tasks.py \
+              --model openai-api/github/openai/gpt-4o \
+              --temperature 0 \
+              --log-dir logs
+          fi
+
+      - name: Upload Inspect log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inspect-eval-logs
+          path: logs/
+          retention-days: 14
+
+      - name: Generate PR-comment report
+        id: report
+        if: always()
+        # `set +e` so we capture both stdout and the exit code; the
+        # workflow fails on the exit code in the dedicated step below
+        # so the comment is posted even when the gate fails.
+        run: |
+          set +e
+          uv run python eval/_ci_report.py \
+            --log-dir logs \
+            --threshold 0.80 > /tmp/eval_report.md
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Post PR comment
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/eval_report.md', 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Enforce threshold
+        # The report step uses `set +e`, so we fail here based on its exit code.
+        # Code 0 = passed gate, 1 = below threshold, 2 = missing or empty log.
+        if: steps.report.outputs.exit_code != '0'
+        run: |
+          echo "Eval gate failed: _ci_report.py exited with ${{ steps.report.outputs.exit_code }}."
+          exit 1

@@ -1,0 +1,231 @@
+"""Tests for ``eval/_ci_report.py``'s markdown renderer and failure collector."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+from eval._ci_report import (
+    EvalSummary,
+    FailingPrompt,
+    collect_failures,
+    main,
+    render_markdown,
+)
+
+
+def _fake_log(
+    *,
+    model: str = "openai-api/github/openai/gpt-4o",
+    accuracy: float = 1.0,
+    samples: list[Any] | None = None,
+) -> Any:
+    """Build a SimpleNamespace mirroring the slice of EvalLog the helper reads.
+
+    The helper deliberately treats the log as ``Any`` to avoid coupling to
+    Inspect AI's internal types — these fakes are enough.
+    """
+    n = len(samples or [])
+    scorer = SimpleNamespace(
+        scored_samples=n,
+        metrics={"accuracy": SimpleNamespace(value=accuracy)},
+    )
+    return SimpleNamespace(
+        eval=SimpleNamespace(model=model),
+        results=SimpleNamespace(scores=[scorer]),
+        samples=samples,
+    )
+
+
+def _fake_sample(
+    sample_id: str,
+    *,
+    value: float,
+    trace_passed: bool = True,
+    functional_passed: bool = True,
+    trace_reasons: tuple[str, ...] = (),
+    functional_reasons: tuple[str, ...] = (),
+) -> Any:
+    score = SimpleNamespace(
+        value=value,
+        metadata={
+            "trace_passed": trace_passed,
+            "functional_passed": functional_passed,
+            "trace_failure_reasons": list(trace_reasons),
+            "functional_failure_reasons": list(functional_reasons),
+        },
+    )
+    return SimpleNamespace(id=sample_id, scores={"hybrid_scorer": score})
+
+
+class TestCollectFailures:
+    def test_all_passing(self) -> None:
+        log = _fake_log(
+            accuracy=1.0,
+            samples=[_fake_sample("a", value=1.0), _fake_sample("b", value=1.0)],
+        )
+        accuracy, n_samples, n_passed, failing = collect_failures(log)
+        assert accuracy == 1.0
+        assert n_samples == 2
+        assert n_passed == 2
+        assert failing == ()
+
+    def test_partial_failures(self) -> None:
+        log = _fake_log(
+            accuracy=0.5,
+            samples=[
+                _fake_sample("a", value=1.0),
+                _fake_sample(
+                    "b",
+                    value=0.0,
+                    trace_passed=False,
+                    functional_passed=False,
+                    trace_reasons=("step 0 (tle_lookup): no matching call",),
+                    functional_reasons=("$.results: not found",),
+                ),
+            ],
+        )
+        accuracy, n_samples, n_passed, failing = collect_failures(log)
+        assert accuracy == 0.5
+        assert n_samples == 2
+        assert n_passed == 1
+        assert len(failing) == 1
+        f = failing[0]
+        assert f.sample_id == "b"
+        assert f.trace_passed is False
+        assert f.functional_passed is False
+
+    def test_passes_score_not_one(self) -> None:
+        # Score==1.0 means pass in our hybrid scorer; anything else fails.
+        log = _fake_log(
+            accuracy=0.0,
+            samples=[
+                _fake_sample(
+                    "a",
+                    value=0.0,
+                    trace_passed=True,
+                    functional_passed=False,
+                    functional_reasons=("$.results[0].norad_id: expected '25544', got '00000'",),
+                )
+            ],
+        )
+        _, _, _, failing = collect_failures(log)
+        assert len(failing) == 1
+        assert failing[0].trace_passed is True
+        assert failing[0].functional_passed is False
+
+    def test_empty_log_raises(self) -> None:
+        log = SimpleNamespace(results=None, samples=None)
+        with pytest.raises(ValueError, match="no scorer results"):
+            collect_failures(log)
+
+
+class TestRenderMarkdown:
+    def _summary(self, **overrides: Any) -> EvalSummary:
+        defaults: dict[str, Any] = {
+            "model": "openai-api/github/openai/gpt-4o",
+            "accuracy": 1.0,
+            "n_samples": 30,
+            "n_passed": 30,
+            "failing": (),
+        }
+        defaults.update(overrides)
+        return EvalSummary(**defaults)
+
+    def test_pass_path(self) -> None:
+        md = render_markdown(self._summary(), threshold=0.80)
+        assert "## Eval gate: ✅ PASS" in md
+        assert "**Accuracy:** 1.000" in md
+        assert "Every prompt passed" in md
+
+    def test_fail_path_lists_failures(self) -> None:
+        failing = (
+            FailingPrompt(
+                sample_id="tle_lookup_iss_by_norad_id",
+                trace_passed=False,
+                functional_passed=True,
+                trace_reasons=("step 0 (tle_lookup): no matching call",),
+                functional_reasons=(),
+            ),
+            FailingPrompt(
+                sample_id="sgp4_propagate_iss_default_teme",
+                trace_passed=True,
+                functional_passed=False,
+                trace_reasons=(),
+                functional_reasons=("$.states[0].r.value: expected l2_in_range=[6500, 7500]",),
+            ),
+        )
+        summary = self._summary(accuracy=28 / 30, n_passed=28, failing=failing)
+        md = render_markdown(summary, threshold=0.80)
+        assert "## Eval gate: ✅ PASS" in md  # 28/30 = 0.93 still above 0.80
+        assert "tle_lookup_iss_by_norad_id" in md
+        assert "trace fail" in md
+        assert "functional fail" in md
+        assert "step 0 (tle_lookup): no matching call" in md
+        assert "expected l2_in_range" in md
+
+    def test_below_threshold_marks_fail(self) -> None:
+        failing = tuple(
+            FailingPrompt(
+                sample_id=f"prompt_{i}",
+                trace_passed=False,
+                functional_passed=False,
+                trace_reasons=("trace bust",),
+                functional_reasons=(),
+            )
+            for i in range(10)
+        )
+        summary = self._summary(accuracy=20 / 30, n_passed=20, failing=failing)
+        md = render_markdown(summary, threshold=0.80)
+        assert "## Eval gate: ❌ FAIL" in md
+
+    def test_truncates_long_failure_list(self) -> None:
+        failing = tuple(
+            FailingPrompt(
+                sample_id=f"prompt_{i}",
+                trace_passed=False,
+                functional_passed=False,
+                trace_reasons=("trace bust",),
+                functional_reasons=(),
+            )
+            for i in range(25)
+        )
+        summary = self._summary(accuracy=5 / 30, n_passed=5, failing=failing)
+        md = render_markdown(summary, threshold=0.80)
+        # Truncation marker present, and not every prompt is in the body.
+        assert "and 10 more" in md
+        assert "`prompt_0`" in md
+        assert "`prompt_24`" not in md
+
+
+class TestMainCli:
+    def test_missing_log_dir_returns_two(self, tmp_path: Path) -> None:
+        rc = main(["--log-dir", str(tmp_path), "--threshold", "0.8"])
+        assert rc == 2
+
+    def test_threshold_pass_returns_zero(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Stub _build_summary_from_log_dir so we don't need a real .eval file.
+        from eval import _ci_report
+
+        def stub(_log_dir: Path) -> EvalSummary:
+            return EvalSummary(model="x", accuracy=0.9, n_samples=30, n_passed=27, failing=())
+
+        monkeypatch.setattr(_ci_report, "_build_summary_from_log_dir", stub)
+        rc = main(["--log-dir", str(tmp_path), "--threshold", "0.80"])
+        assert rc == 0
+
+    def test_threshold_fail_returns_one(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from eval import _ci_report
+
+        def stub(_log_dir: Path) -> EvalSummary:
+            return EvalSummary(model="x", accuracy=0.5, n_samples=30, n_passed=15, failing=())
+
+        monkeypatch.setattr(_ci_report, "_build_summary_from_log_dir", stub)
+        rc = main(["--log-dir", str(tmp_path), "--threshold", "0.80"])
+        assert rc == 1

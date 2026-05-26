@@ -189,16 +189,29 @@ CI policy:
 
 ## CI gate behaviour
 
-The per-PR eval workflow runs the suite against
-`openai-api/github/openai/gpt-4o` on every pull request and posts the
-score as a PR comment. The full 30-prompt suite runs both on
-`pull_request` and on `workflow_dispatch`; subsetting (via the
-`astrodynamics_mcp_eval_subset` task) is kept available in case rate
-limits tighten in future, but is not used at the observed limits.
+`.github/workflows/eval.yml` runs the suite against
+`openai-api/github/openai/gpt-4o` on every pull request, then posts a
+markdown summary as a PR comment via `eval/_ci_report.py`. The full
+30-prompt suite runs both on `pull_request` and on `workflow_dispatch`;
+the dispatch trigger accepts an optional `tier` filter that delegates to
+`astrodynamics_mcp_eval_subset` for tier-scoped runs.
+
+The workflow's auto-generated `GITHUB_TOKEN` (with
+`permissions: models: read`) is what authenticates against GitHub Models
+— no PATs, no secrets to manage. The Inspect AI log is uploaded as the
+`inspect-eval-logs` workflow artefact (14-day retention) so failure
+investigations can replay the conversation.
 
 **Pass threshold:** ≥80% of goldens. Calibrated against the determinism
 observations above so a single-prompt flake doesn't flip the gate. The
 threshold is revisited once a multi-run history exists.
+
+The PR-comment renderer (`eval/_ci_report.py`) shows the overall
+accuracy, lists the first 15 failing prompts with their short failure
+mode (trace fail / functional fail / both) plus the first reason from
+each side, and links to the workflow artefact for the full Inspect log.
+The script's exit code drives the workflow's pass/fail step: 0 = above
+threshold, 1 = below, 2 = no log produced (the eval crashed).
 
 ## Running against other providers
 
