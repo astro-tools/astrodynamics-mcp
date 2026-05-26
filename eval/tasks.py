@@ -101,10 +101,15 @@ def per_sample_react_solver() -> Solver:
             tools_source: Any = mcp_tools(server, tools=list(required))
         else:
             tools_source = server
+        # submit=False removes the react agent's "submit your answer" turn
+        # at the end of the conversation. Our scorer reads the final tool
+        # response directly off state.messages — the submit turn was wasted
+        # latency. Saves one LLM round-trip per sample.
         agent = react(
             name="astrodynamics_mcp_eval_agent",
             description="Agent under test for the astrodynamics-mcp eval suite.",
             tools=[tools_source],
+            submit=False,
         )
         agent_solver: Solver = as_solver(agent)
         return await agent_solver(state, generate)
