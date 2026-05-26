@@ -169,18 +169,37 @@ budget. Source:
 
 Two practical implications:
 
-- **Daily-cap fit.** At ~150 requests per run, the suite fits exactly
-  one run per UTC day on Free Low tier; the gate must be dispatched at
-  most once per day until the suite shrinks or the plan is upgraded.
-  High-tier models cap mid-run and produce no usable score.
-- **Concurrency cap.** Inspect AI flags must respect the
-  5-concurrent ceiling — hence `--max-samples 5 --max-connections 5`
-  in `.github/workflows/eval.yml`. Going over triggers 429s even with
-  daily quota remaining.
+- **Daily-cap fit.** At ~150 requests per run (estimate — count properly
+  on the next successful run; see below), the suite fits roughly one run
+  per UTC day on Free Low tier. The gate must be dispatched at most once
+  per day until the suite shrinks or the plan is upgraded. High-tier
+  models cap mid-run and produce no usable score.
+- **Concurrency cap.** Inspect AI flags must stay under the
+  5-concurrent ceiling. `.github/workflows/eval.yml` uses
+  `--max-samples 3 --max-connections 4`, sitting 1–2 slots below the
+  cap so multi-turn tool-call bursts within a sample don't push over.
+  `--fail-on-error 5` aborts the run once a quota-blown state is
+  obvious, preserving the rest of the day's quota.
 
 Response-header rate limits (`x-ratelimit-limit-requests` and the like)
 report large bucket sizes that **do not match** the published per-plan
 policy. Always size against the published table, not against headers.
+
+### Counting requests
+
+The "~150 requests per run" figure is an estimate from the suite's
+30 prompts × variable tool-call turns per prompt; it has not been
+measured against a clean successful run. Before the next change to
+suite size, concurrency, or model selection, count actual requests
+from the Inspect AI log:
+
+```bash
+inspect view logs/<latest>.eval --json | jq '[.samples[].messages[] | select(.role == "assistant")] | length'
+```
+
+If the real count is materially below 150, there is daily-cap headroom
+for retries and the concurrency settings can be relaxed; if it's at or
+above 150, the suite needs trimming or per-tier dispatch instead.
 
 ### Sampling parameters and determinism
 

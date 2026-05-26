@@ -91,28 +91,34 @@ jobs:
           # Flags explained:
           # * -M strict_tools=false : pydantic unions in our schemas use
           #     anyOf + $ref, which OpenAI strict-mode tool-calling rejects.
-          # * --max-samples 5       : run 5 prompts concurrently. GH Models
-          #     Free-plan Low-tier (gpt-4.1-mini) caps concurrent requests
-          #     at 5; going over triggers 429s even with daily quota
-          #     remaining. See eval/README.md for the full tier table.
-          # * --max-connections 5   : max in-flight HTTP requests across all
-          #     samples (covers retries + tool-call turns within a sample);
-          #     held at the same 5-concurrent ceiling.
+          # * --max-samples 3       : prompts processed concurrently. GH
+          #     Models Free-plan Low-tier (gpt-4.1-mini) caps concurrent
+          #     requests at 5; we sit 2 below the ceiling to absorb
+          #     multi-turn tool-call bursts within each sample.
+          # * --max-connections 4   : max in-flight HTTP requests across
+          #     all samples (covers retries + tool-call turns); 1 below
+          #     the 5-concurrent ceiling so a transient retry can fire
+          #     without hitting the cap.
+          # * --fail-on-error 5     : abort after 5 sample errors so a
+          #     quota-blown run stops burning the rest of the day's 150-
+          #     request cap on guaranteed failures.
           if [ -n "${{ inputs.tier }}" ]; then
             uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval_subset \
               -T tier="${{ inputs.tier }}" \
               --model openai-api/github/openai/gpt-4.1-mini \
               -M strict_tools=false \
-              --max-samples 5 \
-              --max-connections 5 \
+              --max-samples 3 \
+              --max-connections 4 \
+              --fail-on-error 5 \
               --temperature 0 \
               --log-dir logs
           else
             uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval \
               --model openai-api/github/openai/gpt-4.1-mini \
               -M strict_tools=false \
-              --max-samples 5 \
-              --max-connections 5 \
+              --max-samples 3 \
+              --max-connections 4 \
+              --fail-on-error 5 \
               --temperature 0 \
               --log-dir logs
           fi
