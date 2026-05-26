@@ -519,7 +519,7 @@ async def porkchop(
         )
 
     # Fetch ephemerides. DataSourceError from Horizons propagates unchanged
-    # (no partial grid; the tool is request-response per the charter).
+    # (no partial grid; the tool is request-response).
     dep_epochs, dep_positions, dep_velocities = await _fetch_body_ephemeris(
         dep_body, depart_start, depart_end
     )

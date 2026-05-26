@@ -4,7 +4,7 @@ A planning question: the LLM has to set up a two-parameter sweep, run
 it, and read the answer off the best cell. Demonstrates the `porkchop`
 tool with the default `output="summary"` shape — the response carries
 the best cell, the top-5 cells, and an ASCII contour, omitting the full
-grid (see [output shaping](../docs/design/output-shaping.md) for why).
+grid (see [output shaping](../docs/output-shaping.md) for why).
 
 The reproducible script lives at
 [`examples/run_example_03_mars_launch_window.py`](run_example_03_mars_launch_window.py).
@@ -111,7 +111,7 @@ mechanics demonstrated by [example 1](01_hohmann_dv.md).
 - The summary / full discriminated union is opt-in. The LLM can
   request `output="full"` if it needs every cell for a follow-up
   analysis; the default keeps small-context models inside their token
-  budget (see [output shaping](../docs/design/output-shaping.md)).
+  budget (see [output shaping](../docs/output-shaping.md)).
 - Body resolution accepts common names (`"earth"`, `"mars"`); the tool
   routes to the right Horizons body ID internally.
 - The follow-up `lambert_solve` pulls the best-cell trajectory at full

@@ -48,11 +48,10 @@ _BODY_MU: dict[str, float] = {
     "neptune": 6.836529e6,
 }
 
-# Algorithm-name → lamberthub callable, populated lazily on first call. Keys
-# reflect the v0.1 charter vocabulary: "izzo" is Izzo's 2015 paper;
-# "izzo_revisited" is the same algorithm under its colloquial name — kept
-# as a separate enum value so the LLM-facing string surface stays stable
-# across the wider literature.
+# Algorithm-name → lamberthub callable, populated lazily on first call.
+# "izzo" is Izzo's 2015 paper; "izzo_revisited" is the same algorithm under
+# its colloquial name — kept as a separate enum value so the LLM-facing
+# string surface stays stable across the wider literature.
 _ALGORITHMS: dict[str, Callable[..., Any]] = {}
 
 

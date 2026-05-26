@@ -120,10 +120,9 @@ how this is enforced.
 
 !!! warning "Trust boundary"
     Streamable HTTP exposes every tool to any caller that can reach the
-    port. v0.1 ships no built-in auth and the v0.1 tool surface does not
-    execute arbitrary scripts — but bind to `127.0.0.1` (the default)
-    unless you intentionally want the server reachable across the
-    network, and put it behind your own auth proxy when you do. The
-    v0.2 GMAT integration's sandbox story is part of why those tools
-    are deferred — see the [charter](https://github.com/astro-tools/astrodynamics-mcp/blob/main/README.md)
-    for the open questions.
+    port. The server ships no built-in auth and the current tool surface
+    does not execute arbitrary scripts — but bind to `127.0.0.1` (the
+    default) unless you intentionally want the server reachable across
+    the network, and put it behind your own auth proxy when you do.
+    Sandboxing for arbitrary-script tools is one of the open design
+    questions for the planned GMAT integration.

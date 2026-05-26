@@ -15,7 +15,7 @@ server at `http://<host>:8000/mcp` using the official MCP SDK's
 Streamable HTTP transport.
 
 The tool surface is identical across the two. The Streamable HTTP
-transport ships no built-in auth at v0.1 — bind to `127.0.0.1` (the
+transport currently ships no built-in auth — bind to `127.0.0.1` (the
 default) and put your own proxy in front when exposing it to the
 network.
 
@@ -64,13 +64,13 @@ area we haven't exposed yet.
 
 [LeoLabs](https://leolabs.space/)'s commercial ToS prohibits
 redistribution of derived products, so passthrough credentialling for
-individual paid subscribers is deliberately not in any v0.x plan.
+individual paid subscribers is deliberately not in any current plan.
 
 [Space-Track](https://www.space-track.org/) and
 [DISCOSweb](https://discosweb.esoc.esa.int/) require per-user accounts
-and bearer tokens. The v0.1 surface is intentionally no-auth so the
+and bearer tokens. The current surface is intentionally no-auth so the
 quick-start is `pip install astrodynamics-mcp` plus a one-block client
-config — no credential dance. The v0.2 milestone adds credentialled
+config — no credential dance. A future milestone will add credentialled
 passthrough for Space-Track, DISCOSweb, and NASA Earthdata via env-var
 loading (stdio) and session-init metadata (HTTP).
 
@@ -92,9 +92,7 @@ Four layers of validation:
   is the regression contract on tool-description quality.
 
 Together these guard against the numerical, schema, and tool-description
-regression modes independently. See the
-[charter](https://github.com/astro-tools/astrodynamics-mcp/blob/main/README.md)'s
-validation section for the full reasoning.
+regression modes independently.
 
 ## How are upstream-library versions pinned?
 

@@ -13,7 +13,7 @@ The server is a pure-Python package; the runtime install pulls
 [`lamberthub`](https://github.com/jorgepiloto/lamberthub),
 [`skyfield`](https://rhodesmill.org/skyfield/),
 [`astropy`](https://www.astropy.org/), and a few smaller dependencies. No
-external services are required for the v0.1 tool surface — every tool either
+external services are required for the current tool surface — every tool either
 runs offline or calls a no-auth data source (CelesTrak, JPL Horizons, IERS).
 
 The recommended install path is `uv` or `pipx` so the `astrodynamics-mcp`

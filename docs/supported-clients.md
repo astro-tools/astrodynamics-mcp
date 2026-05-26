@@ -14,13 +14,13 @@ records which clients the maintainers have verified end-to-end.
 | ChatGPT desktop | stdio | ⏳ Expected to work | MCP support landed in late 2026; verified-working matrix entry pending. |
 | Raw Python (`mcp` SDK) | stdio | ✅ Yes | Smoke client example in [Pick a client → Raw Python](pick-a-client.md#raw-python-smoke-client). |
 | Remote agents | Streamable HTTP | ⏳ Expected to work | Stdio + HTTP share a single registered tool surface; transport-equivalence is exercised under `pytest`. Production deployments not yet documented. |
-| LangGraph / AutoGen / CrewAI | (any) | ⏳ Expected to work | astrodynamics-mcp exposes tools; these frameworks consume MCP tools. Cookbook page lands at v0.4. |
+| LangGraph / AutoGen / CrewAI | (any) | ⏳ Expected to work | astrodynamics-mcp exposes tools; these frameworks consume MCP tools. A cookbook page lands in a later release. |
 
 Legend:
 
 - ✅ **Verified** — the maintainers have run the full eight-tool surface
   through this client and confirmed all calls round-trip. Reported in
-  the v0.1 release notes.
+  the project's release notes.
 - ⏳ **Expected to work** — the client speaks compliant MCP; the
   maintainers have not yet exercised it. Reports of working setups
   welcome via [Discussions](https://github.com/orgs/astro-tools/discussions).
