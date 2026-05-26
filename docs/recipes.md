@@ -1,8 +1,12 @@
 # Recipes
 
-Short worked examples covering the canonical v0.1 workflows. Each recipe is
+Short worked examples covering the canonical workflows. Each recipe is
 written as the natural-language exchange you'd have with an MCP-capable
 chat client; the tool calls the LLM makes are shown inline.
+
+Several recipes have a fully worked, reproducible counterpart under
+[`examples/`](https://github.com/astro-tools/astrodynamics-mcp/tree/main/examples)
+— see the **Worked example** link at the end of each section.
 
 ## Fetch a TLE and propagate it
 
@@ -52,6 +56,12 @@ Filter on range at peak elevation by passing `min_range_km` /
 `max_range_km`. See [`access_windows`](tool-reference.md) for the full
 input list.
 
+**Worked example:**
+[Hubble passes from Madrid](https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/02_hubble_passes_madrid.md)
+— full transcript plus a reproducible script that drives the
+`tle_lookup` → `access_windows` chain against an in-process MCP
+server.
+
 ## A simple porkchop
 
 > **You:** Run a porkchop for Earth → Mars departure 2026-09 through
@@ -76,6 +86,44 @@ grid.
 Open the best cell from the summary and feed it straight back into a
 Lambert solve to recover the depart / arrive velocity vectors at native
 precision.
+
+**Worked example:**
+[Mars launch window 2028](https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/03_mars_launch_window_2028.md)
+— planning-tier transcript driving `porkchop` over a 2028 window with
+a synthetic Earth/Mars geometry; the run script asserts the best cell
+sits inside a plausible Δv envelope.
+
+## Hohmann Δv between circular orbits
+
+> **You:** Compute the Hohmann Δv from a 250 km circular LEO to GEO.
+
+The Hohmann transfer is the half-ellipse joining perigee at the
+departure radius to apogee at the arrival radius. The model calls
+`lambert_solve` with `tof` set to half the transfer ellipse's period
+and supplies both circular-tangent velocities so the response's `dv`
+field carries the two-impulse total directly.
+
+```jsonc
+// tools/call → lambert_solve
+{
+  "r1": [6628.137, 0.0, 0.0],
+  "r2": [-42163.999..., 0.073..., 0.0],     // 179.999° offset dodges Lambert's strictly-collinear branch
+  "tof": 19035.51,
+  "mu": "earth",
+  "depart_velocity": [0.0, 7.755, 0.0],
+  "arrive_velocity": [-0.000005, -3.075, 0.0]
+}
+```
+
+Response carries `dv ≈ 3.91 km/s` plus the transfer arc's semi-major
+axis (`a = 24396 km`) and eccentricity (`e ≈ 0.73`) — the textbook
+Hohmann values.
+
+**Worked example:**
+[Hohmann LEO → GEO](https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/01_hohmann_dv.md)
+— full transcript with the geometric setup and the
+collinear-degeneracy workaround explained, plus a reproducible script
+asserting the Δv lands within ± 0.01 km/s of the textbook ≈ 3.912 km/s.
 
 ## Time-scale conversions for log analysis
 
