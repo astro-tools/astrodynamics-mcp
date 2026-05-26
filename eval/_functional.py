@@ -225,10 +225,15 @@ def _evaluate(check: Mapping[str, Any], response: Any) -> str | None:
     value = _resolve_path(response, path)
 
     if predicate == "present":
+        # An explicit ``null`` is treated as not-present: in a tool-response
+        # contract "present" means "the consumer received a usable value",
+        # and downstream code has to null-check ``None`` anyway.
         if isinstance(value, _FlatResult):
-            is_present = bool(value.values) and all(v is not _MISSING for v in value.values)
+            is_present = bool(value.values) and all(
+                v is not _MISSING and v is not None for v in value.values
+            )
         else:
-            is_present = value is not _MISSING
+            is_present = value is not _MISSING and value is not None
         if is_present == spec:
             return None
         return f"{path}: expected present={spec}, got present={is_present}"

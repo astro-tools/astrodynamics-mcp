@@ -113,16 +113,51 @@ class TestEvaluate:
         passed, _ = evaluate_checks({"states": [1, 2, 3]}, [{"path": "$.states", "length": 3}])
         assert passed is True
 
-    def test_present(self) -> None:
+    def test_present_with_non_null_value(self) -> None:
         passed, _ = evaluate_checks(
             {"ut1_utc_seconds": 0.123}, [{"path": "$.ut1_utc_seconds", "present": True}]
         )
         assert passed is True
+
+    def test_present_when_key_missing(self) -> None:
         passed, _ = evaluate_checks({}, [{"path": "$.ut1_utc_seconds", "present": True}])
         assert passed is False
         # Asserting absence works too:
         passed, _ = evaluate_checks({}, [{"path": "$.ut1_utc_seconds", "present": False}])
         assert passed is True
+
+    def test_present_when_value_is_null(self) -> None:
+        # An explicit JSON null is treated as not-present so that prompts can
+        # use ``present: false`` to assert "field is semantically absent"
+        # (e.g. bplane_target's dv_required / residual on the read-only path).
+        passed, _ = evaluate_checks(
+            {"dv_required": None}, [{"path": "$.dv_required", "present": True}]
+        )
+        assert passed is False
+        passed, _ = evaluate_checks(
+            {"dv_required": None}, [{"path": "$.dv_required", "present": False}]
+        )
+        assert passed is True
+
+    def test_present_falsy_non_null_values_are_present(self) -> None:
+        # Guard against an over-eager "value is None" check turning into
+        # "not value"; 0, "", and [] are present.
+        falsy_values: list[Any] = [0, 0.0, False, "", []]
+        for v in falsy_values:
+            passed, _ = evaluate_checks({"x": v}, [{"path": "$.x", "present": True}])
+            assert passed is True, f"expected {v!r} to count as present"
+
+    def test_present_over_flat_result_with_null_element(self) -> None:
+        passed, _ = evaluate_checks(
+            {"items": [{"value": 1}, {"value": 2}]},
+            [{"path": "$.items[*].value", "present": True}],
+        )
+        assert passed is True
+        passed, _ = evaluate_checks(
+            {"items": [{"value": 1}, {"value": None}]},
+            [{"path": "$.items[*].value", "present": True}],
+        )
+        assert passed is False
 
     def test_starts_with(self) -> None:
         passed, _ = evaluate_checks(
