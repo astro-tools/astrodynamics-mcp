@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "astrodynamics-mcp"
-version = "0.0.0"
+version = "0.1.0"
 description = "Model Context Protocol server giving any LLM client authoritative astrodynamics tools — TLE/SGP4, Lambert, ground-station access, time/frame conversions, porkchop, B-plane."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,7 @@ keywords = [
   "ephemeris",
 ]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
   "Operating System :: POSIX :: Linux",
@@ -63,6 +63,8 @@ astrodynamics-mcp = "astrodynamics_mcp.cli:main"
 Homepage = "https://github.com/astro-tools/astrodynamics-mcp"
 Repository = "https://github.com/astro-tools/astrodynamics-mcp"
 Issues = "https://github.com/astro-tools/astrodynamics-mcp/issues"
+Documentation = "https://astro-tools.github.io/astrodynamics-mcp/"
+Changelog = "https://github.com/astro-tools/astrodynamics-mcp/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [

@@ -6,10 +6,6 @@ custom agents) authoritative astrodynamics tools: TLE/SGP4 propagation,
 Lambert solving, ground-station access, time-scale and coordinate-frame
 conversions, porkchop scans, B-plane targeting.
 
-> **Status — pre-alpha.** The public surface is not yet usable. Track
-> progress on the
-> [issue tracker](https://github.com/astro-tools/astrodynamics-mcp/issues).
-
 ## Why
 
 LLMs reason well about astrodynamics concepts but cannot do the
@@ -41,8 +37,7 @@ page of the docs site.
 
 ## Quick start
 
-Install (pre-alpha — not yet on PyPI; track progress on the
-[issue tracker](https://github.com/astro-tools/astrodynamics-mcp/issues)):
+Install:
 
 ```bash
 uv tool install astrodynamics-mcp     # or: pipx install astrodynamics-mcp
