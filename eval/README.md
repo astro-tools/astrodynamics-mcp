@@ -61,7 +61,7 @@ gate uses (see "Model and provider" below):
 GITHUB_API_KEY="$(gh auth token)" \
 GITHUB_BASE_URL="https://models.github.ai/inference" \
   uv run inspect eval eval/tasks.py \
-  --model openai-api/github/openai/gpt-4o \
+  --model openai-api/github/openai/gpt-4.1-mini \
   --temperature 0
 ```
 
@@ -134,43 +134,74 @@ Working configuration:
 
 | Setting | Value |
 | --- | --- |
-| Inspect provider string | `openai-api/github/openai/gpt-4o` |
+| Inspect provider string | `openai-api/github/openai/gpt-4.1-mini` |
 | `GITHUB_API_KEY` | `$(gh auth token)` (the OAuth token has implicit `models:read` access) |
 | `GITHUB_BASE_URL` | `https://models.github.ai/inference` |
 | Optional dep | `openai` (Inspect's OpenAI-compatible adapter requires it) |
 
-### Why `openai/gpt-4o`
+### Why `openai/gpt-4.1-mini`
 
-Selected after probing every tool-calling-capable model on the GH Models
-catalogue against the same OAuth token (2026-05-25). Selection criteria,
-in order:
+Selection criteria, in order:
 
 1. **Tool-calling capability** — non-negotiable; the suite is about
    tool use.
 2. **Free-tier accessibility** — must be callable with `gh auth token`
-   (which has implicit `models:read`) and the workflow's
-   `permissions: models: read`. No paid keys, no project budget for
-   inference.
-3. **Rate-limit headroom** — the full ~150-request-per-run suite must
-   fit comfortably.
+   locally and a personal-owned `MODELS_PAT` in CI. No paid keys, no
+   project budget for inference.
+3. **Daily-quota fit** — the ~150-request-per-run suite must fit
+   within the Free-plan daily cap of the model's rate-limit tier.
 4. **Tool-use quality** — frontier-class capability so the score
    measures *our tool descriptions*, not the model's weakness.
 
-Observed rate-limit headers, per-model-per-key:
+GitHub Models gates by per-model rate-limit tier; on the Free plan the
+binding constraint is the per-day cap, not the per-minute or token
+budget. Source:
+[GitHub Models — Rate limits](https://docs.github.com/en/github-models/use-github-models/prototyping-with-ai-models#rate-limits).
 
-| Model | req-limit | req-window | token-limit | token-window | Verdict |
+| Model | Tier | req/min | req/day | concurrent | Verdict |
 | --- | --- | --- | --- | --- | --- |
-| `openai/gpt-4o` | 60,000 | 10 s | 10,000,000 | 60 s | **Selected.** |
-| `openai/gpt-4o-mini` | 20,000 | 60 s | 2,000,000 | 60 s | Strong fallback. |
-| `openai/gpt-4.1` | 1,000 | 60 s | 1,000,000 | 60 s | Smaller budget. |
-| `openai/gpt-4.1-mini` | 1,000 | 60 s | 1,000,000 | 60 s | Smaller budget. |
+| `openai/gpt-4o` | High | 10 | 50 | 2 | 50/day caps mid-run; unworkable. |
+| `openai/gpt-4.1` | High | 10 | 50 | 2 | Same daily cap; same verdict. |
+| `openai/gpt-4o-mini` | Low | 15 | 150 | 5 | Fits one full suite per day. Viable alternative. |
+| `openai/gpt-4.1-mini` | Low | 15 | 150 | 5 | **Selected.** Same tier and quota as `gpt-4o-mini`; newer architecture. |
 | `openai/gpt-5*`, `openai/o3-mini`, `openai/o4-mini` | — | — | — | — | Catalogue lists them but the endpoint returns `400 unavailable_model` / `403`; not free-tier accessible. |
 | `cohere/cohere-command-r-plus-08-2024`, `ai21-labs/ai21-jamba-1.5-large` | — | — | — | — | Catalogue lists them; endpoint returns `400`. |
-| `meta/llama-4-maverick-17b-128e-instruct-fp8` | (no rate-limit headers) | — | — | — | Reachable, but headers don't surface limits. Re-test if a Meta model becomes desirable. |
 
-`openai/gpt-4o` is the only catalogued model that combines all four
-criteria. Its 60,000-request-per-10-second window is roughly 360× the
-gpt-4.1 family limits — the budget is never the binding constraint.
+Two practical implications:
+
+- **Daily-cap fit.** At ~150 requests per run (estimate — count properly
+  on the next successful run; see below), the suite fits roughly one run
+  per UTC day on Free Low tier. The gate must be dispatched at most once
+  per day until the suite shrinks or the plan is upgraded. High-tier
+  models cap mid-run and produce no usable score.
+- **Concurrency cap.** Inspect AI flags must stay under the
+  5-concurrent ceiling. `.github/workflows/eval.yml` uses
+  `--max-samples 3 --max-connections 4`, sitting 1–2 slots below the
+  cap so multi-turn tool-call bursts within a sample don't push over.
+  `--no-fail-on-error` lets every sample run to completion even when
+  others error; errored samples already count as zero-scored failures
+  in the report, so the gate fails through accuracy rather than
+  through in-flight cancellation losing diagnostic data.
+
+Response-header rate limits (`x-ratelimit-limit-requests` and the like)
+report large bucket sizes that **do not match** the published per-plan
+policy. Always size against the published table, not against headers.
+
+### Counting requests
+
+The "~150 requests per run" figure is an estimate from the suite's
+30 prompts × variable tool-call turns per prompt; it has not been
+measured against a clean successful run. Before the next change to
+suite size, concurrency, or model selection, count actual requests
+from the Inspect AI log:
+
+```bash
+inspect log dump logs/<latest>.eval | jq '[.samples[].messages[] | select(.role == "assistant")] | length'
+```
+
+If the real count is materially below 150, there is daily-cap headroom
+for retries and the concurrency settings can be relaxed; if it's at or
+above 150, the suite needs trimming or per-tier dispatch instead.
 
 ### Sampling parameters and determinism
 
@@ -190,7 +221,7 @@ CI policy:
 ## CI gate behaviour
 
 `.github/workflows/eval.yml` runs the suite against
-`openai-api/github/openai/gpt-4o` and uploads the Inspect log as a
+`openai-api/github/openai/gpt-4.1-mini` and uploads the Inspect log as a
 workflow artefact. The full 30-prompt suite is the default; the
 `workflow_dispatch` trigger accepts an optional `tier` filter that
 delegates to `astrodynamics_mcp_eval_subset` for tier-scoped runs.
@@ -210,28 +241,40 @@ established.
   `uv run inspect view logs/` locally to replay the conversation
   per sample — useful when investigating a specific failure.
 
-Authentication uses the workflow's auto-generated `GITHUB_TOKEN` (with
-`permissions: models: read`) when it has GitHub Models access, falling
-back to a `MODELS_PAT` repo secret if you've created one. A pre-flight
-probe step calls `gpt-4o` with a 2-token PING and fails fast with the
-HTTP status if neither token has access — this surfaces auth issues
-clearly rather than burying them in the Inspect AI stack trace.
+Authentication uses a personal-owned `MODELS_PAT` repo secret as the
+primary auth path on Free-plan orgs (see "Provisioning `MODELS_PAT`"
+below), falling back to the workflow-issued `GITHUB_TOKEN` (with
+`permissions: models: read`) only if `MODELS_PAT` is not set. The
+workflow token's compatibility with the inference endpoint is unreliable
+on Free orgs — observed both `403` and `429` against `models.github.ai`
+without obvious cause — so the PAT path is the recommended default. A
+pre-flight probe step calls the selected model with a 2-token PING and
+fails fast with the HTTP status if neither token works, surfacing auth
+issues clearly rather than burying them in the Inspect AI stack trace.
 
-### Enabling the workflow token
+### Provisioning `MODELS_PAT`
 
-The workflow `GITHUB_TOKEN` only has Models access when the **org owner
-has enabled GitHub Models for Actions** at
-`https://github.com/organizations/<org>/settings/models`. On free orgs
-this toggle is off by default; until it's on, the probe step will return
-403 and the gate is failed conservatively.
+Create a fine-grained PAT at
+`https://github.com/settings/personal-access-tokens` with:
 
-### Fallback: `MODELS_PAT`
+- **Resource owner:** your personal account, *not* the org. Org-owned
+  PATs return `403 no_access` from the inference endpoint regardless of
+  the permissions granted.
+- **Repository access:** "Public Repositories (read-only)" — the
+  inference endpoint ignores the repo list, but GitHub's UI requires
+  a non-empty choice.
+- **Account permissions** → **Models: Read.**
 
-If org-level enablement is not an option (e.g. policy reasons), create a
-fine-grained PAT with the `models: read` scope and add it as a repo
-secret named `MODELS_PAT`. The workflow uses it in preference to the
-auto-issued `GITHUB_TOKEN` whenever it's set, so no other change is
-needed.
+Store via `gh secret set MODELS_PAT --repo astro-tools/astrodynamics-mcp`.
+
+### Fallback: workflow `GITHUB_TOKEN`
+
+The workflow `GITHUB_TOKEN` with `permissions: models: read` is the
+documented inference auth path in GitHub's quickstart, but on Free orgs
+it does not reliably authenticate. If you want to try it, leave
+`MODELS_PAT` unset; the probe step will surface the actual HTTP status.
+The toggle that's supposed to enable this auth path lives at
+`https://github.com/organizations/<org>/settings/models` when present.
 
 **Pass threshold:** ≥80% of goldens. Calibrated against the determinism
 observations above so a single-prompt flake doesn't flip the gate. The

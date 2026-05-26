@@ -30,16 +30,25 @@ _MAX_FAILURES_LISTED = 15
 
 @dataclass(frozen=True)
 class FailingPrompt:
-    """Per-sample failure record consumed by :func:`render_markdown`."""
+    """Per-sample failure record consumed by :func:`render_markdown`.
+
+    ``error`` is set when Inspect AI raised on the sample before the
+    scorer ran (e.g. a 413 token-limit or a CancelledError); in that
+    case the trace/functional fields carry no scorer information and
+    ``short_reason`` reports the error path instead.
+    """
 
     sample_id: str
     trace_passed: bool
     functional_passed: bool
     trace_reasons: tuple[str, ...]
     functional_reasons: tuple[str, ...]
+    error: str | None = None
 
     @property
     def short_reason(self) -> str:
+        if self.error is not None:
+            return "sample errored"
         flags: list[str] = []
         if not self.trace_passed:
             flags.append("trace fail")
@@ -65,22 +74,44 @@ def collect_failures(log: Any) -> tuple[float, int, int, tuple[FailingPrompt, ..
     Returns ``(accuracy, n_samples, n_passed, failing)``. ``log`` is typed
     ``Any`` because Inspect AI's log types live behind the ``ignore_missing_imports``
     mypy override; we don't need the static type here.
-    """
-    if log.results is None or not log.results.scores:
-        raise ValueError("eval log has no scorer results — run did not complete")
-    scorer_result = log.results.scores[0]
-    accuracy = float(scorer_result.metrics["accuracy"].value)
-    n_samples = int(scorer_result.scored_samples)
-    n_passed = round(accuracy * n_samples)
 
-    failing: list[FailingPrompt] = []
+    Computes accuracy directly from per-sample scores rather than from
+    ``log.results``. ``log.results`` is None whenever the eval's
+    top-level status is ``error`` (e.g. when ``--fail-on-error N`` flips
+    it after sample errors), but the individual scores Inspect AI did
+    produce are still useful — so we render the partial picture rather
+    than treating the whole run as unobservable. Samples that errored
+    before scoring count against accuracy as if they had scored 0.
+    """
     samples = log.samples or []
+    if not samples:
+        raise ValueError("eval log has no samples — run did not produce output")
+
+    n_samples = len(samples)
+    n_passed = 0
+    failing: list[FailingPrompt] = []
+
     for sample in samples:
-        # Each sample has at most one score under our scorer name.
+        sample_error = getattr(sample, "error", None)
+        if sample_error is not None:
+            err_message = str(getattr(sample_error, "message", sample_error))[:200]
+            failing.append(
+                FailingPrompt(
+                    sample_id=str(sample.id),
+                    trace_passed=False,
+                    functional_passed=False,
+                    trace_reasons=(),
+                    functional_reasons=(),
+                    error=err_message,
+                )
+            )
+            continue
+
         if not sample.scores:
             continue
         score = next(iter(sample.scores.values()))
         if score.value == 1.0:
+            n_passed += 1
             continue
         meta = score.metadata or {}
         failing.append(
@@ -92,6 +123,8 @@ def collect_failures(log: Any) -> tuple[float, int, int, tuple[FailingPrompt, ..
                 functional_reasons=tuple(meta.get("functional_failure_reasons") or ()),
             )
         )
+
+    accuracy = n_passed / n_samples
     return accuracy, n_samples, n_passed, tuple(failing)
 
 
@@ -118,6 +151,7 @@ def render_markdown(summary: EvalSummary, threshold: float) -> str:
     """Render the markdown report body. Pure function; easy to unit-test."""
     passed_gate = summary.accuracy >= threshold
     status = "✅ PASS" if passed_gate else "❌ FAIL"
+    n_errored = sum(1 for fp in summary.failing if fp.error is not None)
 
     lines: list[str] = [
         f"## Eval gate: {status}",
@@ -128,14 +162,18 @@ def render_markdown(summary: EvalSummary, threshold: float) -> str:
             f"({summary.n_passed} / {summary.n_samples} passed)"
         ),
         f"- **Threshold:** ≥ {threshold:.2f}",
-        "",
     ]
+    if n_errored > 0:
+        lines.append(f"- **Errored samples:** {n_errored} (counted as failures)")
+    lines.append("")
 
     if summary.failing:
         lines.append(f"### Failing prompts ({len(summary.failing)})")
         lines.append("")
         for fp in summary.failing[:_MAX_FAILURES_LISTED]:
             lines.append(f"- `{fp.sample_id}` — {fp.short_reason}")
+            if fp.error is not None:
+                lines.append(f"  - error: {fp.error}")
             for reason in fp.trace_reasons[:1]:
                 lines.append(f"  - trace: {reason}")
             for reason in fp.functional_reasons[:1]:

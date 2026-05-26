@@ -42,13 +42,15 @@ jobs:
       - run: uv sync --all-groups
 
       - name: Probe GitHub Models auth
-        # Run a one-token call against gpt-4o before the full suite so any
-        # auth failure surfaces here as a clear HTTP status and error body,
-        # rather than buried inside the Inspect AI stack trace. Prefer the
-        # MODELS_PAT secret when present (workflow-issued GITHUB_TOKEN can
-        # 403 even with `permissions: models: read` if the org hasn't
-        # enabled GitHub Models for Actions); fall back to the workflow
-        # token otherwise.
+        # Run a one-token call against the eval model before the full
+        # suite so any auth failure surfaces here as a clear HTTP status
+        # and error body, rather than buried inside the Inspect AI stack
+        # trace. Prefer the MODELS_PAT secret when present — on Free-plan
+        # orgs the workflow-issued GITHUB_TOKEN is an unreliable inference
+        # auth path (observed 403 and 429 without obvious cause). Use a
+        # personal-owned PAT with `Models: Read` for MODELS_PAT; org-owned
+        # PATs return 403 no_access from this endpoint regardless of
+        # granted permissions. See eval/README.md for provisioning.
         #
         # Retries with exponential backoff because GitHub's secondary
         # anti-abuse rate limit returns 429 for ~5-30 min when the
@@ -66,7 +68,7 @@ jobs:
               https://models.github.ai/inference/chat/completions \
               -H "Authorization: Bearer $TOKEN" \
               -H "Content-Type: application/json" \
-              -d '{"model":"openai/gpt-4o","messages":[{"role":"user","content":"PING"}],"max_tokens":2}')
+              -d '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"PING"}],"max_tokens":2}')
             echo "HTTP $status"
             head -c 500 /tmp/probe.json; echo
             case "$status" in
@@ -89,27 +91,38 @@ jobs:
           # Flags explained:
           # * -M strict_tools=false : pydantic unions in our schemas use
           #     anyOf + $ref, which OpenAI strict-mode tool-calling rejects.
-          # * --max-samples 10      : run 10 prompts concurrently. The
-          #     measured GH Models limit (60k req/10s on gpt-4o) means
-          #     parallelism is effectively free; wall-clock floor is one
-          #     prompt's latency rather than 30× sequential.
-          # * --max-connections 20  : max in-flight HTTP requests across all
-          #     samples (covers retries + tool-call turns within a sample).
+          # * --max-samples 3       : prompts processed concurrently. GH
+          #     Models Free-plan Low-tier (gpt-4.1-mini) caps concurrent
+          #     requests at 5; we sit 2 below the ceiling to absorb
+          #     multi-turn tool-call bursts within each sample.
+          # * --max-connections 4   : max in-flight HTTP requests across
+          #     all samples (covers retries + tool-call turns); 1 below
+          #     the 5-concurrent ceiling so a transient retry can fire
+          #     without hitting the cap.
+          # * --no-fail-on-error    : let every sample run to completion
+          #     even when others error. Errored samples count against
+          #     accuracy in eval/_ci_report.py (zero-scored), so the
+          #     gate still fails them; we just don't want to lose data
+          #     from in-flight samples being cancelled when an error
+          #     threshold trips. Inspect AI's default ('fail on any
+          #     error') is too aggressive for a survey gate.
           if [ -n "${{ inputs.tier }}" ]; then
             uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval_subset \
               -T tier="${{ inputs.tier }}" \
-              --model openai-api/github/openai/gpt-4o \
+              --model openai-api/github/openai/gpt-4.1-mini \
               -M strict_tools=false \
-              --max-samples 10 \
-              --max-connections 20 \
+              --max-samples 3 \
+              --max-connections 4 \
+              --no-fail-on-error \
               --temperature 0 \
               --log-dir logs
           else
             uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval \
-              --model openai-api/github/openai/gpt-4o \
+              --model openai-api/github/openai/gpt-4.1-mini \
               -M strict_tools=false \
-              --max-samples 10 \
-              --max-connections 20 \
+              --max-samples 3 \
+              --max-connections 4 \
+              --no-fail-on-error \
               --temperature 0 \
               --log-dir logs
           fi
