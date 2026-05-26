@@ -8,7 +8,7 @@ frames stays correct per-epoch.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sgp4 import omm
@@ -27,33 +27,51 @@ _SUPPORTED_FRAMES: frozenset[Frame] = frozenset(
     {Frame.TEME, Frame.ICRF, Frame.GCRS, Frame.ITRS, Frame.CIRS}
 )
 
+# How many states the default output='summary' response carries when the
+# caller passes more than this many epochs. A 12-state cap (~2 KB JSON)
+# keeps the response under the small-model 8000-token input limit while
+# still characterising the trajectory shape — first and last epoch always
+# retained, the rest evenly spaced.
+_SUMMARY_STATE_CAP = 12
+
 
 class Sgp4PropagateResponse(BaseModel):
-    """A list of propagated state vectors, one per requested epoch."""
+    """A list of propagated state vectors.
+
+    In the default ``output="summary"`` mode the list is capped to
+    :data:`_SUMMARY_STATE_CAP` evenly-spaced entries (always including
+    the first and last requested epoch). Pass ``output="full"`` to receive
+    one state per input epoch.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     states: list[StateVector] = Field(
         ...,
         description=(
-            "One StateVector per epoch in the input list, in the requested frame. "
-            "Position in km, velocity in km/s, units explicit on every numeric field."
+            "Propagated state vectors in the requested frame. In output='full' there is one "
+            "entry per input epoch; in the default output='summary' the list is subsampled to "
+            "at most twelve evenly-spaced entries (first and last always retained). Position "
+            "in km, velocity in km/s, units explicit on every numeric field."
         ),
     )
 
 
 _DESCRIPTION = (
     "Propagate a TLE forward in time via SGP4/SDP4, returning Cartesian state "
-    "vectors at each requested epoch. TLE input is either two raw 69-char lines "
+    "vectors at the requested epochs. TLE input is either two raw 69-char lines "
     "(`{line1, line2}`) or a parsed OMM JSON object (`{omm: {...}}`). "
     "e.g. sgp4_propagate(tle={line1: ..., line2: ...}, epochs=['2026-05-23T12:00:00Z'], "
     "frame='TEME') returns one state vector in TEME. Epochs are UTC ISO 8601 with a "
     "mandatory time component (e.g. '2026-05-23T12:00:00Z') — a bare date is rejected. "
     "Default frame is TEME (SGP4's native output); for ICRF, GCRS, ITRS, or CIRS the "
     "tool transforms via astropy with per-epoch obstime. A list of one epoch is fine; "
-    "1000+ epochs is also fine — propagation cost scales linearly. SGP4 propagation "
-    "failures (decayed satellite, deep-space epoch beyond SDP4 validity) surface as "
-    "`upstream.sgp4_failure`."
+    "1000+ epochs is also fine — propagation cost scales linearly. Output shaping: "
+    "the default output='summary' returns at most twelve evenly-spaced states (first "
+    "and last epoch always included) so the response fits small-model input caps; pass "
+    "output='full' to receive one state per epoch when you need the dense series. "
+    "SGP4 propagation failures (decayed satellite, deep-space epoch beyond SDP4 validity) "
+    "surface as `upstream.sgp4_failure`."
 )
 
 
@@ -145,11 +163,26 @@ def _transform_to_frame(
     )
 
 
+def _summary_indices(n: int, cap: int) -> list[int]:
+    """Pick up to *cap* indices from ``range(n)`` for the summary response.
+
+    Always includes 0 and ``n - 1`` so the caller sees the trajectory's
+    endpoints; the remaining slots are evenly spaced between them. Returns
+    ``list(range(n))`` unchanged when ``n <= cap``.
+    """
+    if n <= cap:
+        return list(range(n))
+    if cap == 1:
+        return [0]
+    return [round(i * (n - 1) / (cap - 1)) for i in range(cap)]
+
+
 @register_tool(name="sgp4_propagate", description=_DESCRIPTION)
 async def sgp4_propagate(
     tle: TleLines | TleOmm,
     epochs: list[Epoch],
     frame: Frame = Frame.TEME,
+    output: Literal["summary", "full"] = "summary",
 ) -> Sgp4PropagateResponse:
     if frame not in _SUPPORTED_FRAMES:
         raise InvalidInputError(
@@ -170,5 +203,9 @@ async def sgp4_propagate(
             states.append(_state_from_teme(r_teme, v_teme, epoch))
         else:
             states.append(_transform_to_frame(r_teme, v_teme, epoch_time, frame, epoch))
+
+    if output == "summary":
+        kept = _summary_indices(len(states), _SUMMARY_STATE_CAP)
+        states = [states[i] for i in kept]
 
     return Sgp4PropagateResponse(states=states)

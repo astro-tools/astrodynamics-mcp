@@ -19,7 +19,12 @@ from mcp.server.fastmcp.exceptions import ToolError
 from astrodynamics_mcp.schemas.base import Frame, TleLines, TleOmm
 from astrodynamics_mcp.server import mcp
 from astrodynamics_mcp.server_lint import check_tool_descriptions
-from astrodynamics_mcp.tools.propagation import Sgp4PropagateResponse, sgp4_propagate
+from astrodynamics_mcp.tools.propagation import (
+    _SUMMARY_STATE_CAP,
+    Sgp4PropagateResponse,
+    _summary_indices,
+    sgp4_propagate,
+)
 
 # Fixed ISS-like TLE used across tests and the golden snapshot. Lines are
 # 69 chars by construction; OMM payload mirrors the celestrak tests' sample.
@@ -228,6 +233,74 @@ class TestSgp4FailureModes:
         assert envelope["code"] == "upstream.sgp4_failure"
 
 
+class TestSummaryOutput:
+    """Default ``output="summary"`` caps the returned state count.
+
+    The full propagation still happens — only the response is trimmed —
+    so the kept states' numerical values are identical to the same call
+    in ``output="full"`` mode at the matching epochs.
+    """
+
+    async def test_indices_helper_endpoints_and_spacing(self) -> None:
+        # Below the cap: identity.
+        assert _summary_indices(5, 12) == [0, 1, 2, 3, 4]
+        # Exactly the cap: identity.
+        assert _summary_indices(12, 12) == list(range(12))
+        # Above the cap: cap entries, 0 and n-1 retained, monotonically increasing.
+        kept = _summary_indices(1440, 12)
+        assert len(kept) == 12
+        assert kept[0] == 0
+        assert kept[-1] == 1439
+        assert kept == sorted(kept)
+        assert len(set(kept)) == 12
+
+    async def test_default_caps_states_when_epochs_exceed_cap(self) -> None:
+        start = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        epochs = [
+            (start + timedelta(minutes=i)).isoformat().replace("+00:00", "Z") for i in range(1440)
+        ]
+        resp = await sgp4_propagate(
+            tle=TleLines(line1=_ISS_LINE1, line2=_ISS_LINE2),
+            epochs=epochs,
+            frame=Frame.TEME,
+        )
+        assert len(resp.states) == _SUMMARY_STATE_CAP
+        # First and last requested epochs survive.
+        assert resp.states[0].epoch == epochs[0]
+        assert resp.states[-1].epoch == epochs[-1]
+
+    async def test_default_passthrough_when_epochs_under_cap(self) -> None:
+        epochs = ["2024-01-01T12:00:00Z", "2024-01-01T13:00:00Z", "2024-01-01T14:00:00Z"]
+        resp = await sgp4_propagate(
+            tle=TleLines(line1=_ISS_LINE1, line2=_ISS_LINE2),
+            epochs=epochs,
+            frame=Frame.TEME,
+        )
+        assert [s.epoch for s in resp.states] == epochs
+
+    async def test_summary_states_match_full_at_kept_epochs(self) -> None:
+        """Subsampling is purely a serialisation trim — kept states are bit-identical."""
+        start = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+        epochs = [
+            (start + timedelta(minutes=10 * i)).isoformat().replace("+00:00", "Z")
+            for i in range(50)
+        ]
+        full = await sgp4_propagate(
+            tle=TleLines(line1=_ISS_LINE1, line2=_ISS_LINE2),
+            epochs=epochs,
+            frame=Frame.TEME,
+            output="full",
+        )
+        summary = await sgp4_propagate(
+            tle=TleLines(line1=_ISS_LINE1, line2=_ISS_LINE2),
+            epochs=epochs,
+            frame=Frame.TEME,
+        )
+        kept_epochs = {s.epoch for s in summary.states}
+        kept_from_full = [s for s in full.states if s.epoch in kept_epochs]
+        assert kept_from_full == summary.states
+
+
 class TestRegistration:
     async def test_tool_is_listed(self) -> None:
         tools = await mcp.list_tools()
@@ -274,6 +347,7 @@ class TestGoldenSnapshot:
             tle=TleLines(line1=_ISS_LINE1, line2=_ISS_LINE2),
             epochs=epochs,
             frame=Frame.TEME,
+            output="full",
         )
 
         golden = json.loads(_GOLDEN_PATH.read_text())

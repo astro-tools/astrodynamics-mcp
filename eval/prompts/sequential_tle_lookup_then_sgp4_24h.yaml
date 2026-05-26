@@ -13,7 +13,7 @@ permitted_traces:
         frame: {one_of: ["TEME", null]}
 functional_answer:
   - path: "$.states"
-    length: 145
+    length: {min: 1, max: 12}
   - path: "$.states[*].r.unit"
     all_equal: "km"
   - path: "$.states[*].v.unit"
@@ -21,3 +21,7 @@ functional_answer:
 notes: |
   Canonical two-tool chain: TLE lookup feeds the SGP4 propagator with a
   144-step (every 10 min over 24 h) epoch grid plus an endpoint = 145.
+  The propagator's default output='summary' caps the returned states at
+  12 evenly-spaced entries (first/last epoch retained) so the response
+  fits the small-model 8000-token input cap; the trace check still
+  asserts the LLM constructed the full 145-epoch request.
