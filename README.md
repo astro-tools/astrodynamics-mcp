@@ -4,8 +4,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that
 gives any MCP-capable LLM client (Claude Code, Cursor, ChatGPT desktop,
 custom agents) authoritative astrodynamics tools — TLE/SGP4 propagation,
 Lambert solving, ground-station access, time-scale and coordinate-frame
-conversions, porkchop scans, B-plane targeting — instead of letting the
-model hallucinate the math.
+conversions, porkchop scans, B-plane targeting.
 
 > **Status — pre-alpha.** The public surface is not yet usable. The
 > [current milestone](https://github.com/astro-tools/astrodynamics-mcp/milestone/1)
