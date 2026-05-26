@@ -1,17 +1,24 @@
 """Inspect AI Task definitions for the astrodynamics-mcp eval suite.
 
 Spawns the local ``astrodynamics-mcp stdio`` binary as the MCP server
-under test, hands its tools to a :func:`~inspect_ai.agent.react` agent,
-and scores each conversation with the hybrid trace + functional-answer
-scorer.
+under test, hands a **per-sample subset** of its tools to a
+:func:`~inspect_ai.agent.react` agent, and scores each conversation
+with the hybrid trace + functional-answer scorer.
+
+The per-sample subset is the load-bearing optimisation: GitHub Models
+caps the workflow token at 8000 input tokens per request, while the
+full 8-tool MCP surface adds up to ~6100 tokens of schema alone. By
+exposing only each prompt's ``tools_required`` tools, single-tool
+prompts pay ~200-1500 tokens of schema rather than ~6100, leaving
+plenty of budget for the prompt, system message, and turn-by-turn
+history.
 
 Run with::
 
-    uv run inspect eval eval/tasks.py --model anthropic/claude-sonnet-4-6
-
-Any Inspect-AI-supported model provider works locally; the CI gate
-configures the GitHub Models provider with sampling parameters locked by
-the verification spike (see ``eval/README.md``).
+    uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval \\
+      --model openai-api/github/openai/gpt-4o \\
+      -M strict_tools=false \\
+      --temperature 0
 """
 
 from __future__ import annotations
@@ -34,8 +41,8 @@ if str(_REPO_ROOT) not in sys.path:
 from inspect_ai import Task, task  # noqa: E402
 from inspect_ai.agent import as_solver, react  # noqa: E402
 from inspect_ai.dataset import MemoryDataset, Sample  # noqa: E402
-from inspect_ai.solver import Solver  # noqa: E402
-from inspect_ai.tool import mcp_server_stdio  # noqa: E402
+from inspect_ai.solver import Generate, Solver, TaskState, solver  # noqa: E402
+from inspect_ai.tool import mcp_server_stdio, mcp_tools  # noqa: E402
 
 from eval._prompts import PromptSpec, load_prompts  # noqa: E402
 from eval.scoring import hybrid_scorer  # noqa: E402
@@ -72,26 +79,37 @@ def _build_dataset(prompts: Iterable[PromptSpec]) -> MemoryDataset:
     return MemoryDataset(samples=samples, name="astrodynamics_mcp_eval")
 
 
-def _build_solver() -> Solver:
-    """Build the react agent wired to the local stdio MCP server.
+@solver
+def per_sample_react_solver() -> Solver:
+    """A solver that builds a fresh ``react`` agent per sample with subsetted tools.
 
-    The :func:`~inspect_ai.tool.mcp_server_stdio` returns an MCP-server
-    handle that :func:`~inspect_ai.agent.react` knows how to keep alive
-    via :func:`~inspect_ai.tool.mcp_connection` for the duration of each
-    sample.
+    Reads ``state.metadata['tools_required']`` and exposes only those
+    tools from the MCP server to the model. The server itself is the
+    same singleton across samples — :func:`mcp_tools` produces a
+    filtered :class:`ToolSource` view rather than re-spawning the
+    subprocess.
     """
     server: Any = mcp_server_stdio(
         name="astrodynamics-mcp",
         command=_SERVER_COMMAND,
         args=list(_SERVER_ARGS),
     )
-    agent = react(
-        name="astrodynamics_mcp_eval_agent",
-        description="Agent under test for the astrodynamics-mcp eval suite.",
-        tools=[server],
-    )
-    solver: Solver = as_solver(agent)
-    return solver
+
+    async def solve(state: TaskState, generate: Generate) -> TaskState:
+        required = state.metadata.get("tools_required") if state.metadata else None
+        if required:
+            tools_source: Any = mcp_tools(server, tools=list(required))
+        else:
+            tools_source = server
+        agent = react(
+            name="astrodynamics_mcp_eval_agent",
+            description="Agent under test for the astrodynamics-mcp eval suite.",
+            tools=[tools_source],
+        )
+        agent_solver: Solver = as_solver(agent)
+        return await agent_solver(state, generate)
+
+    return solve
 
 
 @task
@@ -100,7 +118,7 @@ def astrodynamics_mcp_eval() -> Task:
     prompts = load_prompts()
     return Task(
         dataset=_build_dataset(prompts),
-        solver=_build_solver(),
+        solver=per_sample_react_solver(),
         scorer=hybrid_scorer(),
     )
 
@@ -117,6 +135,6 @@ def astrodynamics_mcp_eval_subset(tier: str = "single_tool") -> Task:
     prompts = [p for p in load_prompts() if p.tier == tier]
     return Task(
         dataset=_build_dataset(prompts),
-        solver=_build_solver(),
+        solver=per_sample_react_solver(),
         scorer=hybrid_scorer(),
     )
