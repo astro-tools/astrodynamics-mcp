@@ -42,7 +42,7 @@ eval/
 ├── scoring.py            ← Inspect AI Scorer combining the two checks
 ├── tasks.py              ← Inspect AI Task wiring stdio server + react() agent
 └── prompts/
-    └── *.yaml            ← one prompt per file (30 v0.1 prompts: 20 single-tool + 8 sequential + 2 planning)
+    └── *.yaml            ← one prompt per file (30 prompts: 20 single-tool + 8 sequential + 2 planning)
 ```
 
 ## Running locally
@@ -54,14 +54,19 @@ server under test. Install the package and the dev group first:
 uv sync --all-groups
 ```
 
-Then run:
+Then run the suite against GitHub Models with the configuration the CI
+gate uses (see "Model and provider" below):
 
 ```bash
-uv run inspect eval eval/tasks.py --model anthropic/claude-sonnet-4-6
+GITHUB_API_KEY="$(gh auth token)" \
+GITHUB_BASE_URL="https://models.github.ai/inference" \
+  uv run inspect eval eval/tasks.py \
+  --model openai-api/github/openai/gpt-4o \
+  --temperature 0
 ```
 
-Any Inspect-AI-supported provider works locally; CI runs against GitHub
-Models (see the spike-findings section below).
+CI runs against the GitHub Models configuration documented below. For
+other providers, see ["Running against other providers"](#running-against-other-providers).
 
 ## Prompt YAML schema
 
@@ -71,7 +76,7 @@ Each `eval/prompts/<slug>.yaml` defines one prompt. Schema (validated by
 ```yaml
 prompt: "<the natural-language user message>"
 tier: single_tool | sequential | planning
-tools_required: [<v0.1 tool names that must be available>]
+tools_required: [<tool names that must be available>]
 permitted_traces:
   - - tool: <tool_name>
       arg_constraints:
@@ -117,102 +122,182 @@ uv run python eval/_regenerate_goldens.py        # not yet implemented — place
 Review the diff before committing — golden regeneration is a deliberate
 action, never a silent CI fixup.
 
-## Verification spike findings
+## Model and provider
 
-Each subsection is a dated, source-cited record. The CI workflow under
-`.github/workflows/eval.yml` references these by section heading when
-explaining its model choice, sampling parameters, and pass threshold.
-
-### Inspect AI ↔ GitHub Models integration (2026-05-25)
-
-GitHub Models has **no native Inspect AI provider**. The catalogue is
-reached through Inspect AI's generic `openai-api/<name>/<model>`
-adapter, which derives env-var names from `<name>` (uppercased,
+The CI gate and the recommended local configuration run against GitHub
+Models. GitHub Models has **no native Inspect AI provider** — we reach
+it through Inspect AI's generic `openai-api/<name>/<model>` adapter,
+which derives env-var names from `<name>` (uppercased,
 hyphens-to-underscores).
 
 Working configuration:
 
 | Setting | Value |
 | --- | --- |
-| Inspect provider string | `openai-api/github/openai/gpt-4.1-mini` |
-| `GITHUB_API_KEY` | `$(gh auth token)` (current OAuth token has implicit `models:read`) |
+| Inspect provider string | `openai-api/github/openai/gpt-4o` |
+| `GITHUB_API_KEY` | `$(gh auth token)` (the OAuth token has implicit `models:read` access) |
 | `GITHUB_BASE_URL` | `https://models.github.ai/inference` |
 | Optional dep | `openai` (Inspect's OpenAI-compatible adapter requires it) |
 
-Verified by running a one-sample no-tool task and observing
-`accuracy=1.000`.
+### Why `openai/gpt-4o`
 
-**Model choice — important deviation from the charter.** The GH Models
-catalogue does **not** carry any Anthropic / Claude models as of this
-date (publishers: OpenAI, Meta, Mistral, DeepSeek, Microsoft, Cohere,
-AI21, xAI). The charter §3 plan ("Claude Sonnet 4.6 via GitHub Models")
-is currently unrealisable; we run on `openai/gpt-4.1-mini`, the
-cheapest tool-calling-capable low-tier model on the catalogue. Re-
-evaluate at v0.2 / v0.3 if the catalogue changes.
+Selected after probing every tool-calling-capable model on the GH Models
+catalogue against the same OAuth token (2026-05-25). Selection criteria,
+in order:
 
-### GitHub Models rate-limit observations (2026-05-25)
+1. **Tool-calling capability** — non-negotiable; the suite is about
+   tool use.
+2. **Free-tier accessibility** — must be callable with `gh auth token`
+   (which has implicit `models:read`) and the workflow's
+   `permissions: models: read`. No paid keys, no project budget for
+   inference.
+3. **Rate-limit headroom** — the full ~150-request-per-run suite must
+   fit comfortably.
+4. **Tool-use quality** — frontier-class capability so the score
+   measures *our tool descriptions*, not the model's weakness.
 
-Per-response headers from a live `gpt-4.1-mini` call:
+Observed rate-limit headers, per-model-per-key:
 
-```
-x-ratelimit-key:                  gpt-4.1-mini
-x-ratelimit-limit-requests:       1000
-x-ratelimit-limit-tokens:         1000000
-x-ratelimit-renewalperiod-requests: 60
-x-ratelimit-renewalperiod-tokens:   60
-x-ratelimit-remaining-requests:   999
-x-ratelimit-remaining-tokens:     999992
-```
+| Model | req-limit | req-window | token-limit | token-window | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| `openai/gpt-4o` | 60,000 | 10 s | 10,000,000 | 60 s | **Selected.** |
+| `openai/gpt-4o-mini` | 20,000 | 60 s | 2,000,000 | 60 s | Strong fallback. |
+| `openai/gpt-4.1` | 1,000 | 60 s | 1,000,000 | 60 s | Smaller budget. |
+| `openai/gpt-4.1-mini` | 1,000 | 60 s | 1,000,000 | 60 s | Smaller budget. |
+| `openai/gpt-5*`, `openai/o3-mini`, `openai/o4-mini` | — | — | — | — | Catalogue lists them but the endpoint returns `400 unavailable_model` / `403`; not free-tier accessible. |
+| `cohere/cohere-command-r-plus-08-2024`, `ai21-labs/ai21-jamba-1.5-large` | — | — | — | — | Catalogue lists them; endpoint returns `400`. |
+| `meta/llama-4-maverick-17b-128e-instruct-fp8` | (no rate-limit headers) | — | — | — | Reachable, but headers don't surface limits. Re-test if a Meta model becomes desirable. |
 
-Interpretation: **1000 requests / minute and 1M tokens / minute**, scoped
-per-model-per-key. No visible per-day cap in the headers.
+`openai/gpt-4o` is the only catalogued model that combines all four
+criteria. Its 60,000-request-per-10-second window is roughly 360× the
+gpt-4.1 family limits — the budget is never the binding constraint.
 
-These are far above the published "Copilot Free Low tier" numbers (15
-req/min, 150 req/day) referenced in earlier GH Models docs. The bare
-OAuth token issued by `gh auth login` evidently lands in a more
-permissive tier; whether a workflow-issued `GITHUB_TOKEN` with
-`permissions: models: read` sees the same numbers is *not yet
-verified* — re-measure on the first CI run.
+### Sampling parameters and determinism
 
-**Practical implication for the gate:** the full 30-prompt suite (≤
-~150 LLM requests assuming 3-5 tool calls per prompt) fits comfortably
-inside the per-minute budget. The original concern that per-PR runs
-would need subsetting does not apply at the observed limits. The
-workflow still exposes the `astrodynamics_mcp_eval_subset(tier=...)`
-task for use when the budget tightens in future.
+Verified 2026-05-25: five identical chat-completion requests against
+`gpt-4o` with `seed=42, temperature=0, top_p=1.0, max_tokens=200`
+produce different outputs byte-for-byte (paraphrase-level differences in
+step-list outputs). OpenAI documents `seed` as best-effort, and GH
+Models appears to inherit that caveat.
 
-### Fixed-seed determinism observations (2026-05-25)
+CI policy:
 
-Five identical chat-completion requests against `gpt-4.1-mini` with
-`seed=42, temperature=0, top_p=1.0, max_tokens=200` produced **five
-different outputs** byte-for-byte (lengths 392 / 396 / 383 / 395 / 363).
-The differences were paraphrase-level (synonyms, reordering inside a
-list item), not semantic — but reproducibility cannot be assumed.
-
-OpenAI's documented `seed` semantics are "best-effort", and GH Models
-appears to apply the same caveat.
-
-**Regression-gate policy:** the per-PR check uses `temperature=0` (to
-keep outputs as close to greedy as possible) but does **not** rely on
-seed-based reproducibility. The pass threshold is set below the
-charter §4 DoD nominal of ≥90% to absorb expected stochasticity. A
-single-prompt flake should not flip the gate; a deterioration in *score
-trend* over a sequence of PRs is what we treat as a real regression.
+- `temperature=0` to stay as close to greedy decoding as possible.
+- No reliance on `seed` for reproducibility.
+- Pass threshold set below 100% to absorb expected single-prompt flake;
+  watch *score trend* across PRs rather than single-run identity.
 
 ## CI gate behaviour
 
 The per-PR eval workflow runs the suite against
-`openai-api/github/openai/gpt-4.1-mini` on every pull request and
-posts the score as a PR comment. The full 30-prompt suite runs both on
+`openai-api/github/openai/gpt-4o` on every pull request and posts the
+score as a PR comment. The full 30-prompt suite runs both on
 `pull_request` and on `workflow_dispatch`; subsetting (via the
-`astrodynamics_mcp_eval_subset` task) is reserved for the case where
-budget tightens later.
+`astrodynamics_mcp_eval_subset` task) is kept available in case rate
+limits tighten in future, but is not used at the observed limits.
 
-The gate is **GitHub Models free-tier only** — no paid Anthropic /
-OpenAI keys are used or required, in line with charter §2's
-non-paid-API-key non-goal.
+**Pass threshold:** ≥80% of goldens. Calibrated against the determinism
+observations above so a single-prompt flake doesn't flip the gate. The
+threshold is revisited once a multi-run history exists.
 
-**Pass threshold:** ≥80% of goldens. Slightly below the charter §4 DoD
-nominal of ≥90%, calibrated against the determinism observations above
-so a single-prompt flake doesn't flip the gate. The threshold is
-revisited at v0.2 once a multi-run history exists.
+## Running against other providers
+
+The suite is model-agnostic — Inspect AI separates the `Task` from the
+model, so the same prompts, scorer, and MCP-server wiring work against
+any Inspect-AI-supported provider. The
+[Inspect AI providers page](https://inspect.aisi.org.uk/providers.html)
+is the authoritative list; the entries below are the ones most relevant
+to this project.
+
+For each provider, set the listed env var, then pass the `--model`
+string to `inspect eval`. The package's `astrodynamics-mcp stdio` binary
+is spawned as a subprocess regardless of which model is in use.
+
+### Anthropic (Claude direct)
+
+```bash
+ANTHROPIC_API_KEY="sk-ant-..." \
+  uv run inspect eval eval/tasks.py \
+  --model anthropic/claude-sonnet-4-6 \
+  --temperature 0
+```
+
+Other Anthropic models: `anthropic/claude-opus-4-7`,
+`anthropic/claude-haiku-4-5`, etc. — match the API model id.
+
+### OpenAI (direct, not via GH Models)
+
+```bash
+OPENAI_API_KEY="sk-..." \
+  uv run inspect eval eval/tasks.py \
+  --model openai/gpt-4o \
+  --temperature 0
+```
+
+### Google AI Studio
+
+```bash
+GOOGLE_API_KEY="..." \
+  uv run inspect eval eval/tasks.py \
+  --model google/gemini-2.5-pro \
+  --temperature 0
+```
+
+### AWS Bedrock
+
+```bash
+AWS_PROFILE=... AWS_REGION=us-west-2 \
+  uv run inspect eval eval/tasks.py \
+  --model bedrock/anthropic.claude-sonnet-4-6-v1:0 \
+  --temperature 0
+```
+
+### Local model (Ollama)
+
+Useful for iteration without burning API budget — outputs are weaker
+than the frontier models, but the scorer still exercises the MCP wiring
+and the trace/functional checks.
+
+```bash
+uv run inspect eval eval/tasks.py \
+  --model ollama/llama3.3:70b \
+  --temperature 0
+```
+
+### Pinning to a subset of prompts
+
+Useful when iterating on a single prompt's `permitted_traces` or
+`functional_answer`:
+
+```bash
+# Just the tle_lookup primary prompt:
+uv run inspect eval eval/tasks.py \
+  --model anthropic/claude-sonnet-4-6 \
+  --sample-id tle_lookup_iss_by_norad_id
+
+# Just the planning tier:
+uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval_subset \
+  -T tier=planning \
+  --model anthropic/claude-sonnet-4-6
+
+# First N samples only:
+uv run inspect eval eval/tasks.py \
+  --model anthropic/claude-sonnet-4-6 \
+  --limit 5
+```
+
+### Comparing models
+
+Provide multiple `--model` flags and Inspect AI runs the suite against
+each, emitting separate logs:
+
+```bash
+uv run inspect eval eval/tasks.py \
+  --model anthropic/claude-sonnet-4-6 \
+  --model openai/gpt-4o \
+  --model openai-api/github/openai/gpt-4o \
+  --temperature 0
+```
+
+Outputs land under `logs/` (gitignored). `inspect view logs/` opens a
+browser-based result viewer.

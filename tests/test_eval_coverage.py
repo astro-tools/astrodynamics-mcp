@@ -1,10 +1,11 @@
-"""Coverage gate over ``eval/prompts/*.yaml`` per charter §4 v0.1 DoD.
+"""Coverage gate over ``eval/prompts/*.yaml``.
 
-Asserts the suite stays within the charter's tier-distribution discipline
-(20 single-tool / 8 sequential / 2 planning) and that every v0.1 tool has
-at least one single-tool prompt and at least one sequential-or-planning
-prompt. A failing assertion here means a prompt got added or removed
-without rebalancing — the regression catches it before merge.
+Asserts the suite stays within the tier-distribution discipline
+(20 single-tool / 8 sequential / 2 planning) and that every registered
+tool has at least one single-tool prompt and at least one
+sequential-or-planning prompt. A failing assertion here means a prompt
+got added or removed without rebalancing — the regression catches it
+before merge.
 
 These also double as the test that the live suite is *populated* — an
 empty ``eval/prompts/`` directory would fail loudly here rather than
@@ -17,9 +18,9 @@ from collections import Counter
 
 from eval._prompts import load_prompts
 
-# Canonical v0.1 surface from the charter §2 In-scope list. Update only
-# when an issue adds or removes a tool from the v0.1 milestone.
-V0_1_TOOLS: frozenset[str] = frozenset(
+# Canonical tool surface that prompts may reference. Update when a tool
+# is added or removed from the MCP server's registration.
+ASTRODYNAMICS_TOOLS: frozenset[str] = frozenset(
     {
         "tle_lookup",
         "sgp4_propagate",
@@ -41,7 +42,7 @@ MIN_PLANNING = 2
 def test_prompt_directory_populated() -> None:
     prompts = load_prompts()
     assert len(prompts) >= MIN_PROMPTS, (
-        f"eval/prompts/ has {len(prompts)} prompts; v0.1 charter targets ~{MIN_PROMPTS}"
+        f"eval/prompts/ has {len(prompts)} prompts; target ~{MIN_PROMPTS}"
     )
 
 
@@ -59,19 +60,19 @@ def test_tier_distribution() -> None:
     )
 
 
-def test_every_v0_1_tool_has_a_single_tool_prompt() -> None:
+def test_every_tool_has_a_single_tool_prompt() -> None:
     prompts = load_prompts()
     covered = {
         tool for prompt in prompts if prompt.tier == "single_tool" for tool in prompt.tools_required
     }
-    missing = V0_1_TOOLS - covered
+    missing = ASTRODYNAMICS_TOOLS - covered
     assert not missing, (
-        f"v0.1 tools without a single_tool prompt: {sorted(missing)}; "
-        f"charter §4 DoD requires every tool covered at the single-tool tier"
+        f"tools without a single_tool prompt: {sorted(missing)}; "
+        f"every tool must be covered at the single-tool tier"
     )
 
 
-def test_every_v0_1_tool_has_a_sequential_or_planning_prompt() -> None:
+def test_every_tool_has_a_sequential_or_planning_prompt() -> None:
     prompts = load_prompts()
     covered = {
         tool
@@ -79,10 +80,10 @@ def test_every_v0_1_tool_has_a_sequential_or_planning_prompt() -> None:
         if prompt.tier in ("sequential", "planning")
         for tool in prompt.tools_required
     }
-    missing = V0_1_TOOLS - covered
+    missing = ASTRODYNAMICS_TOOLS - covered
     assert not missing, (
-        f"v0.1 tools without a sequential/planning prompt: {sorted(missing)}; "
-        f"charter §4 DoD requires every tool covered beyond the single-tool tier"
+        f"tools without a sequential/planning prompt: {sorted(missing)}; "
+        f"every tool must be covered beyond the single-tool tier"
     )
 
 
@@ -90,10 +91,10 @@ def test_no_unknown_tools_in_tools_required() -> None:
     """Catch typos in YAML files before the eval suite spawns the server."""
     prompts = load_prompts()
     for prompt in prompts:
-        unknown = set(prompt.tools_required) - V0_1_TOOLS
+        unknown = set(prompt.tools_required) - ASTRODYNAMICS_TOOLS
         assert not unknown, (
             f"prompt {prompt.id!r} declares tools_required={sorted(unknown)} "
-            f"not in V0_1_TOOLS={sorted(V0_1_TOOLS)} — typo or v0.2+ tool slipped in"
+            f"not in ASTRODYNAMICS_TOOLS={sorted(ASTRODYNAMICS_TOOLS)} — typo or unregistered tool"
         )
 
 

@@ -84,7 +84,7 @@ def _build_solver() -> Solver:
 
 @task
 def astrodynamics_mcp_eval() -> Task:
-    """The full v0.1 eval suite — every prompt under ``eval/prompts/``."""
+    """The full eval suite — every prompt under ``eval/prompts/``."""
     prompts = load_prompts()
     return Task(
         dataset=_build_dataset(prompts),

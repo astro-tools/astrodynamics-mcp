@@ -29,5 +29,4 @@ functional_answer:
 notes: |
   Planning tier: the user asks an open question and the LLM is expected
   to decompose it into the (tle_lookup, access_windows) pair, then
-  read AOS/peak/range off the response. Echoes the charter §1 vision
-  prompt verbatim.
+  read AOS/peak/range off the response.

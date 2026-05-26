@@ -5,8 +5,8 @@ dict whose key names the predicate and whose value parameterises it. This
 module is the closed vocabulary of those predicates plus the matcher that
 applies them to actual arguments captured from the LLM's tool-call trace.
 
-The vocabulary is intentionally small at v0.1 — only what the drafted
-prompts in the issue tracker need. Extending it is a deliberate act:
+The vocabulary is intentionally small — only what the current prompts
+need. Extending it is a deliberate act:
 add a predicate handler here, document it in ``eval/README.md``, and add
 a test in ``tests/test_eval_constraints.py``.
 

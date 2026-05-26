@@ -56,7 +56,7 @@ class PromptSpec(BaseModel):
 
     id: str = Field(..., description="Slug identifying the prompt (defaults to the file stem).")
     prompt: str = Field(..., description="The natural-language user message handed to the LLM.")
-    tier: Tier = Field(..., description="Difficulty tier — gates v0.1 DoD coverage counts.")
+    tier: Tier = Field(..., description="Difficulty tier — gates coverage counts.")
     tools_required: list[str] = Field(
         ...,
         description="Tools that must be registered for the prompt to run.",
