@@ -194,7 +194,7 @@ suite size, concurrency, or model selection, count actual requests
 from the Inspect AI log:
 
 ```bash
-inspect view logs/<latest>.eval --json | jq '[.samples[].messages[] | select(.role == "assistant")] | length'
+inspect log dump logs/<latest>.eval | jq '[.samples[].messages[] | select(.role == "assistant")] | length'
 ```
 
 If the real count is materially below 150, there is daily-cap headroom
