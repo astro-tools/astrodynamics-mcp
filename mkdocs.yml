@@ -29,12 +29,37 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
-# v0.1 ships a placeholder landing page only; the full site (pick-a-client,
-# tool reference, recipes, eval suite, FAQ, supported-clients matrix,
-# mkdocstrings API) lands with the docs-site work tracked in the v0.1
-# milestone.
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_root_heading: true
+            show_source: false
+            show_symbol_type_heading: true
+            members_order: source
+            docstring_style: google
+            separate_signature: true
+            show_signature_annotations: true
+            heading_level: 3
+            filters: ["!^_"]
+
+hooks:
+  - docs/_hooks.py
+
 nav:
   - Home: index.md
+  - Getting started: getting-started.md
+  - Pick a client: pick-a-client.md
+  - Tool reference: tool-reference.md
+  - API reference: api.md
+  - Recipes: recipes.md
+  - Data sources: data-sources.md
+  - Eval suite: eval-suite.md
+  - Supported clients: supported-clients.md
+  - FAQ: faq.md
   - Design:
     - Output shaping: design/output-shaping.md
 
@@ -47,5 +72,6 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.tabbed:
       alternate_style: true
+  - tables
   - toc:
       permalink: true
