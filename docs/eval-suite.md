@@ -55,7 +55,7 @@ The ~30 prompts split across three tiers:
 | `sequential` | 8 | Chained calls (e.g. "fetch the ISS TLE, then propagate it to ..."). |
 | `planning` | 2 | Multi-step questions where the tool sequence is non-obvious from the prompt. |
 
-Every v0.1 tool has at least one single-tool prompt and at least one
+Every tool has at least one single-tool prompt and at least one
 sequential-or-planning prompt.
 
 ## Run it locally
@@ -91,29 +91,7 @@ Two layers beyond the eval suite itself:
   goldens are regenerated deliberately when an upstream-library version
   pin changes.
 
-Together with the per-PR eval gate these form the validation triangle:
+Together with the eval gate these form the validation triangle:
 unit tests check upstream wrapping, reference goldens check
 deterministic outputs, and the eval suite checks that an LLM picks the
 right tool and reads the right answer back.
-
-## CI gate
-
-The gate is `workflow_dispatch`-only at v0.1 — `.github/workflows/eval.yml`
-runs the suite against `openai-api/github/openai/gpt-4.1-mini` and posts
-the markdown report to the workflow Summary page. The Inspect AI log
-uploads as a workflow artefact (14-day retention) — download it and run
-`uv run inspect view logs/` locally to replay any failing prompt's
-conversation.
-
-The pass threshold is ≥80% of goldens, calibrated to absorb the expected
-single-prompt flake (GH Models' `seed` is best-effort, not byte-deterministic).
-
-## Where this comes from
-
-The hybrid scorer pattern, the prompt tiering, and the GitHub Models
-free-tier execution surface are documented in the
-[charter](https://github.com/astro-tools/astrodynamics-mcp/blob/main/README.md).
-The eval suite as a regression contract on tool-description quality is
-the project's main engineering content beyond the upstream-library
-wrappers themselves — it's how we tell whether a tool-description tweak
-helped or hurt the LLM consumer.
