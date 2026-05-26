@@ -17,9 +17,11 @@ functional_answer:
     equals: "km^2/s^2"
   - path: "$.best.total_dv.unit"
     equals: "km/s"
-  - path: "$.grid"
-    length: {min: 100}
+  - path: "$.top_cells"
+    length: {min: 2}
 notes: |
   Primary single-tool path. The 2026 Earth-Mars window is well-known
   in the C3 ~10-25 km²/s² band; we bracket loosely [8, 30] to tolerate
-  small differences in the ephemeris source.
+  small differences in the ephemeris source. The tool's default
+  output='summary' returns top_cells (≤ 5) instead of the full grid;
+  the length predicate asserts at least two alternatives surfaced.

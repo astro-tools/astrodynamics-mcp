@@ -35,6 +35,8 @@ theme:
 # milestone.
 nav:
   - Home: index.md
+  - Design:
+    - Output shaping: design/output-shaping.md
 
 markdown_extensions:
   - admonition

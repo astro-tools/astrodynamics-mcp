@@ -135,27 +135,50 @@ class PorkchopCell(BaseModel):
     )
 
 
+# How many of the lowest-total_dv cells the summary response carries.
+# Five cells (~6 fields each, ~1.2 KB JSON) leaves headroom under the
+# ~2 KB / ~2k-token default-response target.
+_SUMMARY_TOP_CELLS = 5
+
+
 class PorkchopResponse(BaseModel):
     """Response from :func:`porkchop`.
 
-    ``grid`` is row-major: outer index is arrive-epoch (major axis), inner
-    index is depart-epoch (minor axis). Infeasible cells (``tof <= 0``,
-    Lambert no-solution) are skipped silently rather than carried as NaN —
-    the ASCII summary marks them with a space glyph for the visual.
+    The shape is the same regardless of ``output`` — the parameter only
+    selects how much of the grid travels back to the caller:
+
+    - ``output="summary"`` (default): ``grid`` is empty; ``top_cells``
+      carries up to five lowest-``total_dv`` cells so the response fits
+      small-model input caps.
+    - ``output="full"``: ``grid`` carries every feasible cell in row-major
+      order (outer: arrive-epoch, inner: depart-epoch); ``top_cells`` is
+      still populated for the canonical "show me the alternatives" case.
+
+    Infeasible cells (``tof <= 0``, Lambert no-solution) are skipped
+    silently rather than carried as NaN — the ASCII summary marks them
+    with a space glyph for the visual.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    grid: list[PorkchopCell] = Field(
-        ...,
-        description=(
-            "Every feasible cell in row-major order (outer: arrive-epoch, inner: depart-epoch). "
-            "Infeasible cells (tof ≤ 0, Lambert no-solution) are omitted."
-        ),
-    )
     best: PorkchopCell = Field(
         ...,
-        description="The grid cell with the minimum total_dv across every feasible row.",
+        description="The feasible cell with the minimum total_dv across the scan.",
+    )
+    top_cells: list[PorkchopCell] = Field(
+        ...,
+        description=(
+            "Up to five lowest-total_dv cells, sorted ascending. Always includes `best` "
+            "as the first entry; size is capped to keep the default response under small-"
+            "model input limits."
+        ),
+    )
+    grid: list[PorkchopCell] = Field(
+        default_factory=list,
+        description=(
+            "Every feasible cell in row-major order (outer: arrive-epoch, inner: depart-epoch). "
+            "Populated only when the caller passes output='full'; empty otherwise."
+        ),
     )
     ascii_summary: str = Field(
         ...,
@@ -179,15 +202,19 @@ _DESCRIPTION = (
     "heliocentric transfer. e.g. porkchop(departure_body='earth', arrival_body='mars', "
     "depart_window=['2026-10-01T00:00:00Z','2026-12-01T00:00:00Z'], "
     "arrive_window=['2027-04-01T00:00:00Z','2027-10-01T00:00:00Z'], samples_per_axis=20) "
-    "returns the full grid, the minimum-total_dv 'best' cell, and a compact ASCII contour "
-    "for inline LLM display. Both windows are UTC ISO 8601 pairs [start, end]; the grid is "
-    "samples_per_axis x samples_per_axis linspace-sampled across each window. Body ephemerides "
-    "come from JPL Horizons — the first call after a cold cache takes minutes (Horizons is "
-    "slow), subsequent calls within the 7-day TTL are local. For broad exploratory scans, "
-    "bring samples_per_axis down to 15-20 before launching a 50x50 grid. mu='sun' is the only "
-    "v0.1 mu — heliocentric Lambert in ICRF ecliptic km / km/s. Misordered windows (arrive "
-    "entirely before depart) raise invalid_input.porkchop_window_order. Horizons unreachable "
-    "mid-grid raises data_source.horizons_unreachable with no partial results."
+    "returns the minimum-total_dv 'best' cell, the five lowest-total_dv cells, and a compact "
+    "ASCII contour for inline LLM display. Both windows are UTC ISO 8601 pairs [start, end]; "
+    "the grid is samples_per_axis x samples_per_axis linspace-sampled across each window. "
+    "Output shaping: the default output='summary' trims the response to best/top_cells/"
+    "ascii_summary so it fits small-model context windows; pass output='full' to receive "
+    "every feasible cell in `grid` (a 30x30 scan is ~250 KB and will overflow tight input "
+    "caps). Body ephemerides come from JPL Horizons — the first call after a cold cache "
+    "takes minutes (Horizons is slow), subsequent calls within the 7-day TTL are local. For "
+    "broad exploratory scans, bring samples_per_axis down to 15-20 before launching a 50x50 "
+    "grid. mu='sun' is the only v0.1 mu — heliocentric Lambert in ICRF ecliptic km / km/s. "
+    "Misordered windows (arrive entirely before depart) raise "
+    "invalid_input.porkchop_window_order. Horizons unreachable mid-grid raises "
+    "data_source.horizons_unreachable with no partial results."
 )
 
 
@@ -470,6 +497,7 @@ async def porkchop(
     arrive_window: list[str],
     mu: Literal["sun"] = "sun",
     samples_per_axis: int = 30,
+    output: Literal["summary", "full"] = "summary",
 ) -> PorkchopResponse:
     # Validation.
     dep_body = _validate_body(departure_body, field="departure_body")
@@ -539,5 +567,10 @@ async def porkchop(
             },
         )
 
-    best = min(flat_grid, key=lambda c: c.total_dv.value)
-    return PorkchopResponse(grid=flat_grid, best=best, ascii_summary=_ascii_contour(c3_rows))
+    sorted_by_total_dv = sorted(flat_grid, key=lambda c: c.total_dv.value)
+    return PorkchopResponse(
+        best=sorted_by_total_dv[0],
+        top_cells=sorted_by_total_dv[:_SUMMARY_TOP_CELLS],
+        grid=flat_grid if output == "full" else [],
+        ascii_summary=_ascii_contour(c3_rows),
+    )

@@ -26,6 +26,7 @@ from astrodynamics_mcp.server_lint import check_tool_descriptions
 from astrodynamics_mcp.tools.porkchop import (
     _JD_UNIX_EPOCH,
     _MU_SUN,
+    _SUMMARY_TOP_CELLS,
     PorkchopResponse,
     porkchop,
 )
@@ -455,10 +456,11 @@ class TestSyntheticGrid:
             depart_window=_DEPART_WINDOW,
             arrive_window=_ARRIVE_WINDOW,
             samples_per_axis=n,
+            output="full",
         )
+        assert isinstance(response, PorkchopResponse)
         # nxn cells, all positive-tof in this window so the grid is full.
         assert len(response.grid) == n * n
-        assert isinstance(response, PorkchopResponse)
 
         # Every cell carries the right units.
         for cell in response.grid:
@@ -516,7 +518,9 @@ class TestSyntheticGrid:
             depart_window=["2027-01-01T00:00:00Z", "2027-04-01T00:00:00Z"],
             arrive_window=["2027-03-01T00:00:00Z", "2027-07-01T00:00:00Z"],
             samples_per_axis=n,
+            output="full",
         )
+        assert isinstance(response, PorkchopResponse)
         # Some cells dropped → grid is strictly smaller than the nxn full grid.
         assert 0 < len(response.grid) < n * n
         # Every emitted cell still has positive tof.
@@ -536,7 +540,9 @@ class TestSyntheticGrid:
             depart_window=_DEPART_WINDOW,
             arrive_window=_ARRIVE_WINDOW,
             samples_per_axis=4,
+            output="full",
         )
+        assert isinstance(response, PorkchopResponse)
         rebuilt = PorkchopResponse.model_validate_json(response.model_dump_json())
         assert rebuilt == response
 
@@ -547,8 +553,79 @@ class TestSyntheticGrid:
             depart_window=_DEPART_WINDOW,
             arrive_window=_ARRIVE_WINDOW,
             samples_per_axis=3,
+            output="full",
+        )
+        assert isinstance(response, PorkchopResponse)
+        assert len(response.grid) > 0
+
+
+# ---------------------------------------------------------------------------
+# Default-summary output shape
+# ---------------------------------------------------------------------------
+
+
+class TestSummaryOutput:
+    async def test_default_output_omits_full_grid(self, earth_mars_client: Iterator[None]) -> None:
+        response = await porkchop(
+            departure_body="earth",
+            arrival_body="mars",
+            depart_window=_DEPART_WINDOW,
+            arrive_window=_ARRIVE_WINDOW,
+            samples_per_axis=8,
+        )
+        assert response.grid == []
+        assert response.top_cells[0] == response.best
+        assert len(response.top_cells) == _SUMMARY_TOP_CELLS
+        # top_cells are sorted ascending by total_dv.
+        totals = [cell.total_dv.value for cell in response.top_cells]
+        assert totals == sorted(totals)
+
+    async def test_full_keeps_top_cells_alongside_grid(
+        self, earth_mars_client: Iterator[None]
+    ) -> None:
+        response = await porkchop(
+            departure_body="earth",
+            arrival_body="mars",
+            depart_window=_DEPART_WINDOW,
+            arrive_window=_ARRIVE_WINDOW,
+            samples_per_axis=6,
+            output="full",
         )
         assert len(response.grid) > 0
+        assert len(response.top_cells) == _SUMMARY_TOP_CELLS
+        assert response.top_cells[0] == response.best
+        # top_cells is a sorted prefix of the grid (by total_dv asc).
+        grid_sorted = sorted(response.grid, key=lambda c: c.total_dv.value)
+        assert response.top_cells == grid_sorted[:_SUMMARY_TOP_CELLS]
+
+    async def test_summary_top_cells_caps_at_feasible_count(
+        self, earth_mars_client: Iterator[None]
+    ) -> None:
+        """If fewer feasible cells exist than the top-N cap, top_cells shrinks."""
+        # 2x2 grid → at most four feasible cells; top_cells must not exceed it.
+        response = await porkchop(
+            departure_body="earth",
+            arrival_body="mars",
+            depart_window=_DEPART_WINDOW,
+            arrive_window=_ARRIVE_WINDOW,
+            samples_per_axis=2,
+        )
+        assert 1 <= len(response.top_cells) <= 4
+
+    async def test_summary_payload_is_smaller_than_full(
+        self, earth_mars_client: Iterator[None]
+    ) -> None:
+        """The summary path must produce a strictly smaller JSON payload."""
+        kwargs: dict[str, Any] = {
+            "departure_body": "earth",
+            "arrival_body": "mars",
+            "depart_window": _DEPART_WINDOW,
+            "arrive_window": _ARRIVE_WINDOW,
+            "samples_per_axis": 10,
+        }
+        summary = await porkchop(**kwargs, output="summary")
+        full = await porkchop(**kwargs, output="full")
+        assert len(summary.model_dump_json()) < len(full.model_dump_json())
 
 
 # ---------------------------------------------------------------------------
@@ -576,6 +653,7 @@ class TestRegistration:
                 "depart_window": _DEPART_WINDOW,
                 "arrive_window": _ARRIVE_WINDOW,
                 "samples_per_axis": 3,
+                "output": "full",
             },
         )
         del content
@@ -583,6 +661,25 @@ class TestRegistration:
         assert "grid" in structured and "best" in structured and "ascii_summary" in structured
         assert structured["best"]["c3"]["unit"] == "km^2/s^2"
         assert structured["best"]["total_dv"]["unit"] == "km/s"
+
+    async def test_tool_callable_via_mcp_default_summary_shape(
+        self, earth_mars_client: Iterator[None]
+    ) -> None:
+        content, structured = await mcp.call_tool(
+            "porkchop",
+            {
+                "departure_body": "earth",
+                "arrival_body": "mars",
+                "depart_window": _DEPART_WINDOW,
+                "arrive_window": _ARRIVE_WINDOW,
+                "samples_per_axis": 3,
+            },
+        )
+        del content
+        assert isinstance(structured, dict)
+        assert {"best", "top_cells", "grid", "ascii_summary"} <= structured.keys()
+        assert structured["grid"] == []
+        assert 1 <= len(structured["top_cells"]) <= 5
 
 
 # ---------------------------------------------------------------------------
@@ -849,7 +946,9 @@ class TestLiveHorizons:
             depart_window=["2026-09-01T00:00:00Z", "2026-12-01T00:00:00Z"],
             arrive_window=["2027-06-01T00:00:00Z", "2027-11-01T00:00:00Z"],
             samples_per_axis=10,
+            output="full",
         )
+        assert isinstance(response, PorkchopResponse)
         assert len(response.grid) > 0
         # Textbook 2026-2027 Earth-Mars launch period C3 minima sit in the
         # 10-25 km²/s² band; the loose bound below catches a broken grid
