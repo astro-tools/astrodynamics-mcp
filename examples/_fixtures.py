@@ -1,0 +1,272 @@
+"""Shared deterministic fixtures and in-process MCP-client driver for the example sessions.
+
+Each ``run_example_NN.py`` script imports from here so the mocks
+(`CelesTrak`, `JPL Horizons`) and the MCP client/server pairing live in
+one place. The same context managers back the smoke-test path under
+`tests/test_examples.py`.
+
+The MCP `ClientSession` is created in-process via
+``mcp.shared.memory.create_connected_server_and_client_session`` against
+the module-level `astrodynamics_mcp.server.mcp` singleton. This is
+deliberately not a subprocess: the data-source mocks must reach the
+tool functions, and ``httpx`` monkey-patches don't cross subprocess
+boundaries. The user-facing transcripts still show the canonical stdio
+client config — the deployment shape is identical at the MCP wire
+layer.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Any
+from unittest.mock import patch
+
+import httpx
+import numpy as np
+from mcp import ClientSession
+from mcp.shared.memory import create_connected_server_and_client_session
+
+# ---------------------------------------------------------------------------
+# Cache isolation
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def temp_cache() -> Iterator[None]:
+    """Point the on-disk cache at a temporary directory for the lifetime of the block.
+
+    Each example needs a pristine cache so a stale entry from a prior run
+    doesn't paper over a mock that didn't fire.
+    """
+    import astrodynamics_mcp.cache as cache_module
+
+    with tempfile.TemporaryDirectory() as cache_dir:
+        previous_default = cache_module._default_cache
+        previous_env = os.environ.get("ASTRODYNAMICS_MCP_CACHE_DIR")
+        os.environ["ASTRODYNAMICS_MCP_CACHE_DIR"] = cache_dir
+        cache_module._default_cache = None
+        try:
+            yield
+        finally:
+            cache_module._default_cache = previous_default
+            if previous_env is None:
+                os.environ.pop("ASTRODYNAMICS_MCP_CACHE_DIR", None)
+            else:
+                os.environ["ASTRODYNAMICS_MCP_CACHE_DIR"] = previous_env
+
+
+# ---------------------------------------------------------------------------
+# CelesTrak — fixed Hubble OMM
+# ---------------------------------------------------------------------------
+
+
+# Synthetic-but-CCSDS-conformant OMM for HST (NORAD 20580). The mean
+# elements roughly match Hubble's actual orbit (~540 km altitude, 28.5°
+# inclination); the BSTAR is a sane low-drag value. The fixture is
+# deliberately *not* time-locked to a single calendar day so the example
+# transcripts don't rot when a future re-run picks a different `start`.
+_HUBBLE_OMM: dict[str, Any] = {
+    "OBJECT_NAME": "HST",
+    "OBJECT_ID": "1990-037B",
+    "EPOCH": "2026-05-23T00:00:00.000000",
+    "MEAN_MOTION": 15.09299,
+    "ECCENTRICITY": 0.0002829,
+    "INCLINATION": 28.4690,
+    "RA_OF_ASC_NODE": 32.1234,
+    "ARG_OF_PERICENTER": 80.0,
+    "MEAN_ANOMALY": 280.0,
+    "EPHEMERIS_TYPE": 0,
+    "CLASSIFICATION_TYPE": "U",
+    "NORAD_CAT_ID": 20580,
+    "ELEMENT_SET_NO": 999,
+    "REV_AT_EPOCH": 0,
+    "BSTAR": 0.00012,
+    "MEAN_MOTION_DOT": 0.0,
+    "MEAN_MOTION_DDOT": 0.0,
+}
+
+
+@contextmanager
+def mock_celestrak_hubble() -> Iterator[None]:
+    """Patch CelesTrak's HTTP client to return one HST OMM record."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[_HUBBLE_OMM])
+
+    original_client = httpx.AsyncClient
+
+    def factory(*_args: Any, **_kwargs: Any) -> httpx.AsyncClient:
+        return original_client(transport=httpx.MockTransport(handler))
+
+    with (
+        temp_cache(),
+        patch(
+            "astrodynamics_mcp.data.celestrak.httpx.AsyncClient",
+            side_effect=factory,
+        ),
+    ):
+        yield
+
+
+# ---------------------------------------------------------------------------
+# Horizons — synthetic Earth / Mars 2028 geometry
+# ---------------------------------------------------------------------------
+
+
+_AU_KM = 149597870.7
+_MU_SUN = 1.32712440018e11
+_EARTH_SMA_KM = _AU_KM
+_MARS_SMA_KM = 1.523679 * _AU_KM
+_UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_JD_UNIX_EPOCH = 2440587.5
+
+# Coverage window for the Mars-2028 porkchop example. Earth and Mars are
+# placed on coplanar circular orbits whose phasing at the start of the
+# table puts the synthetic-Hohmann opportunity inside the depart / arrive
+# windows the example calls porkchop with.
+_FIXTURE_START = datetime(2028, 1, 1, tzinfo=timezone.utc)
+_FIXTURE_DAYS = 700
+
+
+def _datetime_to_jd(dt: datetime) -> float:
+    return _JD_UNIX_EPOCH + (dt - _UNIX_EPOCH).total_seconds() / 86400.0
+
+
+def _circular_orbit_table(
+    *,
+    start: datetime,
+    days: int,
+    semi_major_axis_km: float,
+    initial_mean_anomaly_rad: float,
+) -> tuple[list[datetime], np.ndarray, np.ndarray]:
+    period_s = 2 * np.pi * np.sqrt(semi_major_axis_km**3 / _MU_SUN)
+    epochs: list[datetime] = []
+    positions: list[np.ndarray] = []
+    velocities: list[np.ndarray] = []
+    v_circ = float(np.sqrt(_MU_SUN / semi_major_axis_km))
+    for day in range(days + 1):
+        t = start + timedelta(days=day)
+        m = initial_mean_anomaly_rad + 2 * np.pi * (day * 86400.0) / period_s
+        cos_m = float(np.cos(m))
+        sin_m = float(np.sin(m))
+        epochs.append(t)
+        positions.append(np.array([semi_major_axis_km * cos_m, semi_major_axis_km * sin_m, 0.0]))
+        velocities.append(np.array([-v_circ * sin_m, v_circ * cos_m, 0.0]))
+    return epochs, np.asarray(positions), np.asarray(velocities)
+
+
+def _format_horizons_vectors(
+    epochs: list[datetime], positions: np.ndarray, velocities: np.ndarray
+) -> str:
+    lines = [
+        "*****************************************************************************",
+        "Ephemeris / API_USER Sun-centred VECTORS table — synthetic example fixture",
+        "*****************************************************************************",
+        "$$SOE",
+    ]
+    for t, r, v in zip(epochs, positions, velocities, strict=True):
+        jd = _datetime_to_jd(t)
+        lines.append(f" {jd:.9f} = A.D. {t:%Y-%b-%d %H:%M:%S.%f} TDB")
+        lines.append(f" X ={r[0]: .9E} Y ={r[1]: .9E} Z ={r[2]: .9E}")
+        lines.append(f" VX={v[0]: .9E} VY={v[1]: .9E} VZ={v[2]: .9E}")
+    lines.append("$$EOE")
+    lines.append("*****************************************************************************")
+    return "\n".join(lines)
+
+
+def _build_horizons_payloads() -> dict[str, dict[str, Any]]:
+    earth_epochs, earth_pos, earth_vel = _circular_orbit_table(
+        start=_FIXTURE_START,
+        days=_FIXTURE_DAYS,
+        semi_major_axis_km=_EARTH_SMA_KM,
+        initial_mean_anomaly_rad=0.0,
+    )
+    # Mars leads Earth by ~44° so the Hohmann opportunity lands inside the
+    # depart window the example calls porkchop with. Tuned by hand against
+    # the example's window pair.
+    mars_epochs, mars_pos, mars_vel = _circular_orbit_table(
+        start=_FIXTURE_START,
+        days=_FIXTURE_DAYS,
+        semi_major_axis_km=_MARS_SMA_KM,
+        initial_mean_anomaly_rad=float(np.radians(44.0)),
+    )
+    return {
+        "399": {"result": _format_horizons_vectors(earth_epochs, earth_pos, earth_vel)},
+        "499": {"result": _format_horizons_vectors(mars_epochs, mars_pos, mars_vel)},
+    }
+
+
+@contextmanager
+def mock_horizons_earth_mars_2028() -> Iterator[None]:
+    """Patch Horizons' HTTP client with a deterministic Earth / Mars geometry covering 2028."""
+    payloads = _build_horizons_payloads()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        target = request.url.params["COMMAND"].strip("'")
+        payload = payloads.get(target)
+        if payload is None:
+            return httpx.Response(404, text=f"unknown target {target!r} in mock")
+        return httpx.Response(200, json=payload)
+
+    original_client = httpx.AsyncClient
+
+    def factory(*_args: Any, **_kwargs: Any) -> httpx.AsyncClient:
+        return original_client(transport=httpx.MockTransport(handler))
+
+    with (
+        temp_cache(),
+        patch(
+            "astrodynamics_mcp.data.horizons.httpx.AsyncClient",
+            side_effect=factory,
+        ),
+    ):
+        yield
+
+
+# ---------------------------------------------------------------------------
+# In-process MCP client session
+# ---------------------------------------------------------------------------
+
+
+@asynccontextmanager
+async def mcp_session() -> AsyncIterator[ClientSession]:
+    """Open an in-process MCP client connected to the live `astrodynamics_mcp` server.
+
+    Wraps :func:`mcp.shared.memory.create_connected_server_and_client_session`
+    around the module-level :data:`astrodynamics_mcp.server.mcp` singleton.
+    Tool registration happens via the side effect of importing
+    :mod:`astrodynamics_mcp.tools`.
+    """
+    # Importing the tools package triggers @register_tool side effects on
+    # the shared `mcp` singleton.
+    import astrodynamics_mcp.tools  # noqa: F401
+    from astrodynamics_mcp.server import mcp
+
+    async with create_connected_server_and_client_session(mcp) as session:
+        await session.initialize()
+        yield session
+
+
+def first_text_content(call_tool_result: Any) -> dict[str, Any]:
+    """Return the first text block of an MCP `tools/call` result as parsed JSON.
+
+    FastMCP encodes a pydantic-model return value as a single
+    ``TextContent`` whose ``.text`` is the JSON dump. The example
+    scripts only ever care about the structured response, so we collapse
+    that layer at one spot.
+    """
+    if not getattr(call_tool_result, "content", None):
+        raise AssertionError("tool call returned no content")
+    block = call_tool_result.content[0]
+    text = getattr(block, "text", None)
+    if text is None:
+        raise AssertionError(f"first content block has no .text (got {type(block).__name__})")
+    parsed: Any = json.loads(text)
+    if not isinstance(parsed, dict):
+        raise AssertionError(f"expected a JSON object, got {type(parsed).__name__}")
+    return parsed

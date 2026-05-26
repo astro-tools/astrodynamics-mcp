@@ -90,7 +90,7 @@ packages = ["src/astrodynamics_mcp"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-src = ["src", "tests", "eval"]
+src = ["src", "tests", "eval", "examples"]
 
 [tool.ruff.lint]
 select = [
@@ -106,7 +106,7 @@ select = [
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = ["src/astrodynamics_mcp", "tests", "eval"]
+files = ["src/astrodynamics_mcp", "tests", "eval", "examples"]
 
 # sgp4 ships no py.typed marker; tools/propagation.py uses the Satrec surface only.
 [[tool.mypy.overrides]]
