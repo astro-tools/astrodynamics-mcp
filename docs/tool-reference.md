@@ -1,8 +1,8 @@
 # Tool reference
 
-Every tool the v0.1 server registers, with the input and output JSON
-schemas the MCP wire actually carries. The catalogue below is generated at
-build time from the live `FastMCP` registry — what you see is what an MCP
+Every tool the server registers, with the input and output JSON schemas
+the MCP wire actually carries. The catalogue below is generated at build
+time from the live `FastMCP` registry — what you see is what an MCP
 client receives when it issues `tools/list` against `astrodynamics-mcp`.
 
 ## How to read this page

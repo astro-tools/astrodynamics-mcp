@@ -25,7 +25,7 @@ Claude Code reads MCP server definitions from its `mcp` settings. Add:
 }
 ```
 
-Restart Claude Code. The eight v0.1 tools (`tle_lookup`, `sgp4_propagate`,
+Restart Claude Code. The registered tools (`tle_lookup`, `sgp4_propagate`,
 `lambert_solve`, `access_windows`, `time_convert`, `frame_transform`,
 `porkchop`, `bplane_target`) appear in the tool list.
 

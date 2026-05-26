@@ -18,7 +18,7 @@ ephemerides. astrodynamics-mcp lets you plug authoritative tools into any
 [Model Context Protocol](https://modelcontextprotocol.io)-capable client so
 the LLM calls vetted upstream libraries instead of hallucinating numbers.
 
-The v0.1 surface wraps eight no-auth tools across the most common
+The current surface wraps eight no-auth tools across the most common
 single-satellite questions: `tle_lookup`, `sgp4_propagate`, `lambert_solve`,
 `access_windows`, `time_convert`, `frame_transform`, `porkchop`,
 `bplane_target`.
