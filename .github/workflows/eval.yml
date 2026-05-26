@@ -124,18 +124,22 @@ jobs:
           path: logs/
           retention-days: 14
 
-      - name: Generate PR-comment report
+      - name: Generate report
         id: report
         if: always()
         # `set +e` so we capture both stdout and the exit code; the
         # workflow fails on the exit code in the dedicated step below
-        # so the comment is posted even when the gate fails.
+        # so the report is posted even when the gate fails. The report
+        # body is also appended to GITHUB_STEP_SUMMARY so it appears at
+        # the top of the workflow run page — that's where manual
+        # workflow_dispatch runs (no PR context) read the score.
         run: |
           set +e
           uv run python eval/_ci_report.py \
             --log-dir logs \
             --threshold 0.80 > /tmp/eval_report.md
           echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          cat /tmp/eval_report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post PR comment
         if: github.event_name == 'pull_request' && always()

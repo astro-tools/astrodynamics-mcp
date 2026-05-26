@@ -201,6 +201,19 @@ it manually from the Actions tab when a PR or main-branch state
 warrants a fresh score. Automatic triggers (push to main, cron) will
 be re-enabled once the gate's run-to-run stability is established.
 
+**Where the score lives.** After a run completes:
+
+- The full markdown report is appended to the run's **Summary** page —
+  the panel at the top of the Actions run view. This is the primary
+  place to read the score for a manual run.
+- A `PR comment` is also posted automatically when the workflow runs
+  on a `pull_request` event (currently disabled but kept in the
+  workflow for future re-enablement).
+- The raw Inspect AI log uploads as the `inspect-eval-logs` workflow
+  artefact (14-day retention). Download it and run
+  `uv run inspect view logs/` locally to replay the conversation
+  per sample — useful when investigating a specific failure.
+
 Authentication uses the workflow's auto-generated `GITHUB_TOKEN` (with
 `permissions: models: read`) when it has GitHub Models access, falling
 back to a `MODELS_PAT` repo secret if you've created one. A pre-flight
