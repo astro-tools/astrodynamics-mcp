@@ -2,7 +2,7 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that
 gives any MCP-capable LLM client (Claude Code, Cursor, ChatGPT desktop,
-custom agents) authoritative astrodynamics tools — TLE/SGP4 propagation,
+custom agents) authoritative astrodynamics tools: TLE/SGP4 propagation,
 Lambert solving, ground-station access, time-scale and coordinate-frame
 conversions, porkchop scans, B-plane targeting.
 
