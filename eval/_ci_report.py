@@ -94,6 +94,25 @@ def collect_failures(log: Any) -> tuple[float, int, int, tuple[FailingPrompt, ..
     return accuracy, n_samples, n_passed, tuple(failing)
 
 
+def render_no_log_markdown(reason: str) -> str:
+    """Render a stand-in PR comment when the eval crashed before producing a log.
+
+    Returned even when :func:`main` exits with code 2 so the
+    ``actions/github-script`` step has a non-empty body to post — a
+    silent failure on the comment step would otherwise hide the error.
+    """
+    return (
+        "## Eval gate: ❌ ERROR\n"
+        "\n"
+        "The eval suite did not produce a log. The gate is failed conservatively.\n"
+        "\n"
+        f"**Reason:** {reason}\n"
+        "\n"
+        "Check the `eval` workflow run for the underlying exception "
+        "(usually a setup error or a model-provider auth failure).\n"
+    )
+
+
 def render_markdown(summary: EvalSummary, threshold: float) -> str:
     """Render the PR-comment markdown body. Pure function; easy to unit-test."""
     passed_gate = summary.accuracy >= threshold
@@ -168,7 +187,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         summary = _build_summary_from_log_dir(args.log_dir)
     except (FileNotFoundError, ValueError) as exc:
         sys.stderr.write(f"ERROR: {exc}\n")
-        # No log means we can't produce a meaningful report; fail the gate.
+        # No log means we can't produce a meaningful report; emit a
+        # PR-comment-friendly error block on stdout anyway so the
+        # downstream github-script step has a body to post.
+        sys.stdout.write(render_no_log_markdown(str(exc)))
         return 2
 
     sys.stdout.write(render_markdown(summary, args.threshold))

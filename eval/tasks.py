@@ -16,17 +16,29 @@ the verification spike (see ``eval/README.md``).
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
-from inspect_ai import Task, task
-from inspect_ai.agent import as_solver, react
-from inspect_ai.dataset import MemoryDataset, Sample
-from inspect_ai.solver import Solver
-from inspect_ai.tool import mcp_server_stdio
+# Inspect AI loads this file by path (e.g. ``inspect eval eval/tasks.py``),
+# which puts only ``eval/`` on sys.path — not the repo root. Without the
+# repo root, ``from eval._prompts import ...`` below fails with
+# ``ModuleNotFoundError: No module named 'eval'``. Pytest covers this via
+# ``pythonpath = ["."]`` in pyproject.toml; the runtime CLI path needs its
+# own escape hatch.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-from eval._prompts import PromptSpec, load_prompts
-from eval.scoring import hybrid_scorer
+from inspect_ai import Task, task  # noqa: E402
+from inspect_ai.agent import as_solver, react  # noqa: E402
+from inspect_ai.dataset import MemoryDataset, Sample  # noqa: E402
+from inspect_ai.solver import Solver  # noqa: E402
+from inspect_ai.tool import mcp_server_stdio  # noqa: E402
+
+from eval._prompts import PromptSpec, load_prompts  # noqa: E402
+from eval.scoring import hybrid_scorer  # noqa: E402
 
 # Console-script name installed by [project.scripts] in pyproject.toml.
 _SERVER_COMMAND = "astrodynamics-mcp"

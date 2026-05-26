@@ -13,6 +13,7 @@ from eval._ci_report import (
     collect_failures,
     main,
     render_markdown,
+    render_no_log_markdown,
 )
 
 
@@ -200,10 +201,23 @@ class TestRenderMarkdown:
         assert "`prompt_24`" not in md
 
 
+class TestNoLogMarkdown:
+    def test_includes_reason(self) -> None:
+        md = render_no_log_markdown("no Inspect AI logs found under logs")
+        assert "## Eval gate: ❌ ERROR" in md
+        assert "no Inspect AI logs found" in md
+
+
 class TestMainCli:
-    def test_missing_log_dir_returns_two(self, tmp_path: Path) -> None:
+    def test_missing_log_dir_returns_two_and_writes_body(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         rc = main(["--log-dir", str(tmp_path), "--threshold", "0.8"])
         assert rc == 2
+        captured = capsys.readouterr()
+        # Body lands on stdout (PR comment source); reason on stderr (workflow log).
+        assert "ERROR" in captured.out
+        assert "ERROR" in captured.err
 
     def test_threshold_pass_returns_zero(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
