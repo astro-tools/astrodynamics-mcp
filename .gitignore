@@ -33,6 +33,9 @@ htmlcov/
 site/
 .cache/
 
+# Inspect AI eval output
+logs/
+
 # IDE / editor
 .vscode/
 .idea/

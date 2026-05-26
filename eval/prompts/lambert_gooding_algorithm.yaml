@@ -1,0 +1,23 @@
+prompt: |
+  Use the Gooding 1990 Lambert solver to find the transfer from
+  r1=[5000, 10000, 2100] km to r2=[-14600, 2500, 7000] km in Earth orbit
+  over 3600 s.
+tier: single_tool
+tools_required: [lambert_solve]
+permitted_traces:
+  - - tool: lambert_solve
+      arg_constraints:
+        algorithm: {equals: "gooding"}
+        tof: {equals: 3600}
+        mu: {one_of: ["earth", 398600.4418, null]}
+functional_answer:
+  - path: "$.v1.value"
+    numeric_tolerance:
+      expected: [-5.9925, 1.9254, 3.2456]
+      abs: 0.01
+  - path: "$.v1.unit"
+    equals: "km/s"
+notes: |
+  Off-axis variant — algorithm dispatch ('gooding' vs default 'izzo').
+  Loose 10 m/s tolerance accommodates the slight cross-solver
+  convergence difference.

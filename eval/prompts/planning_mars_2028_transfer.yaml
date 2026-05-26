@@ -1,0 +1,28 @@
+prompt: |
+  I'm scoping a Mars mission for the 2028 launch window. Find the
+  cheapest departure-arrival pair from Earth to Mars with departure
+  between 2028-08-01 and 2028-12-01 and arrival between 2029-04-01 and
+  2029-12-01. For that best pair, what are the heliocentric transfer
+  orbit's semi-major axis, eccentricity, and inclination?
+tier: planning
+tools_required: [porkchop, lambert_solve]
+permitted_traces:
+  - - tool: porkchop
+      arg_constraints:
+        departure_body: {case_insensitive_equals: "earth"}
+        arrival_body: {case_insensitive_equals: "mars"}
+    - tool: lambert_solve
+      arg_constraints:
+        mu: {case_insensitive_equals: "sun"}
+functional_answer:
+  - path: "$.transfer_elements.a.unit"
+    equals: "km"
+  - path: "$.transfer_elements.e.unit"
+    equals: "1"
+  - path: "$.transfer_elements.i.unit"
+    equals: "deg"
+notes: |
+  Planning tier: open-ended interplanetary mission scoping. The LLM
+  picks the porkchop window, finds the best cell, then chains into a
+  Lambert solve for the transfer-arc elements. Mu must be 'sun' on
+  the Lambert call — heliocentric, not Earth.

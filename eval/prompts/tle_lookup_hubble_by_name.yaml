@@ -1,0 +1,20 @@
+prompt: "What's the current TLE for the Hubble Space Telescope?"
+tier: single_tool
+tools_required: [tle_lookup]
+permitted_traces:
+  - - tool: tle_lookup
+      arg_constraints:
+        query: {case_insensitive_contains: "HUBBLE"}
+  - - tool: tle_lookup
+      arg_constraints:
+        query: {equals: "20580"}
+functional_answer:
+  - path: "$.results"
+    length: {min: 1}
+  - path: "$.results[0].norad_id"
+    equals: "20580"
+  - path: "$.results[0].name"
+    case_insensitive_contains: "HUBBLE"
+notes: |
+  Off-axis variant — name lookup (vs the NORAD-ID primary). Either route
+  is correct: the LLM can search by name or recall the NORAD ID (20580).

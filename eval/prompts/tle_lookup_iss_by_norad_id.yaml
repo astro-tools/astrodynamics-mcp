@@ -1,0 +1,18 @@
+prompt: "Fetch the current TLE for the International Space Station (NORAD catalogue ID 25544)."
+tier: single_tool
+tools_required: [tle_lookup]
+permitted_traces:
+  - - tool: tle_lookup
+      arg_constraints:
+        query: {equals: "25544"}
+functional_answer:
+  - path: "$.results"
+    length: {min: 1}
+  - path: "$.results[0].norad_id"
+    equals: "25544"
+  - path: "$.results[0].name"
+    case_insensitive_contains: "ISS"
+notes: |
+  Primary single-tool path: bare-NORAD-ID lookup. Functional check is
+  structural (NORAD id present, name contains "ISS") — the trace check
+  carries most of the load because the response is JSON, not a scalar.

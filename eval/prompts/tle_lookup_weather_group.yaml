@@ -1,0 +1,18 @@
+prompt: "List the active weather satellites and their current TLEs."
+tier: single_tool
+tools_required: [tle_lookup]
+permitted_traces:
+  - - tool: tle_lookup
+      arg_constraints:
+        query: {case_insensitive_equals: "weather"}
+functional_answer:
+  - path: "$.results"
+    length: {min: 2}
+  - path: "$.results[*].tle_line1"
+    present: true
+  - path: "$.results[*].tle_line2"
+    present: true
+notes: |
+  Off-axis variant — CelesTrak GROUP code path (multi-satellite response),
+  distinct from the per-satellite NORAD/name lookups. Asserts the response
+  is multi-result with TLE lines populated on every entry.

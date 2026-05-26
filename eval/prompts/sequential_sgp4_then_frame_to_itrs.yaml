@@ -1,0 +1,25 @@
+prompt: |
+  Propagate the ISS TLE
+    line1='1 25544U 98067A   24001.50000000  .00010000  00000-0  18000-3 0  9990'
+    line2='2 25544  51.6400  90.0000 0001000  90.0000 270.0000 15.50000000000000'
+  to 2024-06-15T08:00:00Z, then use frame_transform to express the
+  result in the ITRS frame so the conversion picks up the per-epoch
+  Earth-orientation parameters from IERS.
+tier: sequential
+tools_required: [sgp4_propagate, frame_transform]
+permitted_traces:
+  - - tool: sgp4_propagate
+      arg_constraints:
+        epochs: {equals: ["2024-06-15T08:00:00Z"]}
+    - tool: frame_transform
+      arg_constraints:
+        to_frame: {equals: "ITRS"}
+functional_answer:
+  - path: "$.state.frame"
+    equals: "ITRS"
+  - path: "$.iers_bulletin_a_fetched_at"
+    present: true
+notes: |
+  Cross-tool: sgp4_propagate → frame_transform. The prompt is explicit
+  about wanting the chain rather than SGP4's frame= short-circuit so
+  the IERS Bulletin A path is exercised end-to-end.

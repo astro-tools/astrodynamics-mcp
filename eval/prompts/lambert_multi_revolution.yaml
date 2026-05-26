@@ -1,0 +1,20 @@
+prompt: |
+  Solve Lambert from r1=[7000, 0, 0] km to r2=[0, 7100, 0] km with a
+  12-hour time of flight in Earth orbit, considering up to two revolutions.
+tier: single_tool
+tools_required: [lambert_solve]
+permitted_traces:
+  - - tool: lambert_solve
+      arg_constraints:
+        tof: {equals: 43200}
+        mu: {one_of: ["earth", 398600.4418, null]}
+        revs: {equals: 2}
+functional_answer:
+  - path: "$.all_solutions"
+    length: {min: 3}
+  - path: "$.v1.unit"
+    equals: "km/s"
+notes: |
+  Off-axis variant — multi-revolution enumeration (revs=2). Drives the
+  all_solutions return path; the M=0 zero-rev plus M=1 short/long-path
+  pair yields at least 3 solutions.

@@ -1,0 +1,22 @@
+prompt: |
+  Convert 2026-05-23T12:00:00 UTC to TAI, then convert that TAI value
+  back to UTC. Confirm the round-trip matches the original.
+tier: sequential
+tools_required: [time_convert]
+permitted_traces:
+  - - tool: time_convert
+      arg_constraints:
+        from_scale: {equals: "UTC"}
+        to_scale: {equals: "TAI"}
+    - tool: time_convert
+      arg_constraints:
+        from_scale: {equals: "TAI"}
+        to_scale: {equals: "UTC"}
+functional_answer:
+  - path: "$.scale"
+    equals: "UTC"
+  - path: "$.value"
+    starts_with: "2026-05-23T12:00:00"
+notes: |
+  UTC → TAI → UTC round-trip. Single-tool, two calls. Catches the
+  "LLM only calls once and reports the intermediate" failure mode.

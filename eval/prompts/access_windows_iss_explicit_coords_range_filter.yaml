@@ -1,0 +1,23 @@
+prompt: |
+  From a station at 40.4256°N, 4.2503°W, 834 m elevation, when does the
+  ISS pass above 5 degrees elevation between 2024-01-01T00:00:00Z and
+  2024-01-02T00:00:00Z, with closest-approach range under 1500 km? TLE:
+    line1='1 25544U 98067A   24001.50000000  .00010000  00000-0  18000-3 0  9990'
+    line2='2 25544  51.6400  90.0000 0001000  90.0000 270.0000 15.50000000000000'
+tier: single_tool
+tools_required: [access_windows]
+permitted_traces:
+  - - tool: access_windows
+      arg_constraints:
+        observer:
+          has_fields: [lat, lon, alt]
+        min_elevation_deg: {equals: 5}
+        max_range_km: {equals: 1500}
+functional_answer:
+  - path: "$.windows[*].peak_elevation.value"
+    in_range: [5, 90]
+  - path: "$.windows[*].range_at_peak.value"
+    in_range: [0, 1500]
+notes: |
+  Off-axis variant — explicit ObserverCoordinates (vs NamedStation) plus
+  the max_range_km filter. Both off-default behaviours in one prompt.

@@ -1,0 +1,31 @@
+prompt: |
+  When does the ISS pass over Madrid in the next 24 hours from
+  2024-01-01T00:00:00Z, above 10 degrees elevation? TLE lines:
+    line1='1 25544U 98067A   24001.50000000  .00010000  00000-0  18000-3 0  9990'
+    line2='2 25544  51.6400  90.0000 0001000  90.0000 270.0000 15.50000000000000'
+tier: single_tool
+tools_required: [access_windows]
+permitted_traces:
+  - - tool: access_windows
+      arg_constraints:
+        observer:
+          field_constraints:
+            name: {case_insensitive_equals: "madrid"}
+        target_tle:
+          has_fields: [line1, line2]
+        start: {equals: "2024-01-01T00:00:00Z"}
+        end: {equals: "2024-01-02T00:00:00Z"}
+        min_elevation_deg: {equals: 10}
+functional_answer:
+  - path: "$.windows"
+    length: {min: 1}
+  - path: "$.windows[*].peak_elevation.value"
+    in_range: [10, 90]
+  - path: "$.windows[*].peak_elevation.unit"
+    all_equal: "deg"
+  - path: "$.windows[*].duration.unit"
+    all_equal: "s"
+notes: |
+  Primary single-tool path: named station ('madrid') + inline TLE so the
+  LLM cannot detour through tle_lookup. The elevation-floor check uses
+  the [*] flatten so every returned window is asserted above 10 deg.

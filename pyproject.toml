@@ -74,6 +74,10 @@ dev = [
   "mypy>=1.11",
   # charter named >=0.4, but the project still ships as 0.3.x on PyPI; pin to the current line.
   "inspect-ai>=0.3.200",
+  # eval/prompts/*.yaml loader.
+  "pyyaml>=6.0",
+  "types-pyyaml>=6.0",
+  "openai>=2.38.0",
 ]
 docs = [
   "mkdocs-material>=9.5",
@@ -86,7 +90,7 @@ packages = ["src/astrodynamics_mcp"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-src = ["src", "tests"]
+src = ["src", "tests", "eval"]
 
 [tool.ruff.lint]
 select = [
@@ -102,7 +106,7 @@ select = [
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = ["src/astrodynamics_mcp", "tests"]
+files = ["src/astrodynamics_mcp", "tests", "eval"]
 
 # sgp4 ships no py.typed marker; tools/propagation.py uses the Satrec surface only.
 [[tool.mypy.overrides]]
@@ -135,6 +139,8 @@ follow_imports = "skip"
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+# eval/ is a sibling of src/; make it importable from tests/ via `from eval.* import ...`.
+pythonpath = ["."]
 # Default to unit tests only. Integration tests (HTTP-transport round-trips, live data-source calls) opt in with `-m integration`.
 addopts = "-ra --strict-markers --strict-config -m 'not integration'"
 markers = [
