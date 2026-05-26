@@ -49,18 +49,32 @@ jobs:
         # 403 even with `permissions: models: read` if the org hasn't
         # enabled GitHub Models for Actions); fall back to the workflow
         # token otherwise.
+        #
+        # Retries with exponential backoff because GitHub's secondary
+        # anti-abuse rate limit returns 429 for ~5-30 min when the
+        # triggering account has been making many recent requests. The
+        # retry loop lets routine CI churn ride through it.
         env:
           MODELS_PAT: ${{ secrets.MODELS_PAT }}
           WORKFLOW_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TOKEN="${MODELS_PAT:-$WORKFLOW_TOKEN}"
-          status=$(curl -s -o /tmp/probe.json -w '%{http_code}' \
-            https://models.github.ai/inference/chat/completions \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"model":"openai/gpt-4o","messages":[{"role":"user","content":"PING"}],"max_tokens":2}')
-          echo "HTTP $status"
-          cat /tmp/probe.json
+          status=""
+          for delay in 0 30 60 120 180; do
+            [ "$delay" -gt 0 ] && { echo "Backing off ${delay}s before retry"; sleep "$delay"; }
+            status=$(curl -s -o /tmp/probe.json -w '%{http_code}' \
+              https://models.github.ai/inference/chat/completions \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"model":"openai/gpt-4o","messages":[{"role":"user","content":"PING"}],"max_tokens":2}')
+            echo "HTTP $status"
+            head -c 500 /tmp/probe.json; echo
+            case "$status" in
+              200) break ;;
+              429) continue ;;
+              *)   echo "Non-retriable status $status"; break ;;
+            esac
+          done
           test "$status" = "200"
 
       - name: Run eval suite
