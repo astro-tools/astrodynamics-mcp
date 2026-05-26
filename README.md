@@ -6,9 +6,9 @@ custom agents) authoritative astrodynamics tools: TLE/SGP4 propagation,
 Lambert solving, ground-station access, time-scale and coordinate-frame
 conversions, porkchop scans, B-plane targeting.
 
-> **Status — pre-alpha.** The public surface is not yet usable. The
-> [current milestone](https://github.com/astro-tools/astrodynamics-mcp/milestone/1)
-> tracks the work needed to ship the first PyPI release.
+> **Status — pre-alpha.** The public surface is not yet usable. Track
+> progress on the
+> [issue tracker](https://github.com/astro-tools/astrodynamics-mcp/issues).
 
 ## Why
 
