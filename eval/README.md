@@ -196,11 +196,32 @@ markdown summary as a PR comment via `eval/_ci_report.py`. The full
 the dispatch trigger accepts an optional `tier` filter that delegates to
 `astrodynamics_mcp_eval_subset` for tier-scoped runs.
 
-The workflow's auto-generated `GITHUB_TOKEN` (with
-`permissions: models: read`) is what authenticates against GitHub Models
-— no PATs, no secrets to manage. The Inspect AI log is uploaded as the
-`inspect-eval-logs` workflow artefact (14-day retention) so failure
-investigations can replay the conversation.
+Authentication uses the workflow's auto-generated `GITHUB_TOKEN` (with
+`permissions: models: read`) when it has GitHub Models access, falling
+back to a `MODELS_PAT` repo secret if you've created one. A pre-flight
+probe step calls `gpt-4o` with a 2-token PING and fails fast with the
+HTTP status if neither token has access — this surfaces auth issues
+clearly rather than burying them in the Inspect AI stack trace.
+
+The Inspect AI log is uploaded as the `inspect-eval-logs` workflow
+artefact (14-day retention) so failure investigations can replay the
+conversation.
+
+### Enabling the workflow token
+
+The workflow `GITHUB_TOKEN` only has Models access when the **org owner
+has enabled GitHub Models for Actions** at
+`https://github.com/organizations/<org>/settings/models`. On free orgs
+this toggle is off by default; until it's on, the probe step will return
+403 and the gate is failed conservatively.
+
+### Fallback: `MODELS_PAT`
+
+If org-level enablement is not an option (e.g. policy reasons), create a
+fine-grained PAT with the `models: read` scope and add it as a repo
+secret named `MODELS_PAT`. The workflow uses it in preference to the
+auto-issued `GITHUB_TOKEN` whenever it's set, so no other change is
+needed.
 
 **Pass threshold:** ≥80% of goldens. Calibrated against the determinism
 observations above so a single-prompt flake doesn't flip the gate. The

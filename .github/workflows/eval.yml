@@ -41,11 +41,35 @@ jobs:
 
       - run: uv sync --all-groups
 
+      - name: Probe GitHub Models auth
+        # Run a one-token call against gpt-4o before the full suite so any
+        # auth failure surfaces here as a clear HTTP status and error body,
+        # rather than buried inside the Inspect AI stack trace. Prefer the
+        # MODELS_PAT secret when present (workflow-issued GITHUB_TOKEN can
+        # 403 even with `permissions: models: read` if the org hasn't
+        # enabled GitHub Models for Actions); fall back to the workflow
+        # token otherwise.
+        env:
+          MODELS_PAT: ${{ secrets.MODELS_PAT }}
+          WORKFLOW_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TOKEN="${MODELS_PAT:-$WORKFLOW_TOKEN}"
+          status=$(curl -s -o /tmp/probe.json -w '%{http_code}' \
+            https://models.github.ai/inference/chat/completions \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"model":"openai/gpt-4o","messages":[{"role":"user","content":"PING"}],"max_tokens":2}')
+          echo "HTTP $status"
+          cat /tmp/probe.json
+          test "$status" = "200"
+
       - name: Run eval suite
         env:
           # The openai-api/github/* provider in Inspect AI derives env vars
           # from the segment after the slash; here `github` maps to GITHUB_*.
-          GITHUB_API_KEY: ${{ secrets.GITHUB_TOKEN }}
+          # MODELS_PAT (if set) overrides the workflow-issued GITHUB_TOKEN —
+          # see the probe step above for the rationale.
+          GITHUB_API_KEY: ${{ secrets.MODELS_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_BASE_URL: https://models.github.ai/inference
         run: |
           if [ -n "${{ inputs.tier }}" ]; then
@@ -55,7 +79,7 @@ jobs:
               --temperature 0 \
               --log-dir logs
           else
-            uv run inspect eval eval/tasks.py \
+            uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval \
               --model openai-api/github/openai/gpt-4o \
               --temperature 0 \
               --log-dir logs
