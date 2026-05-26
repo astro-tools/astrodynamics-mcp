@@ -94,7 +94,7 @@ async def main() -> int:
             )
             return 1
 
-    print(f"tle_lookup → access_windows: {len(windows)} HST passes from Madrid")
+    print(f"tle_lookup -> access_windows: {len(windows)} HST passes from Madrid")
     for i, window in enumerate(windows[:5]):
         print(
             f"  pass {i}: AOS {window['aos']}  peak {window['peak_elevation']['value']:.1f}°  "

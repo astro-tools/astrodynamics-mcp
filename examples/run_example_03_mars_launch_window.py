@@ -76,8 +76,8 @@ async def main() -> int:
     print("porkchop best cell (synthetic Earth/Mars geometry):")
     print(f"  depart epoch: {best['depart_epoch']}")
     print(f"  arrive epoch: {best['arrive_epoch']}")
-    print(f"  total Δv:     {total_dv:.3f} km/s")
-    print(f"  C3:           {c3:.3f} km²/s²")
+    print(f"  total dv:     {total_dv:.3f} km/s")
+    print(f"  C3:           {c3:.3f} km^2/s^2")
     top_cells = payload.get("top_cells", [])
     if top_cells:
         print(f"  top {len(top_cells)} cells returned in `top_cells`")
