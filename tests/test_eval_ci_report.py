@@ -19,8 +19,7 @@ from eval._ci_report import (
 
 def _fake_log(
     *,
-    model: str = "openai-api/github/openai/gpt-4o",
-    accuracy: float = 1.0,
+    model: str = "openai-api/github/openai/gpt-4.1-mini",
     samples: list[Any] | None = None,
 ) -> Any:
     """Build a SimpleNamespace mirroring the slice of EvalLog the helper reads.
@@ -28,14 +27,8 @@ def _fake_log(
     The helper deliberately treats the log as ``Any`` to avoid coupling to
     Inspect AI's internal types — these fakes are enough.
     """
-    n = len(samples or [])
-    scorer = SimpleNamespace(
-        scored_samples=n,
-        metrics={"accuracy": SimpleNamespace(value=accuracy)},
-    )
     return SimpleNamespace(
         eval=SimpleNamespace(model=model),
-        results=SimpleNamespace(scores=[scorer]),
         samples=samples,
     )
 
@@ -58,13 +51,20 @@ def _fake_sample(
             "functional_failure_reasons": list(functional_reasons),
         },
     )
-    return SimpleNamespace(id=sample_id, scores={"hybrid_scorer": score})
+    return SimpleNamespace(id=sample_id, scores={"hybrid_scorer": score}, error=None)
+
+
+def _fake_errored_sample(sample_id: str, *, message: str) -> Any:
+    return SimpleNamespace(
+        id=sample_id,
+        scores=None,
+        error=SimpleNamespace(message=message),
+    )
 
 
 class TestCollectFailures:
     def test_all_passing(self) -> None:
         log = _fake_log(
-            accuracy=1.0,
             samples=[_fake_sample("a", value=1.0), _fake_sample("b", value=1.0)],
         )
         accuracy, n_samples, n_passed, failing = collect_failures(log)
@@ -75,7 +75,6 @@ class TestCollectFailures:
 
     def test_partial_failures(self) -> None:
         log = _fake_log(
-            accuracy=0.5,
             samples=[
                 _fake_sample("a", value=1.0),
                 _fake_sample(
@@ -97,11 +96,11 @@ class TestCollectFailures:
         assert f.sample_id == "b"
         assert f.trace_passed is False
         assert f.functional_passed is False
+        assert f.error is None
 
     def test_passes_score_not_one(self) -> None:
         # Score==1.0 means pass in our hybrid scorer; anything else fails.
         log = _fake_log(
-            accuracy=0.0,
             samples=[
                 _fake_sample(
                     "a",
@@ -117,9 +116,32 @@ class TestCollectFailures:
         assert failing[0].trace_passed is True
         assert failing[0].functional_passed is False
 
+    def test_errored_sample_counted_as_failure(self) -> None:
+        # An errored sample (e.g. 413 tokens_limit_reached) has no score
+        # but counts against accuracy as if it scored 0, and its error
+        # message surfaces as the failure reason.
+        log = _fake_log(
+            samples=[
+                _fake_sample("scored_pass", value=1.0),
+                _fake_errored_sample(
+                    "porkchop_blew_token_cap",
+                    message="Error code: 413 - tokens_limit_reached",
+                ),
+            ],
+        )
+        accuracy, n_samples, n_passed, failing = collect_failures(log)
+        assert n_samples == 2
+        assert n_passed == 1
+        assert accuracy == 0.5
+        assert len(failing) == 1
+        assert failing[0].sample_id == "porkchop_blew_token_cap"
+        assert failing[0].error is not None
+        assert "tokens_limit_reached" in failing[0].error
+        assert failing[0].short_reason == "sample errored"
+
     def test_empty_log_raises(self) -> None:
-        log = SimpleNamespace(results=None, samples=None)
-        with pytest.raises(ValueError, match="no scorer results"):
+        log = SimpleNamespace(samples=None)
+        with pytest.raises(ValueError, match="no samples"):
             collect_failures(log)
 
 
@@ -181,6 +203,23 @@ class TestRenderMarkdown:
         summary = self._summary(accuracy=20 / 30, n_passed=20, failing=failing)
         md = render_markdown(summary, threshold=0.80)
         assert "## Eval gate: ❌ FAIL" in md
+
+    def test_errored_section_renders(self) -> None:
+        failing = (
+            FailingPrompt(
+                sample_id="porkchop_blew_token_cap",
+                trace_passed=False,
+                functional_passed=False,
+                trace_reasons=(),
+                functional_reasons=(),
+                error="Error code: 413 - tokens_limit_reached",
+            ),
+        )
+        summary = self._summary(accuracy=20 / 21, n_samples=21, n_passed=20, failing=failing)
+        md = render_markdown(summary, threshold=0.80)
+        assert "**Errored samples:** 1 (counted as failures)" in md
+        assert "sample errored" in md
+        assert "error: Error code: 413" in md
 
     def test_truncates_long_failure_list(self) -> None:
         failing = tuple(

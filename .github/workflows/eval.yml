@@ -99,9 +99,13 @@ jobs:
           #     all samples (covers retries + tool-call turns); 1 below
           #     the 5-concurrent ceiling so a transient retry can fire
           #     without hitting the cap.
-          # * --fail-on-error 5     : abort after 5 sample errors so a
-          #     quota-blown run stops burning the rest of the day's 150-
-          #     request cap on guaranteed failures.
+          # * --fail-on-error 5     : tolerate up to 5 sample errors
+          #     before flagging the eval status as 'error'. When the
+          #     threshold is hit, Inspect AI cancels in-flight samples
+          #     (preserving remaining daily quota) but does not retro-
+          #     actively void samples that already scored — those still
+          #     count toward the report. Values > 1 are absolute counts;
+          #     values 0–1 are proportions.
           if [ -n "${{ inputs.tier }}" ]; then
             uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval_subset \
               -T tier="${{ inputs.tier }}" \
