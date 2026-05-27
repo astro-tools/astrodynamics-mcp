@@ -3,9 +3,8 @@
 The four tools (``gmat_run_mission``, ``gmat_sweep``, ``gmat_execute_script``,
 ``gmat_validate_script``) cover the GMAT mission-analysis surface. This
 module owns the conditional-registration mechanism, the shared description
-discipline, and the real ``gmat_run_mission`` and ``gmat_sweep`` bodies;
-``gmat_execute_script`` and ``gmat_validate_script`` are still placeholder
-slots whose bodies land in their own follow-up issues.
+discipline, and the real bodies for every slot except ``gmat_validate_script``,
+which is still a placeholder pending its own follow-up issue.
 
 The guard is intentionally a single ``try: import gmat_run``: ``gmat-sweep``
 declares ``gmat-run`` as a dependency, so resolving the ``[gmat]`` extra
@@ -49,14 +48,20 @@ _REPORT_INLINE_ROW_THRESHOLD = 20
 # small-model input cap once tool-overhead bytes are accounted for.
 _REPORT_HEAD_TAIL_ROWS = 5
 
+# Line-based equivalents for the raw-text shape gmat_execute_script returns.
+# A ReportFile is one row per line plus a header; 60 lines covers the
+# common "short solver / Hohmann transfer" case end-to-end while keeping
+# the response under the ~2 KB small-model target.
+_RAW_REPORT_INLINE_LINE_THRESHOLD = 60
+_RAW_REPORT_HEAD_TAIL_LINES = 20
+
 
 class GmatPlaceholderResponse(BaseModel):
     """Stub response shape so FastMCP can derive a non-empty ``outputSchema``.
 
     Used by the slots whose bodies still land in follow-up issues
-    (``gmat_execute_script``, ``gmat_validate_script``); each placeholder
-    raises before constructing one of these, so the only consumer is the
-    schema generator.
+    (``gmat_validate_script``); the placeholder raises before constructing
+    one of these, so the only consumer is the schema generator.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -330,6 +335,149 @@ class GmatRunMissionResponse(BaseModel):
     )
 
 
+class RawReportContent(BaseModel):
+    """Raw text view of one ReportFile output for :func:`gmat_execute_script`.
+
+    The escape hatch returns the report verbatim — header line, units row,
+    data — instead of parsing into a DataFrame the way
+    :class:`ReportFileShape` does. In ``output="summary"`` mode a short
+    report (``line_count <= 60``) lands inline via ``content``; a longer
+    report populates ``head`` (first 20 lines) and ``tail`` (last 20
+    lines) so the response stays under small-model input caps regardless
+    of how long the run was. In ``output="full"`` mode ``content`` always
+    carries the entire file. ``truncated`` distinguishes the two cases.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(
+        ...,
+        description="ReportFile resource name as declared in the .script.",
+    )
+    path: str = Field(
+        ...,
+        description=(
+            "Absolute path the report landed at. Lives under a temp directory "
+            "created for this run — informational only; the file is cleaned up "
+            "when the tool returns, so the raw text below is what the caller "
+            "can actually read."
+        ),
+    )
+    content: str = Field(
+        default="",
+        description=(
+            "Full report text when `truncated` is False, joined with the file's "
+            "original newlines. Empty when `truncated` is True — read `head` "
+            "and `tail` instead."
+        ),
+    )
+    head: str = Field(
+        default="",
+        description=(
+            "First 20 lines joined with newlines when `truncated` is True. "
+            "Empty when the report fit fully inline via `content`."
+        ),
+    )
+    tail: str = Field(
+        default="",
+        description=(
+            "Last 20 lines joined with newlines when `truncated` is True. "
+            "Empty when the report fit fully inline via `content`."
+        ),
+    )
+    line_count: Quantity = Field(
+        ...,
+        description=(
+            "Total line count of the file (dimensionless count, unit '1'). "
+            "Trailing-newline-only files count their data lines, not an "
+            "empty terminal line."
+        ),
+        examples=[{"value": 1440.0, "unit": "1"}],
+    )
+    byte_count: Quantity = Field(
+        ...,
+        description=(
+            "Total size of the file on disk in bytes (dimensionless count, "
+            "unit '1'). Captured before any UTF-8 decoding."
+        ),
+        examples=[{"value": 87432.0, "unit": "1"}],
+    )
+    truncated: bool = Field(
+        ...,
+        description=(
+            "True when the report had more than 60 lines under output='summary' "
+            "and the response carries head + tail rather than the full text. "
+            "False under output='full' or when the report fit fully inline."
+        ),
+    )
+
+
+class GmatExecuteScriptResponse(BaseModel):
+    """Response from :func:`gmat_execute_script`.
+
+    Minimal-validation escape hatch: carries the success / failure status,
+    GMAT's captured log output, raw text of every ReportFile the run
+    wrote, and a pointer-only list of every other artefact that landed in
+    the run's output directory. ``ok=False`` surfaces engine failures as
+    data — the caller inspects ``stderr`` rather than catching an
+    exception — so an LLM can introspect a failing script the same way a
+    human reads the GMAT log.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    ok: bool = Field(
+        ...,
+        description=(
+            "True when the mission sequence completed without raising a "
+            "GmatRunError. False on a GMAT engine failure mid-run — read "
+            "`stderr` for GMAT's diagnostic; `reports` and `artefacts` are "
+            "empty in that case. Pre-run input failures (path-not-found, "
+            "GMAT install missing) still raise typed errors rather than "
+            "returning ok=False."
+        ),
+    )
+    stderr: str = Field(
+        ...,
+        description=(
+            "GMAT's captured stdout / stderr log from the run, verbatim. "
+            "Always populated: on a successful run it carries warnings and "
+            "the solver iteration trace; on a failed run it carries the "
+            "engine error and is the primary signal for the caller. Empty "
+            "string when GMAT wrote nothing to stderr (rare)."
+        ),
+    )
+    wall_clock: Quantity = Field(
+        ...,
+        description=(
+            "Wall-clock duration of mission.run() in seconds (unit 's'). "
+            "Captured even on failure so the caller can tell a fast crash "
+            "apart from a long-running run that diverged."
+        ),
+        examples=[{"value": 0.42, "unit": "s"}],
+    )
+    reports: list[RawReportContent] = Field(
+        default_factory=list,
+        description=(
+            "One :class:`RawReportContent` per ReportFile the run wrote, in "
+            "the order GMAT declared them. Empty when ok=False, since the "
+            "run did not reach the point of writing reports."
+        ),
+    )
+    artefacts: list[OutputPointer] = Field(
+        default_factory=list,
+        description=(
+            "Every regular file the run wrote under its output directory, "
+            "deduplicated and sorted by path. ReportFile / EphemerisFile / "
+            "ContactLocator / Solver outputs carry their declared resource "
+            "name; stray files (e.g. the GMAT log if it landed on disk) "
+            "fall back to their basename. Pointer-only — read `reports` for "
+            "ReportFile content inline, or copy the path yourself before "
+            "the tool returns."
+        ),
+    )
+
+
 class SweepColumnStats(BaseModel):
     """Per-column summary statistics over ``ok`` rows of a sweep result frame."""
 
@@ -561,10 +709,31 @@ _SWEEP_DESCRIPTION = (
 )
 
 _EXECUTE_SCRIPT_DESCRIPTION = (
-    "Escape-hatch raw GMAT script executor — minimal validation, raw output. "
-    "Prefer gmat_run_mission for curated, schema-checked results. Placeholder "
-    "slot — the body lands in a follow-up issue. "
-    "e.g. gmat_execute_script(script='Create Spacecraft Sat;...')."
+    "Escape-hatch raw GMAT script executor — minimal validation, raw text output. "
+    "Prefer gmat_run_mission whenever your goal is 'run this mission and tell me "
+    "what happened': it returns a structured snapshot, parsed report rows, and "
+    "typed convergence flags, all shape-disciplined for small-model contexts. "
+    "Reach for gmat_execute_script only when the curated surface doesn't fit — "
+    "e.g. you need the raw ReportFile text verbatim (header line, units row, "
+    "formatting) instead of parsed rows, or you want to run a script with "
+    "side-effect-only commands that don't surface through the structured "
+    "response. e.g. gmat_execute_script(script='/abs/path/to/custom.script') "
+    "runs the script and returns each ReportFile's raw text plus a list of every "
+    "other artefact GMAT wrote (ephemerides, contact reports, solver logs). "
+    "`script` must be either an absolute path to a .script file or the full "
+    "inline script text (auto-detected by leading '%' / 'Create' markers); do "
+    "not pass a Python Mission object. Failures-as-data contract: a GMAT engine "
+    "failure mid-run returns ok=False with the engine's stderr in `stderr` "
+    "rather than raising — read the log to diagnose. Pre-run input failures "
+    "(bad path, GMAT install missing) still raise typed invalid_input.* / "
+    "upstream.* errors. `output` controls line shaping for ReportFile text: "
+    "the default 'summary' inlines short reports (<=60 lines) whole and trims "
+    "longer ones to first/last 20 lines so the response fits small-model input "
+    "caps; 'full' returns every line of every report. Non-ReportFile artefacts "
+    "(ephemerides, contact reports, solver logs) are always pointer-only "
+    "regardless of mode — read the curated tool's response shape or copy the "
+    "paths before the tool returns; the run's temp directory is cleaned up at "
+    "function exit."
 )
 
 _VALIDATE_SCRIPT_DESCRIPTION = (
@@ -715,6 +884,75 @@ def _shape_report(
         tail=tail,
         truncated=truncated,
     )
+
+
+def _shape_raw_report(
+    name: str, path: Path, *, output: Literal["summary", "full"]
+) -> RawReportContent:
+    """Read a ReportFile from disk into a :class:`RawReportContent`.
+
+    Reads bytes once for the byte_count, decodes UTF-8 (with ``replace``
+    so a stray binary byte doesn't abort the tool), and splits on
+    universal newlines. The file is closed before this function returns;
+    the caller's responsibility is to read it while the temp directory is
+    still alive.
+    """
+    raw_bytes = path.read_bytes()
+    byte_count = len(raw_bytes)
+    text = raw_bytes.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    line_count = len(lines)
+    inline_full = output == "full" or line_count <= _RAW_REPORT_INLINE_LINE_THRESHOLD
+    if inline_full:
+        content = text
+        head = ""
+        tail = ""
+        truncated = False
+    else:
+        content = ""
+        head = "\n".join(lines[:_RAW_REPORT_HEAD_TAIL_LINES])
+        tail = "\n".join(lines[-_RAW_REPORT_HEAD_TAIL_LINES:])
+        truncated = True
+    return RawReportContent(
+        name=name,
+        path=str(path),
+        content=content,
+        head=head,
+        tail=tail,
+        line_count=Quantity(value=float(line_count), unit="1"),
+        byte_count=Quantity(value=float(byte_count), unit="1"),
+        truncated=truncated,
+    )
+
+
+def _walk_artefacts(result: Any) -> list[OutputPointer]:
+    """Enumerate every regular file the run wrote under ``result.output_dir``.
+
+    Resolves each file's GMAT resource name when one of the four
+    ``*_paths`` mappings on the result claims it; falls back to the file
+    basename otherwise (e.g. for a stray GMAT log that landed on disk).
+    Output is sorted by absolute path so a caller can diff two runs
+    without re-sorting.
+    """
+    path_to_name: dict[Path, str] = {}
+    for paths in (
+        getattr(result, "report_paths", {}),
+        getattr(result, "ephemeris_paths", {}),
+        getattr(result, "contact_paths", {}),
+        getattr(result, "solver_paths", {}),
+    ):
+        for resource_name, path in paths.items():
+            path_to_name[Path(path).resolve()] = resource_name
+
+    output_dir = Path(result.output_dir)
+    artefacts: list[OutputPointer] = []
+    for candidate in sorted(output_dir.rglob("*")):
+        if not candidate.is_file():
+            continue
+        resolved = candidate.resolve()
+        name = path_to_name.get(resolved, candidate.name)
+        artefacts.append(OutputPointer(name=name, path=str(candidate)))
+    return artefacts
 
 
 def _select_keys(all_keys: list[str], selection: list[str] | None) -> tuple[list[str], list[str]]:
@@ -1369,20 +1607,85 @@ def _register_gmat_tools() -> None:
     @register_tool(
         name="gmat_execute_script",
         description=_EXECUTE_SCRIPT_DESCRIPTION,
-        annotations=_PLACEHOLDER_ANNOTATIONS,
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
     )
     async def gmat_execute_script(
         script: Annotated[
             str,
             Field(
                 description=(
-                    "Full GMAT script text to execute as-is. Placeholder accepts the "
-                    "argument but does not execute it."
+                    "Either the absolute path to a GMAT .script file (e.g. "
+                    "'/abs/path/to/custom.script') or the full inline script text "
+                    "starting with '%' comments or 'Create' resource declarations. "
+                    "Auto-detected by content: a string with newlines or a leading "
+                    "'%' / 'Create ' is inline, anything else is treated as a path. "
+                    "Do not pass a Python Mission object."
                 ),
             ),
         ],
-    ) -> GmatPlaceholderResponse:
-        raise NotImplementedError("gmat_execute_script body lands in a follow-up issue")
+        output: Annotated[
+            Literal["summary", "full"],
+            Field(
+                description=(
+                    "Line-shaping mode for ReportFile text. The default 'summary' "
+                    "inlines short reports (<=60 lines) whole and trims longer ones "
+                    "to first/last 20 lines so the response fits small-model input "
+                    "caps. 'full' returns every line of every report — pass only "
+                    "when downstream consumers need the dense data and can absorb "
+                    "the bytes. Non-ReportFile artefacts are pointer-only "
+                    "regardless of mode."
+                ),
+            ),
+        ] = "summary",
+    ) -> GmatExecuteScriptResponse:
+        from gmat_run import Mission
+        from gmat_run.errors import GmatError, GmatLoadError, GmatRunError
+
+        script_path, cleanup_path = _resolve_script_input(script)
+        try:
+            try:
+                mission = Mission.load(script_path)
+            except GmatLoadError as exc:
+                raise UpstreamError(
+                    f"GMAT could not load script: {exc}",
+                    code="upstream.gmat_run_load_failed",
+                    original_exception=exc,
+                ) from exc
+            except GmatError as exc:
+                raise UpstreamError(
+                    f"GMAT discovery / bootstrap failed: {exc}",
+                    code="upstream.gmat_run_bootstrap_failed",
+                    original_exception=exc,
+                ) from exc
+
+            t0 = time.perf_counter()
+            try:
+                result = mission.run()
+            except GmatRunError as exc:
+                wall_clock_s = time.perf_counter() - t0
+                return GmatExecuteScriptResponse(
+                    ok=False,
+                    stderr=exc.log,
+                    wall_clock=Quantity(value=float(wall_clock_s), unit="s"),
+                    reports=[],
+                    artefacts=[],
+                )
+            wall_clock_s = time.perf_counter() - t0
+
+            reports = [
+                _shape_raw_report(name, Path(result.report_paths[name]), output=output)
+                for name in result.report_paths
+            ]
+            return GmatExecuteScriptResponse(
+                ok=True,
+                stderr=result.log,
+                wall_clock=Quantity(value=float(wall_clock_s), unit="s"),
+                reports=reports,
+                artefacts=_walk_artefacts(result),
+            )
+        finally:
+            if cleanup_path is not None:
+                cleanup_path.unlink(missing_ok=True)
 
     @register_tool(
         name="gmat_validate_script",
