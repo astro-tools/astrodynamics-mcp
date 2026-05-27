@@ -10,6 +10,26 @@ The configs below assume the `astrodynamics-mcp` binary is on the client's
 case automatically; check with `which astrodynamics-mcp`. If it isn't, use
 the absolute path everywhere `astrodynamics-mcp` appears below.
 
+## Install from a registry
+
+If your client has a registry browser, the one-click install paths are
+preferable to hand-editing JSON:
+
+- **[Smithery](https://smithery.ai/server/astro-tools/astrodynamics-mcp)** —
+  `astro-tools/astrodynamics-mcp`. Click *Install* and Smithery hands the
+  MCPB bundle to your selected client.
+- **[Official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/io.github.astro-tools/astrodynamics-mcp)** —
+  `io.github.astro-tools/astrodynamics-mcp`. Read by `mcp-cli`, GitHub
+  Copilot's MCP UI, and any other registry-aware client.
+- **Anthropic's Claude Desktop directory** — surfaces inside Claude
+  Desktop's *Browse extensions* UI once the v0.1.1 bundle clears
+  Anthropic's review queue.
+- **[Cursor Directory](https://cursor.directory/plugins)** — surfaces inside
+  Cursor's MCP picker once the v0.1.1 listing is approved.
+
+For everything else — and for any client where the JSON config is the
+fastest path — the per-client snippets below cover the same ground.
+
 ## Claude Code
 
 Claude Code reads MCP server definitions from its `mcp` settings. Add:

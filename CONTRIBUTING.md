@@ -56,6 +56,29 @@ uv run coverage report --include='src/astrodynamics_mcp/schemas/*' --fail-under=
 uv run coverage report --include='src/astrodynamics_mcp/data/*' --fail-under=95
 ```
 
+## MCPB bundle
+
+The `.mcpb` bundle published to Smithery and surfaced through the Official
+MCP Registry is built from `packaging/mcpb/` on every `v*` tag by the
+`pack-mcpb` job in `.github/workflows/release.yml`. The source files carry a
+literal `{{VERSION}}` placeholder which the workflow `sed`-substitutes with
+the tag version (`${GITHUB_REF_NAME#v}`) at pack time; never commit a real
+version into the placeholder.
+
+To test-build locally:
+
+```bash
+cp -r packaging/mcpb /tmp/mcpb-test
+sed -i "s/{{VERSION}}/0.1.1/g" /tmp/mcpb-test/manifest.json /tmp/mcpb-test/pyproject.toml
+npx --yes @anthropic-ai/mcpb@2.1.2 validate /tmp/mcpb-test/manifest.json
+npx --yes @anthropic-ai/mcpb@2.1.2 pack /tmp/mcpb-test /tmp/astrodynamics-mcp.mcpb
+uv run --directory /tmp/mcpb-test server.py stdio   # exercise the install-time launch path
+```
+
+The MCP Registry server manifest (`packaging/mcp-registry/server.json`) is
+templated the same way and published by the `publish-mcp-registry` job via
+the `mcp-publisher` CLI with GitHub OIDC — no secrets required.
+
 ## Commit messages
 
 Keep them short and imperative. One subject line, optional body.
