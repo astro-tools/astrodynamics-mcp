@@ -17,8 +17,9 @@ surfaces the bulletin's freshness anchor + the per-call UT1-UTC offset.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from astrodynamics_mcp.errors import InvalidInputError, UpstreamError
@@ -216,13 +217,64 @@ def _ut1_utc_quantity(t_in: Any) -> Quantity:
     return Quantity(value=float(raw), unit="s")
 
 
-@register_tool(name="time_convert", description=_DESCRIPTION)
+@register_tool(
+    name="time_convert",
+    description=_DESCRIPTION,
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+)
 async def time_convert(
-    value: str | float,
-    from_scale: TimeScale,
-    to_scale: TimeScale,
-    in_format: TimeFormat = "iso",
-    out_format: TimeFormat = "iso",
+    value: Annotated[
+        str | float,
+        Field(
+            description=(
+                "The epoch to convert. String for ISO 8601 inputs "
+                "('2024-01-01T00:00:00Z'); number for numeric formats (JD, MJD, "
+                "J2000-seconds, Unix). The exact interpretation is set by "
+                "`in_format`."
+            ),
+        ),
+    ],
+    from_scale: Annotated[
+        TimeScale,
+        Field(
+            description=(
+                "Time scale of the input value: UTC, TAI, TT, TDB, UT1, GPS, "
+                "TCB, or TCG. Conversion to/from UT1 triggers an IERS Bulletin A "
+                "lookup; other scales are deterministic."
+            ),
+        ),
+    ],
+    to_scale: Annotated[
+        TimeScale,
+        Field(
+            description=(
+                "Output time scale. Same enum as `from_scale`. Identity "
+                "(from==to) is a valid no-op that still returns a structured "
+                "response."
+            ),
+        ),
+    ],
+    in_format: Annotated[
+        TimeFormat,
+        Field(
+            description=(
+                "How to parse `value`: 'iso' (default; ISO 8601 string with a "
+                "mandatory time component), 'jd' / 'mjd' (Julian / Modified "
+                "Julian Date as a number), 'j2000_seconds' (seconds since "
+                "2000-01-01T12:00:00 TT), or 'unix' (POSIX seconds)."
+            ),
+        ),
+    ] = "iso",
+    out_format: Annotated[
+        TimeFormat,
+        Field(
+            description=(
+                "How to render the converted output. Same enum as `in_format`. "
+                "Pick a numeric format when downstream wants math; pick 'iso' "
+                "when downstream wants human-readable strings."
+            ),
+        ),
+    ] = "iso",
 ) -> TimeConvertResponse:
     needs_iers = TimeScale.UT1 in (from_scale, to_scale)
 

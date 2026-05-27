@@ -18,6 +18,7 @@ from typing import Any, TypeVar
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from astrodynamics_mcp.errors import AstrodynamicsMCPError, UpstreamError
 
@@ -61,6 +62,7 @@ def register_tool(
     title: str | None = None,
     description: str | None = None,
     structured_output: bool | None = None,
+    annotations: ToolAnnotations | None = None,
 ) -> Callable[[_F], _F]:
     """Register a tool against the module-level :data:`mcp` instance.
 
@@ -93,6 +95,7 @@ def register_tool(
                 title=title,
                 description=description,
                 structured_output=structured_output,
+                annotations=annotations,
             )(async_wrapped)
         else:
 
@@ -110,6 +113,7 @@ def register_tool(
                 title=title,
                 description=description,
                 structured_output=structured_output,
+                annotations=annotations,
             )(sync_wrapped)
         return registered  # type: ignore[return-value]
 

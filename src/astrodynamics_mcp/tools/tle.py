@@ -7,8 +7,9 @@ pydantic-typed response shape and registers it against the module-level
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from astrodynamics_mcp.data.celestrak import fetch_tle
@@ -104,10 +105,34 @@ _DESCRIPTION = (
 )
 
 
-@register_tool(name="tle_lookup", description=_DESCRIPTION)
+@register_tool(
+    name="tle_lookup",
+    description=_DESCRIPTION,
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+)
 async def tle_lookup(
-    query: str,
-    source: Literal["celestrak"] = "celestrak",
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "What to look up: a NORAD catalogue ID like '25544', a satellite "
+                "name (case-insensitive, prefers exact catalog spelling like "
+                "'ISS (ZARYA)' or 'HUBBLE'), or a CelesTrak group keyword "
+                "('active', 'stations', 'weather', 'visual', 'science', 'geo', "
+                "'gnss', 'military', 'last-30-days', 'starlink', 'oneweb'). "
+                "Name lookups returning zero results should fall back to the NORAD ID."
+            ),
+        ),
+    ],
+    source: Annotated[
+        Literal["celestrak"],
+        Field(
+            description=(
+                "Upstream catalogue to query. Only 'celestrak' is supported at v0.1; "
+                "Space-Track lands in v0.2."
+            ),
+        ),
+    ] = "celestrak",
 ) -> TleLookupResponse:
     del source  # only "celestrak" is supported at v0.1; Space-Track lands in v0.2.
     response = await fetch_tle(query)

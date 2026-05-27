@@ -8,8 +8,9 @@ frames stays correct per-epoch.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 from sgp4 import omm
 from sgp4.api import SGP4_ERRORS, Satrec
@@ -177,12 +178,58 @@ def _summary_indices(n: int, cap: int) -> list[int]:
     return [round(i * (n - 1) / (cap - 1)) for i in range(cap)]
 
 
-@register_tool(name="sgp4_propagate", description=_DESCRIPTION)
+@register_tool(
+    name="sgp4_propagate",
+    description=_DESCRIPTION,
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+)
 async def sgp4_propagate(
-    tle: TleLines | TleOmm,
-    epochs: list[Epoch],
-    frame: Frame = Frame.TEME,
-    output: Literal["summary", "full"] = "summary",
+    tle: Annotated[
+        TleLines | TleOmm,
+        Field(
+            description=(
+                "The orbit to propagate, supplied as either a TLE line pair "
+                "({line1, line2} — each line exactly 69 chars per the TLE spec) "
+                "or as an OMM payload (the CCSDS-standard JSON returned by "
+                "tle_lookup). Either is accepted; the OMM form is preferred when "
+                "passing programmatically since it does not depend on TLE column "
+                "alignment."
+            ),
+        ),
+    ],
+    epochs: Annotated[
+        list[Epoch],
+        Field(
+            description=(
+                "UTC ISO 8601 epochs at which to evaluate the propagated state. "
+                "Each entry must include a time component (e.g. "
+                "'2024-01-01T00:00:00Z'); date-only is rejected. The list defines "
+                "both the evaluation grid and the output ordering."
+            ),
+        ),
+    ],
+    frame: Annotated[
+        Frame,
+        Field(
+            description=(
+                "Output frame. Supported here: TEME (SGP4-native, fastest), "
+                "ICRF / GCRS (inertial, distinct origins), ITRS (Earth-fixed), "
+                "CIRS (intermediate). For TIRS or IAU body-fixed frames use the "
+                "frame_transform tool against a TEME state."
+            ),
+        ),
+    ] = Frame.TEME,
+    output: Annotated[
+        Literal["summary", "full"],
+        Field(
+            description=(
+                "'summary' (default) caps the response at a small number of "
+                "evenly-spaced states across the epoch list, keeping the MCP "
+                "payload tight. 'full' returns one state per input epoch — "
+                "request only when downstream needs the full grid."
+            ),
+        ),
+    ] = "summary",
 ) -> Sgp4PropagateResponse:
     if frame not in _SUPPORTED_FRAMES:
         raise InvalidInputError(

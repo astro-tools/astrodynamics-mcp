@@ -15,8 +15,9 @@ that is not yet available here.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from astrodynamics_mcp.errors import InvalidInputError, UpstreamError
@@ -116,11 +117,46 @@ def _validate_frame_endpoints(from_frame: Frame, to_frame: Frame) -> None:
         )
 
 
-@register_tool(name="frame_transform", description=_DESCRIPTION)
+@register_tool(
+    name="frame_transform",
+    description=_DESCRIPTION,
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+)
 async def frame_transform(
-    state: StateVector,
-    to_frame: Frame,
-    epoch: Epoch | None = None,
+    state: Annotated[
+        StateVector,
+        Field(
+            description=(
+                "Input state vector carrying position (km), velocity (km/s), "
+                "the source `frame`, and the `epoch` at which it is valid. "
+                "Supported frames: ICRF, GCRS, ITRS, TEME, CIRS, IAU_EARTH. "
+                "TIRS, IAU_MARS, and IAU_MOON are deliberately rejected — "
+                "astropy does not expose them as transform endpoints at v0.1."
+            ),
+        ),
+    ],
+    to_frame: Annotated[
+        Frame,
+        Field(
+            description=(
+                "Target frame for the output state. Same supported-frame list "
+                "as the input. Identity (to_frame == state.frame) is a valid "
+                "no-op that still returns a structured response."
+            ),
+        ),
+    ],
+    epoch: Annotated[
+        Epoch | None,
+        Field(
+            description=(
+                "Optional override for the epoch used in the transform, UTC ISO "
+                "8601 with a mandatory time component. When omitted, the tool "
+                "uses `state.epoch`. Override is useful when re-evaluating an "
+                "Earth-rotating-frame state at a different time than the state's "
+                "native validity epoch."
+            ),
+        ),
+    ] = None,
 ) -> FrameTransformResponse:
     from_frame = state.frame
     target_epoch: str = epoch if epoch is not None else state.epoch

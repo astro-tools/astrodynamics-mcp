@@ -21,9 +21,10 @@ from __future__ import annotations
 import bisect
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import numpy as np
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from astrodynamics_mcp.data.horizons import HorizonsResponse, fetch_ephemeris
@@ -489,15 +490,87 @@ def _ascii_contour(rows_of_c3: list[list[float | None]]) -> str:
 # ---------------------------------------------------------------------------
 
 
-@register_tool(name="porkchop", description=_DESCRIPTION)
+@register_tool(
+    name="porkchop",
+    description=_DESCRIPTION,
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+)
 async def porkchop(
-    departure_body: str,
-    arrival_body: str,
-    depart_window: list[str],
-    arrive_window: list[str],
-    mu: Literal["sun"] = "sun",
-    samples_per_axis: int = 30,
-    output: Literal["summary", "full"] = "summary",
+    departure_body: Annotated[
+        str,
+        Field(
+            description=(
+                "Body the spacecraft departs from. One of the JPL Horizons "
+                "major-body names: 'mercury', 'venus', 'earth', 'mars', "
+                "'jupiter', 'saturn', 'uranus', 'neptune'. Must differ from "
+                "`arrival_body`."
+            ),
+        ),
+    ],
+    arrival_body: Annotated[
+        str,
+        Field(
+            description=(
+                "Body the spacecraft arrives at. Same body-name enum as "
+                "`departure_body` and must be different from it."
+            ),
+        ),
+    ],
+    depart_window: Annotated[
+        list[str],
+        Field(
+            description=(
+                "Departure-epoch range as a two-element [start, end] list of "
+                "UTC ISO 8601 strings, e.g. "
+                "['2028-03-01T00:00:00Z', '2028-06-01T00:00:00Z']. The axis is "
+                "sampled uniformly across this range."
+            ),
+        ),
+    ],
+    arrive_window: Annotated[
+        list[str],
+        Field(
+            description=(
+                "Arrival-epoch range as a two-element [start, end] list of UTC "
+                "ISO 8601 strings, sampled uniformly along the other grid axis. "
+                "Must end strictly after `depart_window` starts so at least one "
+                "positive-time-of-flight cell exists."
+            ),
+        ),
+    ],
+    mu: Annotated[
+        Literal["sun"],
+        Field(
+            description=(
+                "Central-body gravitational parameter for the heliocentric "
+                "Lambert solve. Only 'sun' is supported at v0.1; barycentric μ "
+                "is used."
+            ),
+        ),
+    ] = "sun",
+    samples_per_axis: Annotated[
+        int,
+        Field(
+            description=(
+                "Grid resolution per axis — the full grid has "
+                "samples_per_axis² cells. Default 30 gives a 900-cell grid; "
+                "higher resolves fine structure but costs more Horizons calls "
+                "and Lambert solves. Capped at the upper end to keep the "
+                "response size sane."
+            ),
+        ),
+    ] = 30,
+    output: Annotated[
+        Literal["summary", "full"],
+        Field(
+            description=(
+                "'summary' (default) returns the minimum-Δv 'best' cell, the "
+                "ASCII C3 contour, and grid metadata only — the MCP-payload-"
+                "friendly form. 'full' adds the per-cell grid; only request "
+                "this when downstream really needs every cell."
+            ),
+        ),
+    ] = "summary",
 ) -> PorkchopResponse:
     # Validation.
     dep_body = _validate_body(departure_body, field="departure_body")
