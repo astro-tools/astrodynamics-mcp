@@ -144,3 +144,6 @@ stdio + Streamable HTTP transports are first-class.
 ## License
 
 MIT — see [LICENSE](https://github.com/astro-tools/astrodynamics-mcp/blob/main/LICENSE).
+
+<!-- mcp-name: io.github.astro-tools/astrodynamics-mcp -->
+

@@ -5,6 +5,21 @@ All notable changes to astrodynamics-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-05-26
+
+### Added
+
+- MCPB bundle is built and published as a GitHub release asset on every
+  `v*` tag, then auto-distributed to Smithery as
+  `astro-tools/astrodynamics-mcp` and to the Official MCP Registry as
+  `io.github.astro-tools/astrodynamics-mcp`. The bundle uses MCPB
+  `manifest_version: "0.4"` with `type: "uv"` and pins the just-released
+  PyPI version, so users can install the server through Claude Desktop's,
+  Cursor's, or any MCP-aware client's catalog UI without hand-editing JSON
+  config blocks. The release workflow grows three additive jobs
+  (`pack-mcpb`, `publish-smithery`, `publish-mcp-registry`) downstream of
+  the existing `publish-pypi` job.
+
 ## [0.1.0] — 2026-05-26
 
 Initial public release. A Model Context Protocol server exposing eight
@@ -96,4 +111,5 @@ GitHub Models on every workflow dispatch.
   trusted publishing, and creates the GitHub Release on every `v*` tag.
   macOS is deferred to v0.2 (#1, #2).
 
+[0.1.1]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/astro-tools/astrodynamics-mcp/releases/tag/v0.1.0
