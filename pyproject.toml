@@ -93,6 +93,9 @@ packages = ["src/astrodynamics_mcp"]
 line-length = 100
 target-version = "py310"
 src = ["src", "tests", "eval", "examples"]
+# Bundle source under packaging/ holds templated files (e.g. `{{VERSION}}` in
+# pyproject.toml) that aren't valid until the release workflow substitutes them.
+extend-exclude = ["packaging"]
 
 [tool.ruff.lint]
 select = [
