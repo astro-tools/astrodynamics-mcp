@@ -58,3 +58,12 @@ their request / response models are documented on the
         - CacheHit
         - DEFAULT_TTLS
         - default_cache
+
+## Credentials
+
+::: astrodynamics_mcp.credentials
+    options:
+      members:
+        - Credential
+        - SOURCES
+        - require_credential
