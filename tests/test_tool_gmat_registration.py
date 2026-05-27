@@ -29,12 +29,8 @@ _EXPECTED_TOOL_NAMES = frozenset(
 
 # Slots still landing in follow-up work. Tools with real bodies are excluded
 # from the placeholder-body parametrize so this file stays accurate as each
-# slot graduates.
-_PLACEHOLDER_TOOL_NAMES = _EXPECTED_TOOL_NAMES - {
-    "gmat_run_mission",
-    "gmat_sweep",
-    "gmat_execute_script",
-}
+# slot graduates. Empty now that every slot has a real body.
+_PLACEHOLDER_TOOL_NAMES: frozenset[str] = frozenset()
 
 
 class TestNegativeCase:
