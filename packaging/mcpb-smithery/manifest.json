@@ -40,5 +40,15 @@
         "stdio"
       ]
     }
-  }
+  },
+  "tools": [
+    {"name": "tle_lookup", "description": "Fetch current TLEs from CelesTrak by NORAD catalog number, name, or group."},
+    {"name": "sgp4_propagate", "description": "Propagate TLEs across UTC ISO 8601 epochs in TEME / ICRF / GCRS / ITRS / CIRS."},
+    {"name": "lambert_solve", "description": "Solve Lambert's problem; multi-revolution enumeration and two-impulse Δv on demand."},
+    {"name": "access_windows", "description": "Ground-station / observer access intervals over a time window, with AOS / LOS / peak elevation."},
+    {"name": "time_convert", "description": "Convert epochs across UTC, TAI, TT, TDB, UT1, GPS, TCB, TCG in ISO, JD, MJD, J2000-seconds, and Unix."},
+    {"name": "frame_transform", "description": "Transform state vectors across ICRF, ITRS, GCRS, TEME, CIRS, TIRS, and IAU body-fixed frames."},
+    {"name": "porkchop", "description": "Compute the (depart × arrive) Δv / C3 grid for interplanetary transfers, with ASCII contour or full output."},
+    {"name": "bplane_target", "description": "B-plane element calculation and impulsive targeting for hyperbolic flybys."}
+  ]
 }

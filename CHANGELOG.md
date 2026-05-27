@@ -5,6 +5,19 @@ All notable changes to astrodynamics-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-05-27
+
+### Fixed
+
+- Smithery publish, which v0.1.2 left at "server entity created but no
+  release" with `400 {"error":"No values to set"}`. Smithery's
+  `releases.create` endpoint rejects a publish whose payload carries only
+  `serverInfo.name` and `serverInfo.version`; at least one of `tools`,
+  `prompts`, `resources`, or `user_config` must be present. Fix: declare
+  the eight v0.1 tools as a top-level `tools[]` array (per the MCPB spec)
+  in both the canonical and the Smithery MCPB manifests. Detailed
+  input/output schemas remain discovered at runtime via the MCP protocol.
+
 ## [0.1.2] — 2026-05-27
 
 ### Fixed
@@ -128,6 +141,7 @@ GitHub Models on every workflow dispatch.
   trusted publishing, and creates the GitHub Release on every `v*` tag.
   macOS is deferred to v0.2 (#1, #2).
 
+[0.1.3]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/astro-tools/astrodynamics-mcp/releases/tag/v0.1.0
