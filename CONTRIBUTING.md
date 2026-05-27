@@ -56,28 +56,70 @@ uv run coverage report --include='src/astrodynamics_mcp/schemas/*' --fail-under=
 uv run coverage report --include='src/astrodynamics_mcp/data/*' --fail-under=95
 ```
 
-## MCPB bundle
+## MCPB bundles
 
-The `.mcpb` bundle published to Smithery and surfaced through the Official
-MCP Registry is built from `packaging/mcpb/` on every `v*` tag by the
-`pack-mcpb` job in `.github/workflows/release.yml`. The source files carry a
-literal `{{VERSION}}` placeholder which the workflow `sed`-substitutes with
-the tag version (`${GITHUB_REF_NAME#v}`) at pack time; never commit a real
+Two MCPB bundles ship on every `v*` tag, packed and uploaded by sister
+jobs in `.github/workflows/release.yml`. Both carry a literal
+`{{VERSION}}` placeholder which the workflow `sed`-substitutes with the
+tag version (`${GITHUB_REF_NAME#v}`) at pack time; never commit a real
 version into the placeholder.
 
-To test-build locally:
+### Canonical bundle — `packaging/mcpb/`
+
+The default, modern bundle. `manifest_version: "0.4"`, `server.type: "uv"`.
+Consumed by:
+
+- The GitHub Release page (attached as `.mcpb` asset by the `pack-mcpb` →
+  `github-release` jobs).
+- The Anthropic Claude Desktop directory (manual submission of the
+  release asset).
+- Any other MCPB-aware client that supports the `uv` server type.
+
+Local test-build:
 
 ```bash
 cp -r packaging/mcpb /tmp/mcpb-test
-sed -i "s/{{VERSION}}/0.1.1/g" /tmp/mcpb-test/manifest.json /tmp/mcpb-test/pyproject.toml
+sed -i "s/{{VERSION}}/0.1.2/g" /tmp/mcpb-test/manifest.json /tmp/mcpb-test/pyproject.toml
 npx --yes @anthropic-ai/mcpb@2.1.2 validate /tmp/mcpb-test/manifest.json
 npx --yes @anthropic-ai/mcpb@2.1.2 pack /tmp/mcpb-test /tmp/astrodynamics-mcp.mcpb
 uv run --directory /tmp/mcpb-test server.py stdio   # exercise the install-time launch path
 ```
 
-The MCP Registry server manifest (`packaging/mcp-registry/server.json`) is
-templated the same way and published by the `publish-mcp-registry` job via
-the `mcp-publisher` CLI with GitHub OIDC — no secrets required.
+### Smithery bundle — `packaging/mcpb-smithery/`
+
+Smithery's CLI does not yet recognise MCPB `server.type: "uv"`. The
+Smithery bundle uses `server.type: "python"` with
+`mcp_config.command: "uv"` and inline `--with` dependencies — the
+pattern Smithery's own MCPB bundling docs document. Consumed only by
+the `publish-smithery` job; the GitHub Release asset is the canonical
+bundle, not this one.
+
+`packaging/mcpb-smithery/` contains only `manifest.json`; the workflow
+copies `server.py` and `.mcpbignore` from `packaging/mcpb/` at pack time
+so the launcher stays single-sourced. Local test-build mirrors that:
+
+```bash
+mkdir -p /tmp/mcpb-smithery-test
+cp packaging/mcpb-smithery/manifest.json /tmp/mcpb-smithery-test/
+cp packaging/mcpb/server.py packaging/mcpb/.mcpbignore /tmp/mcpb-smithery-test/
+sed -i "s/{{VERSION}}/0.1.2/g" /tmp/mcpb-smithery-test/manifest.json
+npx --yes @anthropic-ai/mcpb@2.1.2 validate /tmp/mcpb-smithery-test/manifest.json
+npx --yes @anthropic-ai/mcpb@2.1.2 pack /tmp/mcpb-smithery-test /tmp/astrodynamics-mcp-smithery.mcpb
+```
+
+There's no local equivalent of `uv run server.py stdio` for the
+Smithery bundle — Smithery's hosted runner is what actually executes
+the `uv run --with ...` command described in the manifest, and the bundle
+ships no `pyproject.toml` to resolve against locally.
+
+### MCP Registry manifest
+
+`packaging/mcp-registry/server.json` is templated the same way and
+published by the `publish-mcp-registry` job via the `mcp-publisher` CLI
+with GitHub OIDC — no secrets required. The `$schema` field must point
+at `https://static.modelcontextprotocol.io/schemas/<date>/server.schema.json`;
+the publisher rejects any other URL form (including the raw GitHub URL
+the schema file's own `$id` claims).
 
 ## Commit messages
 
