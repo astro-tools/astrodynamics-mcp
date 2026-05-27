@@ -9,7 +9,7 @@ permitted_traces:
   - - tool: lambert_solve
       arg_constraints:
         tof: {equals: 3600}
-        mu: {one_of: ["earth", 398600.4418, null]}
+        mu: {one_of: ["earth", 398600.4418]}
     - tool: frame_transform
       arg_constraints:
         to_frame: {equals: "ITRS"}

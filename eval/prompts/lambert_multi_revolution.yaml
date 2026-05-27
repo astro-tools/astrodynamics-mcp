@@ -7,7 +7,7 @@ permitted_traces:
   - - tool: lambert_solve
       arg_constraints:
         tof: {equals: 43200}
-        mu: {one_of: ["earth", 398600.4418, null]}
+        mu: {one_of: ["earth", 398600.4418]}
         revs: {equals: 2}
 functional_answer:
   - path: "$.all_solutions"

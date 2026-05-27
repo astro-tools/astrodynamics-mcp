@@ -155,13 +155,15 @@ _DESCRIPTION = (
     "vectors r1 and r2 in a given time-of-flight tof. e.g. lambert_solve("
     "r1=[5000, 10000, 2100], r2=[-14600, 2500, 7000], tof=3600, mu='earth') "
     "returns the initial and final inertial velocities on the transfer arc "
-    "plus the arc's classical orbital elements. `r1` and `r2` are heliocentric "
-    "km when mu='sun'; geocentric km when mu='earth'; planetocentric km for "
-    "other named bodies. Mixing frames will silently produce garbage — if your "
-    "problem is interplanetary, use mu='sun' and pull body positions via the "
-    "porkchop tool. Algorithm: `izzo` is fast and robust for the common case; "
-    "switch to `gooding` if `izzo` fails on near-degenerate geometries. For "
-    "revs > 0 the response enumerates the multi-rev solutions in all_solutions "
+    "plus the arc's classical orbital elements. `mu` selects the central "
+    "body and is REQUIRED — there is no default, because the wrong choice "
+    "silently produces garbage. `r1` and `r2` are heliocentric km when "
+    "mu='sun'; geocentric km when mu='earth'; planetocentric km for other "
+    "named bodies. If your problem is interplanetary (e.g. Earth-to-Mars "
+    "transfer), use mu='sun' and pull body positions via the porkchop tool. "
+    "Algorithm: `izzo` is fast and robust for the common case; switch to "
+    "`gooding` if `izzo` fails on near-degenerate geometries. For revs > 0 "
+    "the response enumerates the multi-rev solutions in all_solutions "
     "(low + high path per rev count). Supply depart_velocity AND arrive_velocity "
     "together to get the two-impulse Δv. Degenerate geometries (r1 == r2, "
     "infeasible tof, no convergence) surface as `upstream.lambert_no_solution`."
@@ -342,13 +344,15 @@ async def lambert_solve(
         str | float,
         Field(
             description=(
-                "Gravitational parameter of the central body. Pass a body name "
-                "('sun', 'mercury', 'venus', 'earth', 'moon', 'mars', 'jupiter', "
-                "'saturn', 'uranus', 'neptune') to use the JPL-published μ, or a "
-                "raw number in km³/s² for a custom value."
+                "Gravitational parameter of the central body — REQUIRED, no default. "
+                "Pass a body name ('sun', 'mercury', 'venus', 'earth', 'moon', "
+                "'mars', 'jupiter', 'saturn', 'uranus', 'neptune') to use the JPL-"
+                "published μ, or a raw number in km³/s² for a custom value. Must "
+                "match the frame `r1`/`r2` are expressed in: heliocentric → 'sun', "
+                "geocentric → 'earth', planetocentric → that planet."
             ),
         ),
-    ] = "earth",
+    ],
     direction: Annotated[
         Literal["prograde", "retrograde"],
         Field(
