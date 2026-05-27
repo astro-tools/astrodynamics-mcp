@@ -1,0 +1,10 @@
+% Fixture for the gmat_validate_script error path. The Spacecraft below
+% carries a deliberately unknown field name (WidgetCount). GMAT's
+% interpreter rejects the load and emits an ERROR / Interpreter
+% Exception line tagged with the offending source line.
+% (All comments are ASCII so the non-ASCII guard does not fire first.)
+
+Create Spacecraft Sat
+Sat.WidgetCount = 7
+
+BeginMissionSequence
