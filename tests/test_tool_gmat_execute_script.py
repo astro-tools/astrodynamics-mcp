@@ -578,3 +578,58 @@ class TestSteeringText:
         # the tool vs. the curated one — lock it into the description.
         assert "ok=False" in desc
         assert "stderr" in desc
+
+
+# ---------------------------------------------------------------------------
+# Chained producer → read seam
+# ---------------------------------------------------------------------------
+
+
+class TestChainedReadback:
+    """Drives gmat_execute_script end-to-end, then reads a ReportFile back
+    through gmat_read_run_artefact using the returned run_id. Validates
+    that the producer registers in the same RunRegistry singleton the
+    read tool consumes — a seam the schema-level checks can't see.
+    """
+
+    async def test_execute_script_then_read_reportfile(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from astrodynamics_mcp import runs as runs_module
+        from astrodynamics_mcp.runs import RunRegistry
+        from astrodynamics_mcp.tools.gmat import RawReportContent
+
+        # Per-test registry installed as the singleton.
+        registry = RunRegistry(directory=tmp_path / "cache", limit=5)
+        monkeypatch.setattr(runs_module, "_default_registry", registry)
+
+        fixture_text = "Sat.UTCGregorian Sat.X\n01 Jan 2026 12:00:00.000 7000.0\n"
+        fixture_path = tmp_path / "ReportFile1.txt"
+        fixture_path.write_text(fixture_text, encoding="utf-8")
+
+        result = _FakeResult(
+            output_dir=tmp_path,
+            log="GMAT log: mission complete\n",
+            report_paths={"ReportFile1": fixture_path},
+        )
+        _install_fake_gmat_run(monkeypatch, mission=_FakeMission(run_result=result))
+        mcp = _fresh_mcp(monkeypatch)
+
+        _content, structured = await mcp.call_tool(
+            "gmat_execute_script", {"script": "% inline\nCreate Spacecraft Sat\n"}
+        )
+        producer = GmatExecuteScriptResponse.model_validate(structured)
+        assert producer.ok is True
+        # The seam: the producer registered against this exact singleton.
+        entry = registry.get(producer.run_id)
+        assert entry is not None
+        assert "ReportFile1" in entry.artefacts
+
+        _content, structured = await mcp.call_tool(
+            "gmat_read_run_artefact",
+            {"run_id": producer.run_id, "name": "ReportFile1", "output": "full"},
+        )
+        readback = RawReportContent.model_validate(structured)
+        assert readback.content == fixture_text
+        assert readback.truncated is False
+        assert readback.byte_count.value == float(fixture_path.stat().st_size)

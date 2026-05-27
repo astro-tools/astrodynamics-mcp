@@ -676,3 +676,63 @@ class TestIntegrationAgainstRealGmat:
         # a handful of report rows — small enough to fit inline.
         assert rf.row_count.value >= 1.0
         assert parsed.wall_clock.value > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Chained producer → read seam
+# ---------------------------------------------------------------------------
+
+
+class TestChainedReadback:
+    """Drives gmat_run_mission end-to-end, then reads a ReportFile back
+    through gmat_read_run_artefact using the returned run_id. Validates
+    that the producer registers in the same RunRegistry singleton the
+    read tool consumes — a seam the schema-level checks can't see.
+    """
+
+    async def test_run_mission_then_read_reportfile(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from astrodynamics_mcp import runs as runs_module
+        from astrodynamics_mcp.runs import RunRegistry
+        from astrodynamics_mcp.tools.gmat import RawReportContent
+
+        # Per-test registry installed as the singleton, so the
+        # producer's register() and the read tool's get() share state.
+        registry = RunRegistry(directory=tmp_path / "cache", limit=5)
+        monkeypatch.setattr(runs_module, "_default_registry", registry)
+
+        # The fake's report_paths point at this fixture file; the
+        # producer's _collect_artefact_map carries the path through to
+        # the registry verbatim, so the read tool reads these bytes.
+        fixture_text = "Sat.UTCGregorian Sat.X\n01 Jan 2026 12:00:00.000 7000.0\n"
+        fixture_path = tmp_path / "RF.txt"
+        fixture_path.write_text(fixture_text, encoding="utf-8")
+
+        result = _FakeResult(
+            reports={"RF": _small_report(2)},
+            report_paths={"RF": fixture_path},
+        )
+        mission = _FakeMission(summary=_trivial_summary(), run_result=result)
+        _install_fake_gmat_run(monkeypatch, mission=mission)
+        fresh = _fresh_mcp(monkeypatch)
+
+        _content, structured = await fresh.call_tool(
+            "gmat_run_mission", {"script": "% inline\nCreate Spacecraft Sat\n"}
+        )
+        producer = GmatRunMissionResponse.model_validate(structured)
+        # The seam: the producer registered against this exact singleton.
+        entry = registry.get(producer.run_id)
+        assert entry is not None
+        assert "RF" in entry.artefacts
+
+        _content, structured = await fresh.call_tool(
+            "gmat_read_run_artefact",
+            {"run_id": producer.run_id, "name": "RF", "output": "full"},
+        )
+        readback = RawReportContent.model_validate(structured)
+        # Byte-equal: every line the fake wrote round-trips through
+        # producer → registry → read tool.
+        assert readback.content == fixture_text
+        assert readback.truncated is False
+        assert readback.byte_count.value == float(fixture_path.stat().st_size)
