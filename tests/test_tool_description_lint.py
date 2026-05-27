@@ -26,6 +26,39 @@ class TestRealServerSurfaceIsClean:
         assert check_tool_descriptions(tools) == []
 
 
+class TestRealServerCapabilityMetadata:
+    """Smithery quality-score guard: every tool needs annotations, outputSchema, and
+    a non-empty description on every input parameter."""
+
+    async def test_every_tool_has_annotations(self) -> None:
+        tools = await real_mcp.list_tools()
+        for t in tools:
+            assert t.annotations is not None, f"{t.name}: missing ToolAnnotations"
+            assert t.annotations.readOnlyHint is True, (
+                f"{t.name}: readOnlyHint must be True (none of the v0.1 tools mutate state)"
+            )
+
+    async def test_every_tool_has_output_schema(self) -> None:
+        tools = await real_mcp.list_tools()
+        for t in tools:
+            assert t.outputSchema is not None, (
+                f"{t.name}: outputSchema is None. Ensure the tool returns a typed "
+                "pydantic BaseModel so FastMCP can derive a schema."
+            )
+
+    async def test_every_parameter_has_a_description(self) -> None:
+        tools = await real_mcp.list_tools()
+        for t in tools:
+            props = (t.inputSchema or {}).get("properties", {})
+            for param_name, schema in props.items():
+                assert schema.get("description"), (
+                    f"{t.name}.{param_name}: parameter is missing a Field(description=…). "
+                    "Declare the parameter as "
+                    "Annotated[type, Field(description='…')] so the description lands "
+                    "in the generated JSON Schema."
+                )
+
+
 class TestGoodToolPassesLint:
     @pytest.fixture
     def lint_mcp(self) -> FastMCP:

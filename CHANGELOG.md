@@ -5,6 +5,27 @@ All notable changes to astrodynamics-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-05-27
+
+### Added
+
+- Per-parameter `description` on every tool input. Each parameter is now
+  declared `Annotated[type, Field(description="…")]`, so the generated
+  JSON Schema's `properties.<param>.description` carries semantics,
+  units, and acceptable value ranges. Any MCP-connected LLM benefits
+  from richer argument-binding metadata; Smithery's catalog UI surfaces
+  the descriptions in its tool browser.
+- `outputSchema` for every tool, surfaced through the published Smithery
+  bundle. FastMCP already derived these from the pydantic response
+  models — `scripts/dump-mcpb-tools.py` now includes them in each
+  bundle `tools[]` entry alongside `inputSchema`.
+- `annotations` for every tool — `readOnlyHint: true` on all eight (none
+  mutate remote state) and `openWorldHint: true` on the three tools
+  whose core function is fetching from an external service
+  (`tle_lookup` from CelesTrak, `porkchop` and `bplane_target` from JPL
+  Horizons). The `register_tool` decorator gains an `annotations` kwarg
+  that passes through to FastMCP's `@mcp.tool()`.
+
 ## [0.1.4] — 2026-05-27
 
 ### Fixed
@@ -158,6 +179,7 @@ GitHub Models on every workflow dispatch.
   trusted publishing, and creates the GitHub Release on every `v*` tag.
   macOS is deferred to v0.2 (#1, #2).
 
+[0.1.5]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.1...v0.1.2

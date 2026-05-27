@@ -19,9 +19,10 @@ solver is accurate when ‖Δv‖ is small relative to ‖v_∞‖.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 import numpy as np
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from astrodynamics_mcp.errors import InvalidInputError
@@ -325,13 +326,67 @@ def _min_norm_solve(jac: np.ndarray, delta_b: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
-@register_tool(name="bplane_target", description=_DESCRIPTION)
+@register_tool(
+    name="bplane_target",
+    description=_DESCRIPTION,
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+)
 async def bplane_target(
-    state: StateVector,
-    target_body: str,
-    target_epoch: Epoch,
-    target_btr_km: float | None = None,
-    target_btt_km: float | None = None,
+    state: Annotated[
+        StateVector,
+        Field(
+            description=(
+                "Hyperbolic planetocentric state at the maneuver epoch — "
+                "position (km) and velocity (km/s) relative to `target_body`'s "
+                "centre, in an inertial frame (ICRF or GCRS). The tool does not "
+                "transform the input; pass a state already in body-centred "
+                "inertial coordinates."
+            ),
+        ),
+    ],
+    target_body: Annotated[
+        str,
+        Field(
+            description=(
+                "Body the spacecraft is flying by, lower-case JPL Horizons name "
+                "('mercury', 'venus', 'earth', 'moon', 'mars', 'jupiter', "
+                "'saturn', 'uranus', 'neptune'). Selects μ and the body radius "
+                "used in the B-plane geometry."
+            ),
+        ),
+    ],
+    target_epoch: Annotated[
+        Epoch,
+        Field(
+            description=(
+                "Reference epoch for the targeting evaluation, UTC ISO 8601 with "
+                "a time component. Carried in the response for traceability; the "
+                "linearised solver applies the returned Δv at `state.epoch`."
+            ),
+        ),
+    ],
+    target_btr_km: Annotated[
+        float | None,
+        Field(
+            description=(
+                "Optional B-plane R-component target (km). When supplied, the "
+                "tool returns the one-step linearised Δv that drives B·R toward "
+                "this value. Pass either or both of `target_btr_km` and "
+                "`target_btt_km` to invoke the targeting solver; omit both to "
+                "get the B-plane element calculation only."
+            ),
+        ),
+    ] = None,
+    target_btt_km: Annotated[
+        float | None,
+        Field(
+            description=(
+                "Optional B-plane T-component target (km). Same semantics as "
+                "`target_btr_km` — supplying both fully constrains the B-plane "
+                "intercept; supplying just one solves the 1-DOF target."
+            ),
+        ),
+    ] = None,
 ) -> BplaneTargetResponse:
     body_key = _validate_body(target_body, field="target_body")
     mu, _radius_km = _BODY_PARAMETERS[body_key]

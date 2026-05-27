@@ -16,8 +16,9 @@ EOP-dependent frame transforms, which access windows do not.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, get_args
+from typing import Annotated, Any, get_args
 
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from astrodynamics_mcp.errors import InvalidInputError, UpstreamError
@@ -221,15 +222,86 @@ def _grouped_triples(times: Any, events: Any) -> list[tuple[Any, Any, Any]]:
 # ---------------------------------------------------------------------------
 
 
-@register_tool(name="access_windows", description=_DESCRIPTION)
+@register_tool(
+    name="access_windows",
+    description=_DESCRIPTION,
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+)
 async def access_windows(
-    observer: NamedStation | ObserverCoordinates,
-    target_tle: TleLines | TleOmm,
-    start: Epoch,
-    end: Epoch,
-    min_elevation_deg: float,
-    min_range_km: float | None = None,
-    max_range_km: float | None = None,
+    observer: Annotated[
+        NamedStation | ObserverCoordinates,
+        Field(
+            description=(
+                "Ground station / observer location. Either a NamedStation "
+                "({name: ...}) where name is one of "
+                "'madrid', 'goldstone', 'canberra', 'svalbard', 'wallops', "
+                "'esrange', 'gsfc', 'jpl' — resolved to lat/lon/alt against "
+                "the v0.1 registry — or explicit ObserverCoordinates "
+                "({lat_deg, lon_deg, height_km}) for arbitrary sites."
+            ),
+        ),
+    ],
+    target_tle: Annotated[
+        TleLines | TleOmm,
+        Field(
+            description=(
+                "The satellite to track, supplied as a TLE line pair "
+                "({line1, line2}) or as an OMM payload (the CCSDS-standard JSON "
+                "returned by tle_lookup). Either form is accepted."
+            ),
+        ),
+    ],
+    start: Annotated[
+        Epoch,
+        Field(
+            description=(
+                "Start of the search window, UTC ISO 8601 with a time component "
+                "(e.g. '2024-01-01T00:00:00Z')."
+            ),
+        ),
+    ],
+    end: Annotated[
+        Epoch,
+        Field(
+            description=(
+                "End of the search window, UTC ISO 8601 with a time component. "
+                "Must be strictly after `start`."
+            ),
+        ),
+    ],
+    min_elevation_deg: Annotated[
+        float,
+        Field(
+            description=(
+                "Horizon mask, in degrees (not radians). Passes peaking below "
+                "this elevation are filtered out. Conventional thresholds: 10° "
+                "for amateur ground stations, 15° for DSN-style large-dish ops; "
+                "values below 5° are usually noisy due to refraction and "
+                "terrain. Must be in [0, 90]."
+            ),
+        ),
+    ],
+    min_range_km: Annotated[
+        float | None,
+        Field(
+            description=(
+                "Optional minimum range from observer to satellite at the pass "
+                "peak (km). Passes whose closest approach is nearer than this "
+                "are dropped. Useful for excluding very-low-altitude horizon "
+                "noise."
+            ),
+        ),
+    ] = None,
+    max_range_km: Annotated[
+        float | None,
+        Field(
+            description=(
+                "Optional maximum range from observer to satellite at the pass "
+                "peak (km). Passes whose closest approach is farther than this "
+                "are dropped."
+            ),
+        ),
+    ] = None,
 ) -> AccessWindowsResponse:
     # Input validation.
     if isinstance(min_elevation_deg, bool) or not isinstance(min_elevation_deg, (int, float)):

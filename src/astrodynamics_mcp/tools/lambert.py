@@ -15,9 +15,10 @@ matching to ``arrive_velocity`` at the other end.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import numpy as np
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from astrodynamics_mcp.errors import InvalidInputError, UpstreamError
@@ -303,17 +304,104 @@ def _build_solution(
 # ---------------------------------------------------------------------------
 
 
-@register_tool(name="lambert_solve", description=_DESCRIPTION)
+@register_tool(
+    name="lambert_solve",
+    description=_DESCRIPTION,
+    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+)
 async def lambert_solve(
-    r1: list[float],
-    r2: list[float],
-    tof: float,
-    mu: str | float = "earth",
-    direction: Literal["prograde", "retrograde"] = "prograde",
-    revs: int = 0,
-    algorithm: Literal["izzo", "izzo_revisited", "gooding", "battin"] = "izzo",
-    depart_velocity: list[float] | None = None,
-    arrive_velocity: list[float] | None = None,
+    r1: Annotated[
+        list[float],
+        Field(
+            description=(
+                "Departure position vector (km), 3-component [x, y, z] in the "
+                "inertial frame of the central body identified by `mu`."
+            ),
+        ),
+    ],
+    r2: Annotated[
+        list[float],
+        Field(
+            description=(
+                "Arrival position vector (km), same frame and units as `r1`. The "
+                "solver finds the transfer arc connecting `r1` to `r2` in `tof` "
+                "seconds."
+            ),
+        ),
+    ],
+    tof: Annotated[
+        float,
+        Field(
+            description=(
+                "Time of flight from `r1` to `r2`, in seconds. Must be strictly "
+                "positive and finite."
+            ),
+        ),
+    ],
+    mu: Annotated[
+        str | float,
+        Field(
+            description=(
+                "Gravitational parameter of the central body. Pass a body name "
+                "('sun', 'mercury', 'venus', 'earth', 'moon', 'mars', 'jupiter', "
+                "'saturn', 'uranus', 'neptune') to use the JPL-published μ, or a "
+                "raw number in km³/s² for a custom value."
+            ),
+        ),
+    ] = "earth",
+    direction: Annotated[
+        Literal["prograde", "retrograde"],
+        Field(
+            description=(
+                "Sense of motion along the transfer arc. 'prograde' is the "
+                "common case (eastward in Earth orbit, counter-clockwise viewed "
+                "from the +Z pole); 'retrograde' flips the direction."
+            ),
+        ),
+    ] = "prograde",
+    revs: Annotated[
+        int,
+        Field(
+            description=(
+                "Maximum number of complete revolutions to enumerate. 0 (default) "
+                "returns only the zero-rev / direct-transfer solution. For revs ≥ 1 "
+                "both low_path branches are enumerated; the primary v1/v2 echo the "
+                "(revs, low_path=True) solution, all_solutions lists every feasible "
+                "alternative."
+            ),
+        ),
+    ] = 0,
+    algorithm: Annotated[
+        Literal["izzo", "izzo_revisited", "gooding", "battin"],
+        Field(
+            description=(
+                "Lambert solver. 'izzo' (default) has the broadest convergence "
+                "basin; 'izzo_revisited', 'gooding', and 'battin' are alternative "
+                "implementations from `lamberthub` exposed for cross-validation."
+            ),
+        ),
+    ] = "izzo",
+    depart_velocity: Annotated[
+        list[float] | None,
+        Field(
+            description=(
+                "Optional departure-state velocity (km/s), 3-component, in the "
+                "same frame as `r1`. When supplied alongside `arrive_velocity`, "
+                "the tool also returns the two-impulse Δv "
+                "|v1 - depart_velocity| + |v2 - arrive_velocity|. Pass both or neither."
+            ),
+        ),
+    ] = None,
+    arrive_velocity: Annotated[
+        list[float] | None,
+        Field(
+            description=(
+                "Optional arrival-state velocity (km/s), 3-component, in the same "
+                "frame as `r2`. Required together with `depart_velocity` to "
+                "compute the two-impulse Δv; omit both to skip Δv computation."
+            ),
+        ),
+    ] = None,
 ) -> LambertSolveResponse:
     # Input validation.
     r1_arr = _validate_position(r1, "r1")
