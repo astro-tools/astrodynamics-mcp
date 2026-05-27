@@ -79,11 +79,15 @@ Local test-build:
 
 ```bash
 cp -r packaging/mcpb /tmp/mcpb-test
-sed -i "s/{{VERSION}}/0.1.2/g" /tmp/mcpb-test/manifest.json /tmp/mcpb-test/pyproject.toml
+sed -i "s/{{VERSION}}/0.1.4/g" /tmp/mcpb-test/manifest.json /tmp/mcpb-test/pyproject.toml
 npx --yes @anthropic-ai/mcpb@2.1.2 validate /tmp/mcpb-test/manifest.json
 npx --yes @anthropic-ai/mcpb@2.1.2 pack /tmp/mcpb-test /tmp/astrodynamics-mcp.mcpb
 uv run --directory /tmp/mcpb-test server.py stdio   # exercise the install-time launch path
 ```
+
+The canonical manifest keeps `"tools": []` empty — Claude Desktop and other
+MCPB-aware clients discover tool definitions at runtime via the MCP protocol,
+and the MCPB spec doesn't accept the richer schemas Smithery wants.
 
 ### Smithery bundle — `packaging/mcpb-smithery/`
 
@@ -94,17 +98,29 @@ pattern Smithery's own MCPB bundling docs document. Consumed only by
 the `publish-smithery` job; the GitHub Release asset is the canonical
 bundle, not this one.
 
-`packaging/mcpb-smithery/` contains only `manifest.json`; the workflow
-copies `server.py` and `.mcpbignore` from `packaging/mcpb/` at pack time
-so the launcher stays single-sourced. Local test-build mirrors that:
+`packaging/mcpb-smithery/` contains only `manifest.json` (with
+`"tools": []` placeholder); the workflow copies `server.py` from
+`packaging/mcpb/`, generates the real `tools[]` array from the live
+server via `scripts/dump-mcpb-tools.py`, and `jq`-injects it into the
+manifest before building. Each entry carries the real
+`inputSchema` so Smithery's release API accepts the publish.
+
+The `.mcpb` is built as a direct `zip` here — `mcpb pack` rejects
+`inputSchema` per the MCPB spec, but a `.mcpb` is just a zip with
+`manifest.json` at root so the result is byte-equivalent to what
+`mcpb pack` would produce minus the validation:
 
 ```bash
+uv sync
 mkdir -p /tmp/mcpb-smithery-test
 cp packaging/mcpb-smithery/manifest.json /tmp/mcpb-smithery-test/
-cp packaging/mcpb/server.py packaging/mcpb/.mcpbignore /tmp/mcpb-smithery-test/
-sed -i "s/{{VERSION}}/0.1.2/g" /tmp/mcpb-smithery-test/manifest.json
-npx --yes @anthropic-ai/mcpb@2.1.2 validate /tmp/mcpb-smithery-test/manifest.json
-npx --yes @anthropic-ai/mcpb@2.1.2 pack /tmp/mcpb-smithery-test /tmp/astrodynamics-mcp-smithery.mcpb
+cp packaging/mcpb/server.py /tmp/mcpb-smithery-test/
+sed -i "s/{{VERSION}}/0.1.4/g" /tmp/mcpb-smithery-test/manifest.json
+uv run python scripts/dump-mcpb-tools.py > /tmp/tools.json
+jq --slurpfile tools /tmp/tools.json '.tools = $tools[0]' \
+  /tmp/mcpb-smithery-test/manifest.json > /tmp/mcpb-smithery-test/manifest.tmp
+mv /tmp/mcpb-smithery-test/manifest.tmp /tmp/mcpb-smithery-test/manifest.json
+(cd /tmp/mcpb-smithery-test && zip -r /tmp/astrodynamics-mcp-smithery.mcpb manifest.json server.py)
 ```
 
 There's no local equivalent of `uv run server.py stdio` for the

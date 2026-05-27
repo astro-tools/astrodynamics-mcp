@@ -63,6 +63,11 @@ jobs:
           node-version: '20'
       - run: npm install -g @anthropic-ai/mcpb@2.1.2
       - name: Substitute {{VERSION}} in bundle templates
+        # Canonical bundle stays MCPB-spec-compliant: tools[] is the empty
+        # array committed in the manifest. Claude Desktop and any other
+        # MCPB-aware client discovers tool definitions via the MCP protocol
+        # at runtime. (Smithery's listing API needs richer metadata and is
+        # handled by pack-mcpb-smithery, below.)
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
@@ -82,17 +87,28 @@ jobs:
     name: pack mcpb bundle (smithery)
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --no-dev
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - run: npm install -g @anthropic-ai/mcpb@2.1.2
-      - name: Stage Smithery bundle
-        # Smithery's CLI rejects MCPB `server.type: "uv"`; the Smithery
-        # bundle declares `type: "python"` with `mcp_config.command: "uv"`
-        # and inline `--with` deps (Smithery's own documented pattern).
+      - name: Stage Smithery bundle with generated tools[]
+        # Smithery's CLI rejects MCPB `server.type: "uv"` and its release
+        # API requires each tool entry to carry an `inputSchema` object
+        # (MCP-protocol Tool shape). The MCPB spec disagrees on the
+        # inputSchema — `mcpb validate`/`mcpb pack` reject the field —
+        # so this bundle is built as a direct zip (a .mcpb is just a zip
+        # with manifest.json at root) bypassing `mcpb pack` validation.
         # server.py and .mcpbignore come from packaging/mcpb/ — single
         # source of truth for the shared launcher.
         env:
@@ -104,9 +120,18 @@ jobs:
           cp packaging/mcpb/server.py staging-smithery/
           cp packaging/mcpb/.mcpbignore staging-smithery/
           sed -i "s/{{VERSION}}/${VERSION}/g" staging-smithery/manifest.json
+          uv run python scripts/dump-mcpb-tools.py > /tmp/tools.json
+          jq --slurpfile tools /tmp/tools.json '.tools = $tools[0]' \
+            staging-smithery/manifest.json > /tmp/manifest.json
+          mv /tmp/manifest.json staging-smithery/manifest.json
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
-      - run: mcpb validate staging-smithery/manifest.json
-      - run: mcpb pack staging-smithery "astrodynamics-mcp-${VERSION}-smithery.mcpb"
+      - name: Build Smithery .mcpb via direct zip
+        # `python -m zipfile -c` rather than the `zip` CLI so we don't
+        # depend on whether `zip` is preinstalled on the runner image.
+        run: |
+          cd staging-smithery
+          python -m zipfile -c "../astrodynamics-mcp-${VERSION}-smithery.mcpb" \
+            manifest.json server.py
       - uses: actions/upload-artifact@v4
         with:
           name: mcpb-smithery

@@ -5,6 +5,23 @@ All notable changes to astrodynamics-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-05-27
+
+### Fixed
+
+- Smithery publish, which v0.1.3 still rejected with
+  `400 {"error":"Invalid input: expected object, received undefined"}` ×8 —
+  Smithery's release API mirrors the MCP-protocol Tool type and requires a
+  full `inputSchema` per tool, but the MCPB spec only accepts
+  `{name, description}` and `mcpb pack` rejects `inputSchema` as an
+  unrecognised key. Fix: `scripts/dump-mcpb-tools.py` generates a real
+  tools array from the live server (`mcp.list_tools()` with full
+  `inputSchema`); the workflow `jq`-injects it into the Smithery
+  manifest and builds the `.mcpb` as a direct `zip` (bypassing
+  `mcpb pack`'s validation). The canonical bundle stays spec-compliant
+  with `"tools": []` — Claude Desktop and other MCPB-aware clients
+  discover tools via the MCP protocol at runtime.
+
 ## [0.1.3] — 2026-05-27
 
 ### Fixed
@@ -141,6 +158,7 @@ GitHub Models on every workflow dispatch.
   trusted publishing, and creates the GitHub Release on every `v*` tag.
   macOS is deferred to v0.2 (#1, #2).
 
+[0.1.4]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.0...v0.1.1
