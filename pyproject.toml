@@ -140,6 +140,21 @@ ignore_missing_imports = true
 module = ["gmat_run", "gmat_run.*"]
 ignore_missing_imports = true
 
+# gmat-sweep ships with the [gmat] extra alongside gmat-run; same story —
+# the tools/gmat.py registration is gated on the import, so mypy should
+# treat the unresolved module as opaque rather than failing strict mode.
+[[tool.mypy.overrides]]
+module = ["gmat_sweep", "gmat_sweep.*"]
+ignore_missing_imports = true
+
+# pandas is pulled in transitively by gmat-sweep and only used inside the
+# tools/gmat.py sweep body. pandas-stubs is heavy and not currently a dep;
+# treat the surface we touch (DataFrame construction, column access, NumPy
+# round-trips) as Any to keep the dependency surface lean.
+[[tool.mypy.overrides]]
+module = ["pandas", "pandas.*"]
+ignore_missing_imports = true
+
 # astropy ships partial type info but the surface we touch (utils.iers,
 # the Bulletin A table indexing pattern) is not annotated. Treat the
 # imports we use as Any inside the small surfaces in data/iers.py.

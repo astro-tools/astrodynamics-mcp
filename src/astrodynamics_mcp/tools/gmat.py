@@ -3,13 +3,13 @@
 The four tools (``gmat_run_mission``, ``gmat_sweep``, ``gmat_execute_script``,
 ``gmat_validate_script``) cover the GMAT mission-analysis surface. This
 module owns the conditional-registration mechanism, the shared description
-discipline, and the real ``gmat_run_mission`` body; ``gmat_sweep``,
-``gmat_execute_script``, and ``gmat_validate_script`` are still placeholder
+discipline, and the real ``gmat_run_mission`` and ``gmat_sweep`` bodies;
+``gmat_execute_script`` and ``gmat_validate_script`` are still placeholder
 slots whose bodies land in their own follow-up issues.
 
 The guard is intentionally a single ``try: import gmat_run``: ``gmat-sweep``
 declares ``gmat-run`` as a dependency, so resolving the ``[gmat]`` extra
-gives us both. Per the kickoff design decision (#66), there is no
+gives us both. Per the kickoff design decision, there is no
 transport-specific gating — the slots register identically on stdio and
 Streamable HTTP, leaving the trust boundary to the operator.
 """
@@ -53,10 +53,10 @@ _REPORT_HEAD_TAIL_ROWS = 5
 class GmatPlaceholderResponse(BaseModel):
     """Stub response shape so FastMCP can derive a non-empty ``outputSchema``.
 
-    Used by the three slots whose bodies still land in follow-up issues
-    (``gmat_sweep``, ``gmat_execute_script``, ``gmat_validate_script``);
-    each placeholder raises before constructing one of these, so the only
-    consumer is the schema generator.
+    Used by the slots whose bodies still land in follow-up issues
+    (``gmat_execute_script``, ``gmat_validate_script``); each placeholder
+    raises before constructing one of these, so the only consumer is the
+    schema generator.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -330,6 +330,192 @@ class GmatRunMissionResponse(BaseModel):
     )
 
 
+class SweepColumnStats(BaseModel):
+    """Per-column summary statistics over ``ok`` rows of a sweep result frame."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    column: str = Field(
+        ...,
+        description=(
+            "Result-frame column name as written by the per-run ReportFile — e.g. "
+            "'Sat.X', 'Sat.SMA'. The unit per column is carried in the GMAT "
+            "parameter name itself."
+        ),
+    )
+    count: Quantity = Field(
+        ...,
+        description=(
+            "Number of finite values used to compute the stats (dimensionless count, "
+            "unit '1'). Rows from failed / skipped runs and any NaN cells are excluded."
+        ),
+        examples=[{"value": 60.0, "unit": "1"}],
+    )
+    mean: float = Field(..., description="Arithmetic mean over finite values.")
+    std: float = Field(
+        ...,
+        description=(
+            "Sample standard deviation (ddof=1) over finite values. NaN when "
+            "`count` < 2 — single-row sweeps have no spread to report."
+        ),
+    )
+    min: float = Field(..., description="Minimum finite value.")
+    max: float = Field(..., description="Maximum finite value.")
+
+
+class SweepStatusCounts(BaseModel):
+    """Run-status tally derived from the result frame's ``__status`` column."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    ok: Quantity = Field(
+        ...,
+        description="Number of runs that completed successfully (count, unit '1').",
+        examples=[{"value": 10.0, "unit": "1"}],
+    )
+    failed: Quantity = Field(
+        ...,
+        description=(
+            "Number of runs the worker reported as failed (count, unit '1'). "
+            "Each contributes one NaN-filled row to the result frame."
+        ),
+        examples=[{"value": 0.0, "unit": "1"}],
+    )
+    skipped: Quantity = Field(
+        ...,
+        description=(
+            "Number of runs the worker reported as skipped (count, unit '1'). "
+            "Same single-row NaN representation as failed runs."
+        ),
+        examples=[{"value": 0.0, "unit": "1"}],
+    )
+
+
+class GmatSweepResponse(BaseModel):
+    """Response from :func:`gmat_sweep`.
+
+    Carries the ``mode`` echo, sweep-level metadata, per-column summary
+    statistics computed over ``ok`` rows, a status tally, the head + tail
+    of the ``(run_id, time)``-MultiIndexed result frame, and pointers to
+    the on-disk manifest and output directory so a follow-up tool call
+    can re-load the full sweep.
+
+    In the default ``output="summary"`` mode ``rows`` is empty and the
+    response carries only ``head`` + ``tail`` (first / last five rows
+    each); ``output="full"`` populates ``rows`` with every result row.
+    ``truncated`` distinguishes the two cases at read time.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mode: Literal["grid", "samples", "monte_carlo", "latin_hypercube"] = Field(
+        ...,
+        description=(
+            "Echo of the sweep backend that ran — matches the `mode` input arg. "
+            "Stable across the response so a caller can switch on it without "
+            "re-tracking the request."
+        ),
+    )
+    script_name: str = Field(
+        ...,
+        description=(
+            "File name of the loaded script (``Path.name`` of the input). When "
+            "the caller passed inline script text, this is the temp file's name."
+        ),
+    )
+    run_count: Quantity = Field(
+        ...,
+        description=(
+            "Total runs the sweep dispatched (count, unit '1'). Equals "
+            "ok + failed + skipped from `status_counts`."
+        ),
+        examples=[{"value": 10.0, "unit": "1"}],
+    )
+    wall_clock: Quantity = Field(
+        ...,
+        description=(
+            "Wall-clock duration of the sweep dispatch in seconds (unit 's'). "
+            "Includes per-run worker overhead but excludes the time to write "
+            "the response."
+        ),
+        examples=[{"value": 12.4, "unit": "s"}],
+    )
+    columns: list[str] = Field(
+        ...,
+        description=(
+            "Non-status data columns of the result frame, in the order GMAT wrote "
+            "them — e.g. ['Sat.X', 'Sat.Y', 'Sat.Z', 'Sat.SMA']. The `__status` "
+            "column is excluded; it is summarised in `status_counts` instead."
+        ),
+    )
+    status_counts: SweepStatusCounts = Field(
+        ...,
+        description=(
+            "Per-status run tally (ok / failed / skipped). Failed and skipped "
+            "runs land as one NaN-filled row apiece in the result frame and are "
+            "excluded from `summary_stats`."
+        ),
+    )
+    summary_stats: list[SweepColumnStats] = Field(
+        ...,
+        description=(
+            "One :class:`SweepColumnStats` per numeric column in `columns`, computed "
+            "over the finite cells of ``ok`` rows only. Non-numeric columns (string "
+            "epochs, categorical fields) are omitted — they appear in `head` / "
+            "`tail` / `rows` but not here."
+        ),
+    )
+    head: list[dict[str, str | float]] = Field(
+        ...,
+        description=(
+            "First five rows of the ``(run_id, time)``-indexed result frame, sorted "
+            "by (run_id, time). Each dict carries 'run_id', 'time', and one entry "
+            "per column in `columns`; NaN cells become the string 'nan'. Always "
+            "populated regardless of `output` mode."
+        ),
+    )
+    tail: list[dict[str, str | float]] = Field(
+        ...,
+        description=(
+            "Last five rows of the result frame, sorted the same way. Same row "
+            "shape as `head`. Always populated regardless of `output` mode; will "
+            "overlap `head` when the frame has ≤ 10 rows."
+        ),
+    )
+    rows: list[dict[str, str | float]] = Field(
+        default_factory=list,
+        description=(
+            "Every row of the result frame when ``output='full'``. Same row shape "
+            "as `head` / `tail`. Empty in the default ``output='summary'`` mode — "
+            "use `head` + `tail` there."
+        ),
+    )
+    truncated: bool = Field(
+        ...,
+        description=(
+            "True when ``output='summary'`` and the result frame has more than "
+            "ten rows so `rows` is intentionally empty. False when the full frame "
+            "fits in `head` + `tail` or when ``output='full'`` populated `rows`."
+        ),
+    )
+    manifest_path: str = Field(
+        ...,
+        description=(
+            "Absolute path to the JSON Lines manifest the sweep wrote. A follow-up "
+            "call can re-load it via :func:`gmat_sweep.Manifest.load` to walk the "
+            "per-run outputs that this response summarises."
+        ),
+    )
+    output_dir: str = Field(
+        ...,
+        description=(
+            "Absolute path to the sweep's output directory (parent of "
+            "`manifest_path` and of every per-run Parquet). Lives for the server "
+            "process's lifetime; safe to read after the tool call returns."
+        ),
+    )
+
+
 _RUN_MISSION_DESCRIPTION = (
     "Run a single GMAT mission script end-to-end and return structured results "
     "(report tables, ephemeris pointers, convergence flags). e.g. "
@@ -351,10 +537,27 @@ _RUN_MISSION_DESCRIPTION = (
 )
 
 _SWEEP_DESCRIPTION = (
-    "Run a parameter sweep or Monte Carlo over a GMAT mission script via the "
-    "gmat-sweep backend. Tagged-union input (grid / samples / perturb) selects "
-    "the sweep mode. Placeholder slot — the body lands in a follow-up issue. "
-    "e.g. gmat_sweep(script='/path/to/hohmann.script')."
+    "Run a parameter sweep, Monte Carlo, or Latin hypercube over a GMAT mission "
+    "script via the gmat-sweep backend. `mode` selects which family runs and which "
+    "payload fields are read. e.g. gmat_sweep(script='/abs/path/to/hohmann.script', "
+    "mode='grid', grid={'Sat.SMA': [7000, 7100, 7200], 'Sat.INC': [28.5, 51.6]}) "
+    "runs a 6-point full factorial; gmat_sweep(script=..., mode='monte_carlo', "
+    "perturb={'Sat.SMA': ['normal', 7000, 5.0]}, n=20, seed=42) runs 20 normally-"
+    "dispersed runs; mode='latin_hypercube' takes the same perturb / n / seed and "
+    "uses a stratified design. `script` is the same shape as gmat_run_mission: an "
+    "absolute .script path or full inline script text. Perturb values are JSON "
+    "lists of the form [distribution_name, *params] — ['normal', mu, sigma], "
+    "['uniform', lo, hi], or ['lognormal', mu, sigma]; do not pass plain numbers "
+    "or scipy distributions. For Monte Carlo / Latin hypercube, `seed` is required "
+    "for reproducibility — omitting it falls back to OS entropy and two calls with "
+    "the same arguments will give different draws. `max_workers` defaults to 1 to "
+    "keep the cost ceiling tight; raise it explicitly to parallelise across cores. "
+    "Output shaping: the default output='summary' returns per-column mean / std / "
+    "min / max plus the head + tail five rows of the result frame so the response "
+    "fits small-model input caps. 'full' adds every row in `rows`. `manifest_path` "
+    "and `output_dir` point at the on-disk sweep artefacts for a follow-up re-load. "
+    "Engine failures surface as upstream.gmat_sweep_failed; config / payload "
+    "violations surface as invalid_input.gmat_sweep_*."
 )
 
 _EXECUTE_SCRIPT_DESCRIPTION = (
@@ -553,6 +756,303 @@ def _apply_overrides(mission: Any, overrides: dict[str, Any]) -> None:
             ) from exc
 
 
+_SWEEP_HEAD_TAIL_ROWS = 5
+
+_SWEEP_INLINE_ROW_THRESHOLD = 2 * _SWEEP_HEAD_TAIL_ROWS
+
+_SWEEP_VALID_MODES: tuple[str, ...] = ("grid", "samples", "monte_carlo", "latin_hypercube")
+
+_DIST_TAGS: tuple[str, ...] = ("normal", "uniform", "lognormal")
+
+
+def _coerce_perturb(perturb: dict[str, Any]) -> dict[str, tuple[Any, ...]]:
+    """Validate a JSON ``perturb`` payload and tuple-ify each entry.
+
+    The MCP wire carries shorthand specs as JSON lists (e.g. ``["normal",
+    0.0, 1.0]``); ``gmat_sweep.DistSpec`` is tuple-typed, so we tuple-ify
+    at the boundary and reject anything that is not a list whose first
+    element is a known shorthand tag. Pre-frozen scipy ``rv_frozen``
+    distributions are not supported across this boundary — they are not
+    JSON-serialisable and the LLM has no realistic way to construct one.
+    """
+    if not isinstance(perturb, dict) or not perturb:
+        raise InvalidInputError(
+            f"perturb must be a non-empty mapping of dotted-path to "
+            f"[distribution_name, *params] list, got {perturb!r}",
+            code="invalid_input.gmat_sweep_perturb_empty",
+        )
+    coerced: dict[str, tuple[Any, ...]] = {}
+    for key, value in perturb.items():
+        if not isinstance(value, list) or not value:
+            raise InvalidInputError(
+                f"perturb[{key!r}] must be a list of the form [distribution_name, *params], "
+                f"got {value!r}",
+                code="invalid_input.gmat_sweep_perturb_shape",
+            )
+        tag = value[0]
+        if not isinstance(tag, str) or tag not in _DIST_TAGS:
+            raise InvalidInputError(
+                f"perturb[{key!r}] first element must be one of {list(_DIST_TAGS)}, got {tag!r}",
+                code="invalid_input.gmat_sweep_perturb_tag",
+            )
+        coerced[key] = tuple(value)
+    return coerced
+
+
+def _samples_to_dataframe(samples: list[dict[str, Any]]) -> Any:
+    """Materialise a list-of-dict samples payload into a pandas DataFrame.
+
+    Column order is taken from the first row; subsequent rows must carry
+    exactly the same key set. Any deviation raises an
+    :class:`InvalidInputError` with a typed code so the LLM consumer can
+    see which row drifted from the schema.
+    """
+    if not isinstance(samples, list) or not samples:
+        raise InvalidInputError(
+            f"samples must be a non-empty list of dotted-path → value dicts, got {samples!r}",
+            code="invalid_input.gmat_sweep_samples_empty",
+        )
+    import pandas as pd
+
+    first = samples[0]
+    if not isinstance(first, dict) or not first:
+        raise InvalidInputError(
+            f"samples[0] must be a non-empty dict of dotted-path → value, got {first!r}",
+            code="invalid_input.gmat_sweep_samples_row_shape",
+        )
+    columns = list(first.keys())
+    expected = set(columns)
+    rows: list[list[Any]] = []
+    for i, row in enumerate(samples):
+        if not isinstance(row, dict):
+            raise InvalidInputError(
+                f"samples[{i}] must be a dict, got {row!r}",
+                code="invalid_input.gmat_sweep_samples_row_shape",
+            )
+        if set(row.keys()) != expected:
+            raise InvalidInputError(
+                f"samples[{i}] keys {sorted(row.keys())!r} differ from samples[0] keys "
+                f"{sorted(expected)!r}; every row must share the same columns",
+                code="invalid_input.gmat_sweep_samples_row_drift",
+            )
+        rows.append([row[c] for c in columns])
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _validate_sweep_payload(
+    *,
+    mode: str,
+    grid: dict[str, list[Any]] | None,
+    samples: list[dict[str, Any]] | None,
+    perturb: dict[str, Any] | None,
+    n: int | None,
+    seed: int | None,
+) -> None:
+    """Reject payloads that don't match the chosen ``mode`` discriminator.
+
+    Each mode owns a distinct set of required and forbidden fields. The
+    grid / samples modes refuse perturb / n / seed; the Monte Carlo and
+    Latin hypercube modes require perturb and n, and we require an
+    explicit seed too — without it the run is irreproducible and the LLM
+    user cannot replay it from the response.
+    """
+    if mode == "grid":
+        if grid is None:
+            raise InvalidInputError(
+                "mode='grid' requires the `grid` argument",
+                code="invalid_input.gmat_sweep_grid_required",
+            )
+        if samples is not None or perturb is not None or n is not None or seed is not None:
+            raise InvalidInputError(
+                "mode='grid' rejects `samples`, `perturb`, `n`, `seed`",
+                code="invalid_input.gmat_sweep_mode_payload_conflict",
+            )
+    elif mode == "samples":
+        if samples is None:
+            raise InvalidInputError(
+                "mode='samples' requires the `samples` argument",
+                code="invalid_input.gmat_sweep_samples_required",
+            )
+        if grid is not None or perturb is not None or n is not None or seed is not None:
+            raise InvalidInputError(
+                "mode='samples' rejects `grid`, `perturb`, `n`, `seed`",
+                code="invalid_input.gmat_sweep_mode_payload_conflict",
+            )
+    elif mode in ("monte_carlo", "latin_hypercube"):
+        if perturb is None:
+            raise InvalidInputError(
+                f"mode={mode!r} requires the `perturb` argument",
+                code="invalid_input.gmat_sweep_perturb_required",
+            )
+        if n is None or n < 1:
+            raise InvalidInputError(
+                f"mode={mode!r} requires `n` >= 1, got {n!r}",
+                code="invalid_input.gmat_sweep_n_required",
+            )
+        if seed is None:
+            raise InvalidInputError(
+                f"mode={mode!r} requires an integer `seed` for reproducibility; "
+                "omit only when an irreproducible run is acceptable, in which case "
+                "call gmat-sweep directly",
+                code="invalid_input.gmat_sweep_seed_required",
+            )
+        if grid is not None or samples is not None:
+            raise InvalidInputError(
+                f"mode={mode!r} rejects `grid` and `samples`",
+                code="invalid_input.gmat_sweep_mode_payload_conflict",
+            )
+    else:  # defensive; the Literal annotation should prevent this
+        raise InvalidInputError(
+            f"unknown mode {mode!r}; expected one of {list(_SWEEP_VALID_MODES)}",
+            code="invalid_input.gmat_sweep_unknown_mode",
+        )
+
+
+def _status_counts(frame: Any) -> tuple[int, int, int]:
+    """Return ``(ok, failed, skipped)`` from the result frame's ``__status`` column.
+
+    Older gmat-sweep frames omit ``__status`` when every run succeeded;
+    in that case the row count is the ok count and the other two are
+    zero. The lookup is positional via ``in frame.columns`` rather than
+    catching ``KeyError`` so we can tell the two paths apart cheaply.
+    """
+    if "__status" not in frame.columns:
+        return len(frame.index), 0, 0
+    status_col = frame["__status"]
+    ok = int((status_col == "ok").sum())
+    failed = int((status_col == "failed").sum())
+    skipped = int((status_col == "skipped").sum())
+    return ok, failed, skipped
+
+
+def _numeric_column_stats(frame: Any) -> list[SweepColumnStats]:
+    """Compute per-column mean / std / min / max over ``ok`` rows.
+
+    Failed and skipped rows carry NaN cells across every data column;
+    restricting to ``ok`` first and then dropping the NaNs gives the
+    canonical "stats over good runs only" reading. Non-numeric columns
+    are skipped silently — they appear in `head` / `tail` instead.
+    """
+    import numpy as np
+
+    ok_frame = frame[frame["__status"] == "ok"] if "__status" in frame.columns else frame
+    stats: list[SweepColumnStats] = []
+    for column in frame.columns:
+        if column == "__status":
+            continue
+        series = ok_frame[column]
+        try:
+            numeric = series.astype(float)
+        except (TypeError, ValueError):
+            continue
+        finite_mask = np.isfinite(numeric.to_numpy())
+        finite_values = numeric.to_numpy()[finite_mask]
+        count = int(finite_values.size)
+        if count == 0:
+            continue
+        std = float(finite_values.std(ddof=1)) if count >= 2 else float("nan")
+        stats.append(
+            SweepColumnStats(
+                column=str(column),
+                count=Quantity(value=float(count), unit="1"),
+                mean=float(finite_values.mean()),
+                std=std,
+                min=float(finite_values.min()),
+                max=float(finite_values.max()),
+            )
+        )
+    return stats
+
+
+def _frame_row_to_dict(
+    columns: list[str],
+    index_tuple: tuple[Any, Any],
+    row_values: Any,
+) -> dict[str, str | float]:
+    """Render one MultiIndex row into a flat dict carrying run_id, time, columns."""
+    run_id, time_val = index_tuple
+    out: dict[str, str | float] = {
+        "run_id": _cell_value(run_id),
+        "time": _cell_value(time_val),
+    }
+    for i, column in enumerate(columns):
+        out[column] = _cell_value(row_values[i])
+    return out
+
+
+def _frame_rows(frame: Any) -> list[dict[str, str | float]]:
+    """Convert every row of a ``(run_id, time)``-indexed frame to dicts."""
+    data_columns = [c for c in frame.columns if c != "__status"]
+    values = frame[data_columns].to_numpy(dtype=object) if data_columns else None
+    rows: list[dict[str, str | float]] = []
+    for i, idx in enumerate(frame.index):
+        run_id, time_val = (idx[0], idx[1]) if isinstance(idx, tuple) else (idx, None)
+        row_values = values[i] if values is not None else []
+        rows.append(_frame_row_to_dict(data_columns, (run_id, time_val), row_values))
+    return rows
+
+
+def _build_sweep_response(
+    *,
+    mode: Literal["grid", "samples", "monte_carlo", "latin_hypercube"],
+    script_name: str,
+    frame: Any,
+    wall_clock_s: float,
+    manifest_path: Path,
+    output_dir: Path,
+    output: Literal["summary", "full"],
+) -> GmatSweepResponse:
+    """Assemble a :class:`GmatSweepResponse` from a finished sweep DataFrame.
+
+    Pulled out of the tool body so the unit tests can exercise the
+    shaping logic against a fake frame without round-tripping through
+    gmat-sweep itself.
+    """
+    data_columns = [str(c) for c in frame.columns if c != "__status"]
+    ok, failed, skipped = _status_counts(frame)
+    status_counts = SweepStatusCounts(
+        ok=Quantity(value=float(ok), unit="1"),
+        failed=Quantity(value=float(failed), unit="1"),
+        skipped=Quantity(value=float(skipped), unit="1"),
+    )
+
+    all_rows = _frame_rows(frame)
+    total = len(all_rows)
+    if total <= _SWEEP_INLINE_ROW_THRESHOLD:
+        head = list(all_rows)
+        tail = list(all_rows)
+        truncated_summary = False
+    else:
+        head = all_rows[:_SWEEP_HEAD_TAIL_ROWS]
+        tail = all_rows[-_SWEEP_HEAD_TAIL_ROWS:]
+        truncated_summary = True
+
+    if output == "full":
+        rows = list(all_rows)
+        truncated = False
+    else:
+        rows = []
+        truncated = truncated_summary
+
+    run_count_total = ok + failed + skipped
+
+    return GmatSweepResponse(
+        mode=mode,
+        script_name=script_name,
+        run_count=Quantity(value=float(run_count_total), unit="1"),
+        wall_clock=Quantity(value=float(wall_clock_s), unit="s"),
+        columns=data_columns,
+        status_counts=status_counts,
+        summary_stats=_numeric_column_stats(frame),
+        head=head,
+        tail=tail,
+        rows=rows,
+        truncated=truncated,
+        manifest_path=str(manifest_path),
+        output_dir=str(output_dir),
+    )
+
+
 def _register_gmat_tools() -> None:
     """Attach the four GMAT tools to ``astrodynamics_mcp.server.mcp``.
 
@@ -669,20 +1169,202 @@ def _register_gmat_tools() -> None:
     @register_tool(
         name="gmat_sweep",
         description=_SWEEP_DESCRIPTION,
-        annotations=_PLACEHOLDER_ANNOTATIONS,
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
     )
     async def gmat_sweep(
         script: Annotated[
             str,
             Field(
                 description=(
-                    "Path to a GMAT .script file, or the full inline script text — the "
-                    "sweep base mission. Placeholder accepts the argument but does not execute it."
+                    "Either the absolute path to a GMAT .script file (e.g. "
+                    "'/abs/path/to/Ex_HohmannTransfer.script') or the full inline "
+                    "script text starting with '%' comments or 'Create' resource "
+                    "declarations. Auto-detected by content — same shape as the "
+                    "`script` argument of gmat_run_mission."
                 ),
             ),
         ],
-    ) -> GmatPlaceholderResponse:
-        raise NotImplementedError("gmat_sweep body lands in a follow-up issue")
+        mode: Annotated[
+            Literal["grid", "samples", "monte_carlo", "latin_hypercube"],
+            Field(
+                description=(
+                    "Which sweep backend to dispatch and which payload fields to read. "
+                    "'grid' takes `grid`; 'samples' takes `samples`; 'monte_carlo' and "
+                    "'latin_hypercube' both take `perturb`, `n`, `seed`. Passing fields "
+                    "not associated with the chosen mode raises "
+                    "invalid_input.gmat_sweep_mode_payload_conflict."
+                ),
+            ),
+        ],
+        grid: Annotated[
+            dict[str, list[Any]] | None,
+            Field(
+                description=(
+                    "Full-factorial sweep parameters, used only when mode='grid'. Keys "
+                    "are dotted-path field names (e.g. 'Sat.SMA', 'FM.Drag.AtmosphereModel'); "
+                    "values are the list of values to sweep on that axis. The run set is "
+                    "the cartesian product across every key. Leave null in other modes."
+                ),
+            ),
+        ] = None,
+        samples: Annotated[
+            list[dict[str, Any]] | None,
+            Field(
+                description=(
+                    "Explicit-row sweep parameters, used only when mode='samples'. Each "
+                    "list element is one run: a dict from dotted-path field name to value. "
+                    "Every row must carry the same keys; column order is taken from the "
+                    "first row. Leave null in other modes."
+                ),
+            ),
+        ] = None,
+        perturb: Annotated[
+            dict[str, list[Any]] | None,
+            Field(
+                description=(
+                    "Per-parameter distribution specs, used only when "
+                    "mode='monte_carlo' or 'latin_hypercube'. Each value is a list of "
+                    "the form [distribution_name, *params] — ['normal', mu, sigma], "
+                    "['uniform', lo, hi], or ['lognormal', mu, sigma]; plain numbers "
+                    "and scipy distributions are not accepted across the MCP boundary. "
+                    "Leave null in other modes."
+                ),
+            ),
+        ] = None,
+        n: Annotated[
+            int | None,
+            Field(
+                description=(
+                    "Number of stochastic runs, used only when mode='monte_carlo' or "
+                    "'latin_hypercube'. Must be >= 1. Leave null in other modes; "
+                    "the grid mode's run count is derived from the cartesian product "
+                    "of `grid`, and the samples mode uses len(samples)."
+                ),
+            ),
+        ] = None,
+        seed: Annotated[
+            int | None,
+            Field(
+                description=(
+                    "Integer parent seed, required when mode='monte_carlo' or "
+                    "'latin_hypercube' so the per-run draws can be reproduced from "
+                    "the response alone. Leave null in other modes."
+                ),
+            ),
+        ] = None,
+        max_workers: Annotated[
+            int,
+            Field(
+                description=(
+                    "Worker count for the local joblib backend. Defaults to 1 to keep "
+                    "the cost ceiling tight; raise it explicitly to parallelise across "
+                    "cores. Custom backends (Dask, Ray, MPI) are not exposed at this "
+                    "MCP boundary — call gmat-sweep directly for those."
+                ),
+            ),
+        ] = 1,
+        output: Annotated[
+            Literal["summary", "full"],
+            Field(
+                description=(
+                    "Row-shaping mode for the result frame. The default 'summary' returns "
+                    "per-column mean / std / min / max plus the head + tail five rows "
+                    "of the result frame so the response fits small-model input caps. "
+                    "'full' adds every row in `rows` — pass only when downstream consumers "
+                    "need the dense data and can absorb the bytes. `head`, `tail`, and "
+                    "`summary_stats` are always populated regardless of mode."
+                ),
+            ),
+        ] = "summary",
+    ) -> GmatSweepResponse:
+        import tempfile
+
+        from gmat_sweep import latin_hypercube, monte_carlo, sweep
+        from gmat_sweep.backends.joblib import LocalJoblibPool
+        from gmat_sweep.errors import SweepConfigError
+
+        _validate_sweep_payload(
+            mode=mode, grid=grid, samples=samples, perturb=perturb, n=n, seed=seed
+        )
+
+        script_path, cleanup_path = _resolve_script_input(script)
+        try:
+            # The sweep's output_dir must outlive this call so `manifest_path` and
+            # `output_dir` remain valid pointers in the response. Tying the temp
+            # dir to the response object via weakref (the gmat-sweep default
+            # behaviour with `out=None`) would cleanup as soon as the response
+            # serialises out; create our own and leave it alive instead.
+            sweep_out_dir = Path(tempfile.mkdtemp(prefix="astrodynamics-mcp-sweep-"))
+            backend = LocalJoblibPool(max_workers=max_workers)
+            t0 = time.perf_counter()
+            try:
+                if mode == "grid":
+                    assert grid is not None
+                    frame = sweep(
+                        script_path,
+                        grid=grid,
+                        backend=backend,
+                        out=sweep_out_dir,
+                        progress=False,
+                    )
+                elif mode == "samples":
+                    assert samples is not None
+                    samples_df = _samples_to_dataframe(samples)
+                    frame = sweep(
+                        script_path,
+                        samples=samples_df,
+                        backend=backend,
+                        out=sweep_out_dir,
+                        progress=False,
+                    )
+                elif mode == "monte_carlo":
+                    assert perturb is not None and n is not None
+                    frame = monte_carlo(
+                        script_path,
+                        n=n,
+                        perturb=_coerce_perturb(perturb),
+                        seed=seed,
+                        backend=backend,
+                        out=sweep_out_dir,
+                        progress=False,
+                    )
+                else:  # latin_hypercube
+                    assert perturb is not None and n is not None
+                    frame = latin_hypercube(
+                        script_path,
+                        n=n,
+                        perturb=_coerce_perturb(perturb),
+                        seed=seed,
+                        backend=backend,
+                        out=sweep_out_dir,
+                        progress=False,
+                    )
+            except SweepConfigError as exc:
+                raise InvalidInputError(
+                    f"gmat-sweep rejected the sweep config: {exc}",
+                    code="invalid_input.gmat_sweep_config",
+                    data={"original_exception_message": str(exc)},
+                ) from exc
+            except Exception as exc:
+                raise UpstreamError(
+                    f"gmat-sweep failed: {exc}",
+                    code="upstream.gmat_sweep_failed",
+                    original_exception=exc,
+                ) from exc
+            wall_clock_s = time.perf_counter() - t0
+
+            return _build_sweep_response(
+                mode=mode,
+                script_name=script_path.name,
+                frame=frame,
+                wall_clock_s=wall_clock_s,
+                manifest_path=sweep_out_dir / "manifest.jsonl",
+                output_dir=sweep_out_dir,
+                output=output,
+            )
+        finally:
+            if cleanup_path is not None:
+                cleanup_path.unlink(missing_ok=True)
 
     @register_tool(
         name="gmat_execute_script",
