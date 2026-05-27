@@ -58,6 +58,12 @@ _REPORT_HEAD_TAIL_ROWS = 5
 _RAW_REPORT_INLINE_LINE_THRESHOLD = 60
 _RAW_REPORT_HEAD_TAIL_LINES = 20
 
+# How many bytes gmat_read_run_artefact sniffs from the head of a file
+# to decide text-vs-binary. 8 KB is the grep / git default; large enough
+# to span any plausible text-format header without paying full-file
+# read cost on a multi-hundred-MB SPK ephemeris.
+_BINARY_SNIFF_BYTES = 8192
+
 
 class ResourceGroupView(BaseModel):
     """One resource category in :class:`MissionSummaryView`.
@@ -906,7 +912,12 @@ _READ_RUN_ARTEFACT_DESCRIPTION = (
     "name within a known run returns invalid_input.unknown_artefact_name "
     "with the available set in `data`. After a server restart the index is "
     "best-effort: if the run's temp directory still exists the read "
-    "succeeds, otherwise the tool returns invalid_input.artefact_evicted."
+    "succeeds, otherwise the tool returns invalid_input.artefact_evicted. "
+    "Text outputs only — GMAT's text formats (ReportFile, OEM / CCSDS-OEM / "
+    "CCSDS-AEM / STK ephemerides, ContactLocator, solver .data, GMAT.log, "
+    "sweep manifest.jsonl) all flow through; binary outputs (SPK and "
+    "GMAT Code-500 ephemerides, sweep .parquet) are rejected with "
+    "invalid_input.binary_artefact rather than returned as decoded gibberish."
 )
 
 
@@ -2188,6 +2199,29 @@ def _register_gmat_tools() -> None:
                 f"likely reaped (OS cleanup, manual deletion) between calls",
                 code="invalid_input.artefact_evicted",
                 data={"path": str(path)},
+            )
+
+        # Binary sniff. `_shape_raw_report` reads the whole file into
+        # memory before deciding what to do with it; bypassing it for
+        # binary keeps an SPK ephemeris (hundreds of MB possible) from
+        # OOMing the server only to return U+FFFD-laden garbage. The
+        # heuristic is the standard one (grep -I / git diff --binary):
+        # presence of a NULL byte in the first 8 KB. ASCII text and
+        # GMAT's text formats (OEM, CCSDS-OEM, ContactLocator, .data,
+        # GMAT.log, manifest.jsonl) never contain NULL; the binary
+        # formats (CCSDS SPK, GMAT Code-500, Parquet) do, within their
+        # headers.
+        byte_count = path.stat().st_size
+        with path.open("rb") as fh:
+            head_bytes = fh.read(_BINARY_SNIFF_BYTES)
+        if b"\x00" in head_bytes:
+            raise InvalidInputError(
+                f"artefact {name!r} for run_id {run_id!r} is binary "
+                f"({byte_count} bytes); gmat_read_run_artefact serves text "
+                f"only — binary outputs (SPK / Code-500 ephemerides, "
+                f"Parquet) cannot be returned through this tool",
+                code="invalid_input.binary_artefact",
+                data={"byte_count": byte_count},
             )
 
         return _shape_raw_report(name, path, output=output)

@@ -200,6 +200,49 @@ class TestErrorShapes:
             "GMAT.log",
         }
 
+    async def test_binary_artefact_refused(
+        self, tmp_path: Path, registry: RunRegistry, mcp_server: FastMCP
+    ) -> None:
+        """A file with NULL bytes in its first 8 KB is refused outright."""
+        out = tmp_path / "workspaces" / "run-a"
+        out.mkdir(parents=True)
+        spk = out / "EphemerisFile1.bsp"
+        # Mimic a CCSDS SPK / Code-500 header: NULL byte in the first
+        # few bytes is the standard binary signal.
+        spk.write_bytes(b"DAF/SPK\x00\x00\x00binary payload follows")
+        run_id = registry.mint()
+        registry.register(run_id, output_dir=out, artefacts={"EphemerisFile1": spk})
+        with pytest.raises(ToolError) as excinfo:
+            await mcp_server.call_tool(
+                "gmat_read_run_artefact",
+                {"run_id": run_id, "name": "EphemerisFile1"},
+            )
+        raw = str(excinfo.value)
+        assert "invalid_input.binary_artefact" in raw
+        envelope = json.loads(raw[raw.find("{") :])
+        # byte_count surfaces in `data` so the LLM knows the file
+        # exists and has substance, even though we won't serve it.
+        assert envelope["data"]["byte_count"] == spk.stat().st_size
+        # A path is *not* leaked back; the whole point is to not
+        # suggest the file is reachable from the LLM's side.
+        assert "path" not in envelope["data"]
+
+    async def test_text_with_high_bytes_still_served(
+        self, tmp_path: Path, registry: RunRegistry, mcp_server: FastMCP
+    ) -> None:
+        """UTF-8 with non-ASCII bytes is text — the sniff only rejects NULL bytes."""
+        out = tmp_path / "workspaces" / "run-a"
+        out.mkdir(parents=True)
+        rf = out / "ReportFile1.txt"
+        # Greek lower-case mu — multi-byte UTF-8, no NULL bytes.
+        rf.write_text("Sat.SMA (km²/s²)\n7000.0\n", encoding="utf-8")
+        run_id = registry.mint()
+        registry.register(run_id, output_dir=out, artefacts={"ReportFile1": rf})
+        response = await _call(mcp_server, run_id=run_id, name="ReportFile1")
+        assert "Sat.SMA" in response.content
+        assert "7000.0" in response.content
+        assert response.truncated is False
+
     async def test_evicted_artefact_surfaces_typed_code(
         self, tmp_path: Path, registry: RunRegistry, mcp_server: FastMCP
     ) -> None:
