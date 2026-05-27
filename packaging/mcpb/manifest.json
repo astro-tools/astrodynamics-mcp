@@ -1,0 +1,43 @@
+{
+  "manifest_version": "0.4",
+  "name": "astrodynamics-mcp",
+  "display_name": "astrodynamics-mcp",
+  "version": "{{VERSION}}",
+  "description": "Model Context Protocol server giving any LLM client authoritative astrodynamics tools — TLE/SGP4, Lambert, ground-station access, time/frame conversions, porkchop, B-plane.",
+  "long_description": "astrodynamics-mcp exposes eight no-auth astrodynamics tools (tle_lookup, sgp4_propagate, lambert_solve, access_windows, time_convert, frame_transform, porkchop, bplane_target) to any MCP-capable LLM client over stdio. Every result carries explicit units and explicit frame strings; failures surface as typed AstroMCPError envelopes. Tools call vetted upstream libraries (sgp4, lamberthub, skyfield, astropy) and no-auth data sources (CelesTrak, JPL Horizons, IERS).",
+  "author": {
+    "name": "Dimitrije Jankovic",
+    "url": "https://github.com/astro-tools"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/astro-tools/astrodynamics-mcp.git"
+  },
+  "homepage": "https://github.com/astro-tools/astrodynamics-mcp",
+  "documentation": "https://astro-tools.github.io/astrodynamics-mcp/",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "astrodynamics",
+    "orbital-mechanics",
+    "mission-analysis",
+    "sgp4",
+    "tle",
+    "lambert",
+    "ephemeris"
+  ],
+  "server": {
+    "type": "uv",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "server.py", "stdio"]
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}
