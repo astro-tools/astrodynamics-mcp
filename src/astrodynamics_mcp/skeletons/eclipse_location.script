@@ -1,0 +1,45 @@
+% Description: Spacecraft eclipse-window report -- EclipseLocator records umbra / penumbra / antumbra crossings against four occulting bodies (Earth, Luna, Mercury, Venus) over a 10-day GEO arc.
+
+Create Spacecraft GEOSat
+GEOSat.NAIFId               = -899
+GEOSat.NAIFIdReferenceFrame = -8990
+
+Create ForceModel DefaultProp_ForceModel
+
+Create Propagator DefaultProp
+DefaultProp.FM = DefaultProp_ForceModel
+
+Create EclipseLocator EclipseLocator1
+EclipseLocator1.Spacecraft           = GEOSat
+EclipseLocator1.Filename             = 'EclipseLocator1.txt'
+EclipseLocator1.OccultingBodies      = {Earth, Luna, Mercury, Venus}
+EclipseLocator1.InputEpochFormat     = 'UTCGregorian'
+EclipseLocator1.InitialEpoch         = '22 Aug 2026 00:00:00.000'
+EclipseLocator1.StepSize             = 120
+EclipseLocator1.FinalEpoch           = '01 Sep 2026 00:00:00.000'
+EclipseLocator1.UseLightTimeDelay    = true
+EclipseLocator1.UseStellarAberration = true
+EclipseLocator1.WriteReport          = true
+EclipseLocator1.RunMode              = Automatic
+EclipseLocator1.UseEntireInterval    = true
+EclipseLocator1.EclipseTypes         = {'Umbra', 'Penumbra', 'Antumbra'}
+
+Create ReportFile RF
+RF.Filename = 'eclipse_location.txt'
+RF.Add = {GEOSat.UTCGregorian, GEOSat.Earth.SMA, GEOSat.Earth.RMAG}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+BeginScript 'Config and Init'
+   GEOSat.DateFormat = UTCGregorian
+   GEOSat.Epoch      = '22 Aug 2026 00:00:00.000'
+   GEOSat.SMA        = 42165.52841001855
+   GEOSat.ECC        = 0.0001016372703183695
+   GEOSat.INC        = 28.22038171126684
+   GEOSat.RAAN       = 152.4975046294811
+   GEOSat.AOP        = 172.7618673633059
+   GEOSat.TA         = 242.5561749993354
+EndScript
+
+Propagate DefaultProp(GEOSat) {GEOSat.ElapsedDays = 10}

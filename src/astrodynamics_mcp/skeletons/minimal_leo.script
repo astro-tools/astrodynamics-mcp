@@ -1,0 +1,31 @@
+% Description: Minimal LEO Spacecraft + ForceModel + Propagator + ReportFile (Cartesian state report over a short arc).
+
+Create Spacecraft Sat
+Sat.DateFormat = UTCGregorian
+Sat.Epoch = '01 Jan 2026 12:00:00.000'
+Sat.CoordinateSystem = EarthMJ2000Eq
+Sat.DisplayStateType = Keplerian
+Sat.SMA = 7000
+Sat.ECC = 0.001
+Sat.INC = 28.5
+Sat.RAAN = 75
+Sat.AOP = 90
+Sat.TA = 0
+
+Create ForceModel FM
+FM.CentralBody = Earth
+FM.PrimaryBodies = {Earth}
+
+Create Propagator Prop
+Prop.FM = FM
+Prop.Type = PrinceDormand78
+Prop.InitialStepSize = 60
+Prop.Accuracy = 1e-9
+
+Create ReportFile RF
+RF.Filename = 'minimal_leo.txt'
+RF.Add = {Sat.UTCGregorian, Sat.X, Sat.Y, Sat.Z, Sat.SMA}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+Propagate Prop(Sat) {Sat.ElapsedSecs = 600}

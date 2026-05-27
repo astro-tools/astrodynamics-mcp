@@ -1,0 +1,113 @@
+% Description: Constellation propagated as a Formation -- six spacecraft on two orbital planes added to a single Formation and stepped together by one Propagate command.
+
+Create Spacecraft Sat11
+Sat11.DateFormat                   = UTCGregorian
+Sat11.Epoch                        = '01 Jan 2026 12:00:00.000'
+Sat11.CoordinateSystem             = EarthMJ2000Eq
+Sat11.DisplayStateType             = Cartesian
+Sat11.X                            = 688.527
+Sat11.Y                            = -688.527
+Sat11.Z                            = 6928.411
+Sat11.VX                           = -5.338534
+Sat11.VY                           = -5.338534
+Sat11.VZ                           = 0
+Sat11.DryMass                      = 850
+Sat11.OrbitColor                   = Red
+
+Create Spacecraft Sat12
+Sat12.DateFormat                   = UTCGregorian
+Sat12.Epoch                        = '01 Jan 2026 12:00:00.000'
+Sat12.CoordinateSystem             = EarthMJ2000Eq
+Sat12.DisplayStateType             = Cartesian
+Sat12.X                            = -4862.607
+Sat12.Y                            = -5035.377
+Sat12.Z                            = 0
+Sat12.VX                           = -0.758077
+Sat12.VY                           = 0.726822
+Sat12.VZ                           = -7.472617
+Sat12.DryMass                      = 850
+Sat12.OrbitColor                   = Green
+
+Create Spacecraft Sat13
+Sat13.DateFormat                   = UTCGregorian
+Sat13.Epoch                        = '01 Jan 2026 12:00:00.000'
+Sat13.CoordinateSystem             = EarthMJ2000Eq
+Sat13.DisplayStateType             = Cartesian
+Sat13.X                            = -712.850
+Sat13.Y                            = 664.743
+Sat13.Z                            = -6935.342
+Sat13.VX                           = 5.143823
+Sat13.VY                           = 5.516075
+Sat13.VZ                           = 0
+Sat13.DryMass                      = 850
+Sat13.OrbitColor                   = Yellow
+
+Create Spacecraft Sat21
+Sat21.DateFormat                   = UTCGregorian
+Sat21.Epoch                        = '01 Jan 2026 12:00:00.000'
+Sat21.CoordinateSystem             = EarthMJ2000Eq
+Sat21.DisplayStateType             = Cartesian
+Sat21.X                            = 973.725
+Sat21.Y                            = 0
+Sat21.Z                            = 6928.411
+Sat21.VX                           = 0
+Sat21.VY                           = -7.549827
+Sat21.VZ                           = 0
+Sat21.DryMass                      = 850
+Sat21.OrbitColor                   = Pink
+
+Create Spacecraft Sat22
+Sat22.DateFormat                   = UTCGregorian
+Sat22.Epoch                        = '01 Jan 2026 12:00:00.000'
+Sat22.CoordinateSystem             = EarthMJ2000Eq
+Sat22.DisplayStateType             = Cartesian
+Sat22.X                            = -6878.946
+Sat22.Y                            = 0
+Sat22.Z                            = 967.851
+Sat22.VX                           = 0
+Sat22.VY                           = -7.549827
+Sat22.VZ                           = 0
+Sat22.DryMass                      = 850
+Sat22.OrbitColor                   = Magenta
+
+Create Spacecraft Sat23
+Sat23.DateFormat                   = UTCGregorian
+Sat23.Epoch                        = '01 Jan 2026 12:00:00.000'
+Sat23.CoordinateSystem             = EarthMJ2000Eq
+Sat23.DisplayStateType             = Cartesian
+Sat23.X                            = -973.725
+Sat23.Y                            = 0
+Sat23.Z                            = -6928.411
+Sat23.VX                           = 0
+Sat23.VY                           = 7.549827
+Sat23.VZ                           = 0
+Sat23.DryMass                      = 850
+Sat23.OrbitColor                   = Orange
+
+Create Formation form
+form.Add = {Sat11, Sat12, Sat13, Sat21, Sat22, Sat23}
+
+Create ForceModel fm
+fm.CentralBody  = Earth
+fm.PointMasses  = {Earth, Sun, Luna}
+fm.Drag         = None
+fm.SRP          = Off
+fm.ErrorControl = RSSStep
+
+Create Propagator prop
+prop.FM                       = fm
+prop.Type                     = RungeKutta89
+prop.InitialStepSize          = 60
+prop.Accuracy                 = 1e-11
+prop.MaxStep                  = 2700
+prop.MaxStepAttempts          = 50
+prop.StopIfAccuracyIsViolated = true
+
+Create ReportFile RF
+RF.Filename = 'constellation.txt'
+RF.Add = {Sat11.UTCGregorian, Sat11.SMA, Sat12.SMA, Sat21.SMA}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Propagate 'Prop 1 Day' prop(form) {Sat11.ElapsedSecs = 86400.0}

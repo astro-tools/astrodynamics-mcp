@@ -1,0 +1,55 @@
+% Description: Multibody spherical-harmonic gravity (Earth 12x12 + Luna 30x30 + Sun point-mass) propagating a near-rectilinear halo orbit (NRHO) in MoonMJ2000Eq.
+
+Create CoordinateSystem MoonMJ2000Eq
+MoonMJ2000Eq.Origin = Luna
+MoonMJ2000Eq.Axes   = MJ2000Eq
+
+Create Spacecraft PropSat
+PropSat.DateFormat       = UTCGregorian
+PropSat.DisplayStateType = Cartesian
+PropSat.Epoch            = '1 Jun 2026 00:00:00.000'
+PropSat.CoordinateSystem = MoonMJ2000Eq
+PropSat.X                =  -8992.197
+PropSat.Y                =  17505.351
+PropSat.Z                = -61412.481
+PropSat.VX               = -0.04684787
+PropSat.VY               =  0.10867048
+PropSat.VZ               = -0.09986946
+PropSat.DryMass          = 130
+PropSat.Cd               = 2.2
+PropSat.Cr               = 1.8
+PropSat.DragArea         = 15
+PropSat.SRPArea          = 1
+
+Create ForceModel FM
+FM.CentralBody                      = Earth
+FM.PrimaryBodies                    = {Earth, Luna}
+FM.PointMasses                      = {Sun}
+FM.GravityField.Earth.Degree        = 12
+FM.GravityField.Earth.Order         = 12
+FM.GravityField.Earth.TideModel     = 'None'
+FM.GravityField.Earth.PotentialFile = 'EGM96.cof'
+FM.GravityField.Luna.Degree         = 30
+FM.GravityField.Luna.Order          = 30
+FM.GravityField.Luna.PotentialFile  = 'grgm900c.cof'
+FM.GravityField.Luna.TideModel      = 'None'
+FM.SRP                              = Off
+FM.ErrorControl                     = 'None'
+
+Create Propagator Prop
+Prop.Type            = RungeKutta89
+Prop.FM              = FM
+Prop.Accuracy        = 1e-13
+Prop.InitialStepSize = 60
+Prop.MinStep         = 0
+Prop.MaxStep         = 60
+Prop.MaxStepAttempts = 50
+
+Create ReportFile RF
+RF.Filename = 'multibody_gravity.txt'
+RF.Add = {PropSat.UTCGregorian, PropSat.MoonMJ2000Eq.X, PropSat.MoonMJ2000Eq.Y, PropSat.MoonMJ2000Eq.Z, PropSat.Luna.RMAG}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Propagate Prop(PropSat) {PropSat.ElapsedDays = 30}

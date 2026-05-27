@@ -1,0 +1,156 @@
+% Description: Side-by-side propagation under seven force models (point mass, third bodies, 12x12 gravity, MSISE-90 / Jacchia-Roberts / MSISE-00 / exponential drag, SRP, and a full combined model) -- one Propagate per Propagator.
+
+Create Spacecraft Sat
+Sat.DateFormat       = UTCGregorian
+Sat.Epoch            = '04 Jan 2026 00:00:00.000'
+Sat.CoordinateSystem = EarthMJ2000Eq
+Sat.DisplayStateType = Cartesian
+Sat.X                = -6365.554
+Sat.Y                = 2087.458
+Sat.Z                = 878.918
+Sat.VX               = -1.635
+Sat.VY               = -6.597762
+Sat.VZ               = 3.5058499
+Sat.DryMass          = 100
+Sat.Cd               = 2.25
+Sat.Cr               = 1.21
+Sat.DragArea         = 4
+Sat.SRPArea          = 4
+
+Create ForceModel PointMass
+PointMass.CentralBody                      = Earth
+PointMass.PrimaryBodies                    = {Earth}
+PointMass.Drag                             = None
+PointMass.SRP                              = Off
+PointMass.GravityField.Earth.Degree        = 0
+PointMass.GravityField.Earth.Order         = 0
+PointMass.GravityField.Earth.PotentialFile = 'JGM2.cof'
+
+Create ForceModel ThirdBodies
+ThirdBodies.CentralBody                      = Earth
+ThirdBodies.PrimaryBodies                    = {Earth}
+ThirdBodies.PointMasses                      = {Sun, Luna, Venus, Mars, Jupiter, Saturn, Uranus, Neptune}
+ThirdBodies.Drag                             = None
+ThirdBodies.SRP                              = Off
+ThirdBodies.GravityField.Earth.Degree        = 0
+ThirdBodies.GravityField.Earth.Order         = 0
+ThirdBodies.GravityField.Earth.PotentialFile = 'JGM2.cof'
+
+Create ForceModel NonSpherical12
+NonSpherical12.CentralBody                      = Earth
+NonSpherical12.PrimaryBodies                    = {Earth}
+NonSpherical12.Drag                             = None
+NonSpherical12.SRP                              = Off
+NonSpherical12.GravityField.Earth.Degree        = 12
+NonSpherical12.GravityField.Earth.Order         = 12
+NonSpherical12.GravityField.Earth.PotentialFile = 'JGM2.cof'
+
+Create ForceModel JRDrag
+JRDrag.CentralBody                      = Earth
+JRDrag.PrimaryBodies                    = {Earth}
+JRDrag.SRP                              = Off
+JRDrag.GravityField.Earth.Degree        = 0
+JRDrag.GravityField.Earth.Order         = 0
+JRDrag.GravityField.Earth.PotentialFile = 'JGM2.cof'
+JRDrag.Drag.AtmosphereModel             = JacchiaRoberts
+
+Create ForceModel MSISE90Drag
+MSISE90Drag.CentralBody                      = Earth
+MSISE90Drag.PrimaryBodies                    = {Earth}
+MSISE90Drag.SRP                              = Off
+MSISE90Drag.GravityField.Earth.Degree        = 0
+MSISE90Drag.GravityField.Earth.Order         = 0
+MSISE90Drag.GravityField.Earth.PotentialFile = 'JGM2.cof'
+MSISE90Drag.Drag.AtmosphereModel             = MSISE90
+
+Create ForceModel MSISE2000Drag
+MSISE2000Drag.CentralBody                      = Earth
+MSISE2000Drag.PrimaryBodies                    = {Earth}
+MSISE2000Drag.SRP                              = Off
+MSISE2000Drag.GravityField.Earth.Degree        = 0
+MSISE2000Drag.GravityField.Earth.Order         = 0
+MSISE2000Drag.GravityField.Earth.PotentialFile = 'JGM2.cof'
+MSISE2000Drag.Drag.AtmosphereModel             = NRLMSISE00
+
+Create ForceModel EarthExpDrag
+EarthExpDrag.CentralBody                      = Earth
+EarthExpDrag.PrimaryBodies                    = {Earth}
+EarthExpDrag.SRP                              = Off
+EarthExpDrag.GravityField.Earth.Degree        = 0
+EarthExpDrag.GravityField.Earth.Order         = 0
+EarthExpDrag.GravityField.Earth.PotentialFile = 'JGM2.cof'
+EarthExpDrag.Drag.AtmosphereModel             = Exponential
+
+Create ForceModel SRP
+SRP.CentralBody                      = Earth
+SRP.PrimaryBodies                    = {Earth}
+SRP.Drag                             = None
+SRP.SRP                              = On
+SRP.GravityField.Earth.Degree        = 0
+SRP.GravityField.Earth.Order         = 0
+SRP.GravityField.Earth.PotentialFile = 'JGM2.cof'
+SRP.SRP.Flux                         = 1367
+SRP.SRP.SRPModel                     = Spherical
+
+Create ForceModel AllForces
+AllForces.CentralBody                      = Earth
+AllForces.PrimaryBodies                    = {Earth}
+AllForces.SRP                              = On
+AllForces.GravityField.Earth.Degree        = 20
+AllForces.GravityField.Earth.Order         = 20
+AllForces.GravityField.Earth.PotentialFile = 'JGM2.cof'
+AllForces.SRP.SRPModel                     = Spherical
+AllForces.Drag.AtmosphereModel             = MSISE90
+
+Create Propagator EarthPointMass
+EarthPointMass.FM = PointMass
+EarthPointMass.Type = PrinceDormand78
+
+Create Propagator EarthThirdBodies
+EarthThirdBodies.FM = ThirdBodies
+EarthThirdBodies.Type = PrinceDormand78
+
+Create Propagator EarthAspherical12x12
+EarthAspherical12x12.FM = NonSpherical12
+EarthAspherical12x12.Type = PrinceDormand78
+
+Create Propagator EarthJacchiaRoberts
+EarthJacchiaRoberts.FM = JRDrag
+EarthJacchiaRoberts.Type = PrinceDormand78
+
+Create Propagator EarthMSISE90
+EarthMSISE90.FM = MSISE90Drag
+EarthMSISE90.Type = PrinceDormand78
+
+Create Propagator EarthMSISE00
+EarthMSISE00.FM = MSISE2000Drag
+EarthMSISE00.Type = PrinceDormand78
+
+Create Propagator EarthExponential
+EarthExponential.FM = EarthExpDrag
+EarthExponential.Type = PrinceDormand78
+
+Create Propagator EarthSRP
+EarthSRP.FM = SRP
+EarthSRP.Type = PrinceDormand78
+
+Create Propagator EarthFull
+EarthFull.FM = AllForces
+EarthFull.Type = PrinceDormand78
+
+Create ReportFile RF
+RF.Filename = 'force_models_comparison.txt'
+RF.Add = {Sat.UTCGregorian, Sat.X, Sat.Y, Sat.Z, Sat.SMA}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Propagate 'Prop Two Body' EarthPointMass(Sat) {Sat.ElapsedDays = 0.1}
+Propagate 'Prop Point Mass Perts' EarthThirdBodies(Sat) {Sat.ElapsedDays = 0.1}
+Propagate 'Prop Harmonic Gravity' EarthAspherical12x12(Sat) {Sat.ElapsedDays = 0.1}
+Propagate 'Prop JR Drag' EarthJacchiaRoberts(Sat) {Sat.ElapsedDays = 0.1}
+Propagate 'Prop MSISE-90 Drag' EarthMSISE90(Sat) {Sat.ElapsedDays = 0.1}
+Propagate 'Prop MSISE00 Drag' EarthMSISE00(Sat) {Sat.ElapsedDays = 0.1}
+Propagate 'Prop Earth Exponential Drag' EarthExponential(Sat) {Sat.ElapsedDays = 0.1}
+Propagate 'Prop SRP' EarthSRP(Sat) {Sat.ElapsedDays = 0.1}
+Propagate 'Prop Earth Full' EarthFull(Sat) {Sat.ElapsedDays = 0.1}

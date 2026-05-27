@@ -1,0 +1,43 @@
+% Description: Yukon non-linear optimisation -- Vary two variables, Minimize a quadratic cost, and apply a NonlinearConstraint inside an Optimize block (no spacecraft / propagation, purely algebraic).
+
+Create Yukon Yukon1
+Yukon1.ShowProgress          = true
+Yukon1.ReportStyle           = Normal
+Yukon1.MaximumIterations     = 500
+Yukon1.UseCentralDifferences = false
+Yukon1.FeasibilityTolerance  = 0.001
+Yukon1.HessianUpdateMethod   = SelfScaledBFGS
+Yukon1.MaximumFunctionEvals  = 1000
+Yukon1.OptimalityTolerance   = 0.0001
+Yukon1.FunctionTolerance     = 0.0001
+Yukon1.MaximumElasticWeight  = 10000
+
+Create ReportFile Data
+Data.Filename     = 'yukon_optimization.report'
+Data.Precision    = 16
+Data.WriteHeaders = false
+Data.LeftJustify  = On
+Data.ZeroFill     = Off
+Data.FixedWidth   = true
+Data.Delimiter    = ' '
+Data.ColumnWidth  = 20
+Data.WriteReport  = true
+Data.Add          = {X1, X2}
+
+Create Variable X1 X2 J G
+
+BeginMissionSequence
+
+Optimize Yukon1 {SolveMode = Solve, ExitMode = DiscardAndContinue}
+
+   Vary 'Vary X1' Yukon1(X1 = 0, {Perturbation = 0.0000001, MaxStep = 9.999999e300})
+   Vary 'Vary X2' Yukon1(X2 = 0, {Perturbation = 0.0000001, MaxStep = 9.999999e300})
+
+   'Compute Cost (J)' J = ( X1 - 2 )^2 + ( X2 - 2 )^2
+   Minimize 'Minimize Cost J' Yukon1(J)
+
+   'Compute Constraint (G)' G = X2 + X1
+   NonlinearConstraint 'G = 8' Yukon1(G<=8)
+   Report Data X1 X2
+
+EndOptimize

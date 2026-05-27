@@ -1,0 +1,45 @@
+% Description: Control-flow primitives -- For loop, While loop, If / Else inside the mission sequence, all driving Propagate commands against the same spacecraft.
+
+Create Spacecraft Sat
+Sat.DateFormat       = UTCGregorian
+Sat.Epoch            = '22 Jul 2026 11:29:10.811'
+Sat.CoordinateSystem = EarthMJ2000Eq
+Sat.DisplayStateType = Keplerian
+Sat.SMA              = 83474.31799999999
+Sat.ECC              = 0.89652
+Sat.INC              = 12.4606
+Sat.RAAN             = 112.8362
+Sat.AOP              = 218.9805
+Sat.TA               = 180
+
+Create ForceModel FM
+
+Create Propagator EarthPointMass
+EarthPointMass.FM = FM
+
+Create Variable I
+
+Create ReportFile RF
+RF.Filename = 'control_flow.txt'
+RF.Add = {Sat.UTCGregorian, Sat.TA, Sat.SMA, Sat.ECC}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+For 'For I = 1:1:5' I = 1:1:5
+   Propagate 'Prop to Apoapsis' EarthPointMass(Sat) {Sat.Apoapsis}
+EndFor
+
+While 'While Epoch < 26882' Sat.TAIModJulian < 26882
+   Propagate 'Prop to Apoapsis' EarthPointMass(Sat) {Sat.Apoapsis}
+EndWhile
+
+If 'If Sat.TA > 178' Sat.TA > 178
+   Propagate 'Prop to Periapsis' EarthPointMass(Sat) {Sat.Periapsis}
+EndIf
+
+If 'If Sat.TA > 90' Sat.TA > 90
+   Propagate 'Prop to Periapsis' EarthPointMass(Sat) {Sat.Periapsis}
+Else
+   Propagate 'Prop to Apoapsis' EarthPointMass(Sat) {Sat.Apoapsis}
+EndIf

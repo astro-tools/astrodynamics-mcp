@@ -1,0 +1,19 @@
+% Description: CCSDS-OEM ephemeris propagation -- Spacecraft.EphemerisName points at an OEM file, propagated via Propagator.Type = 'CCSDS-OEM' (no force model). Replace the EphemerisName path with your own OEM file before running.
+
+Create Spacecraft EphSat
+EphSat.EphemerisName = '../data/vehicle/ephem/ccsds/SampleOEMEphem.oem'
+
+Create Propagator EphProp
+EphProp.Type     = 'CCSDS-OEM'
+EphProp.StepSize = 60
+
+Create ReportFile KeplerianElements
+KeplerianElements.Filename = 'oem_propagation.txt'
+KeplerianElements.Add      = {EphSat.UTCGregorian, EphSat.SMA, EphSat.ECC, EphSat.INC, EphSat.RAAN, EphSat.AOP, EphSat.TA}
+KeplerianElements.WriteHeaders = True
+
+BeginMissionSequence
+
+While EphSat.ElapsedDays <= 2
+   Propagate EphProp(EphSat)
+EndWhile

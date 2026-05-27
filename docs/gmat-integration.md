@@ -40,12 +40,26 @@ the errors GMAT itself surfaces, then call `gmat_run_mission`. This
 keeps full mission runs reserved for scripts that already parse.
 
 Vetted starter scripts ship as **MCP resources**, not tools. Each
-skeleton — Hohmann transfer, planetary flyby, station-keeping, and a
-short list of similarly common patterns — has a stable URI and is
-discoverable through the client's resource-listing flow. Callers read
-a skeleton, edit it for their problem, and pass the edited script to
-`gmat_run_mission`. The skeleton set starts small and grows as common
-authoring gaps emerge.
+skeleton has a stable `gmat-skeleton://<slug>` URI and is discoverable
+through the client's resource-listing flow. Callers list the resources,
+read a skeleton, edit it for their problem, and pass the edited script
+to `gmat_run_mission`.
+
+The catalogue spans the major mission archetypes — basic propagation,
+force-model variations, impulsive and finite-burn transfers, lunar and
+interplanetary missions, station-keeping, optimisation, libration-point
+design, event location (ground-station contact, eclipse), attitude
+modes, ephemeris I/O, formation flying, and scripting control flow.
+Each skeleton is derived from a GMAT R2026a bundled sample, stripped of
+GUI subscribers (`OrbitView`, `GroundTrackPlot`, `XYPlot`) and any
+plugin-only resources that aren't part of `gmat-run`'s default plugin
+load, and prefaced with a `% Description: <text>` line that the client
+surfaces as the resource description.
+
+Resources register only when the `[gmat]` extra is installed (same
+import guard as the tools), and every skeleton round-trips through
+`gmat_validate_script` cleanly in CI, so a stripped-out plugin
+reference that sneaks back in fails the build.
 
 ## Transports
 
