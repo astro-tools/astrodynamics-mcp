@@ -7,6 +7,7 @@ from __future__ import annotations
 from astrodynamics_mcp.tools import access as _access  # noqa: F401
 from astrodynamics_mcp.tools import bplane as _bplane  # noqa: F401
 from astrodynamics_mcp.tools import frames as _frames  # noqa: F401
+from astrodynamics_mcp.tools import gmat as _gmat  # noqa: F401
 from astrodynamics_mcp.tools import lambert as _lambert  # noqa: F401
 from astrodynamics_mcp.tools import porkchop as _porkchop  # noqa: F401
 from astrodynamics_mcp.tools import propagation as _propagation  # noqa: F401
