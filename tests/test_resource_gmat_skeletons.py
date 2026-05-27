@@ -153,3 +153,25 @@ class TestIntegrationAgainstRealGmat:
         assert parsed.errors == [], (
             f"skeleton {slug!r} parsed but reported errors: {parsed.errors!r}"
         )
+
+    @pytest.mark.parametrize(("slug", "filename"), _SKELETONS)
+    async def test_skeleton_runs_via_gmat_execute_script(self, slug: str, filename: str) -> None:
+        """Round-trip every skeleton end-to-end through the live GMAT engine.
+
+        Parse-validation only confirms GMAT's interpreter built the object
+        graph; this gate confirms the mission sequence actually executes
+        (solvers converge, propagation completes, ReportFile output lands).
+        Required-but-missing data files, divergent DC targets, and runtime
+        engine failures all surface here as ``ok=False`` rather than the
+        ``ok=True`` validate path.
+        """
+        from astrodynamics_mcp.server import mcp
+        from astrodynamics_mcp.tools.gmat import GmatExecuteScriptResponse
+
+        text = _skeleton_path(filename).read_text(encoding="utf-8")
+        _content, structured = await mcp.call_tool("gmat_execute_script", {"script": text})
+        parsed = GmatExecuteScriptResponse.model_validate(structured)
+        assert parsed.ok, (
+            f"skeleton {slug!r} failed to run via gmat_execute_script. "
+            f"GMAT stderr:\n{parsed.stderr}"
+        )

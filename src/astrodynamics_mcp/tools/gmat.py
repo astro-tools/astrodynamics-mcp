@@ -2306,8 +2306,6 @@ _SKELETON_MIME_TYPE = "text/plain"
 # returns the catalogue in a predictable order.
 _SKELETONS: tuple[tuple[str, str], ...] = (
     ("minimal-leo", "minimal_leo.script"),
-    ("tle-propagation", "tle_propagation.script"),
-    ("high-fidelity-srp", "high_fidelity_srp.script"),
     ("multibody-gravity", "multibody_gravity.script"),
     ("force-models-comparison", "force_models_comparison.script"),
     ("hohmann-transfer", "hohmann_transfer.script"),
@@ -2325,7 +2323,6 @@ _SKELETONS: tuple[tuple[str, str], ...] = (
     ("eclipse-location", "eclipse_location.script"),
     ("attitude-nadir-pointing", "attitude_nadir_pointing.script"),
     ("attitude-spinner", "attitude_spinner.script"),
-    ("oem-propagation", "oem_propagation.script"),
     ("constellation", "constellation.script"),
     ("control-flow", "control_flow.script"),
 )
