@@ -605,7 +605,9 @@ class TestChainedReadback:
 
         fixture_text = "Sat.UTCGregorian Sat.X\n01 Jan 2026 12:00:00.000 7000.0\n"
         fixture_path = tmp_path / "ReportFile1.txt"
-        fixture_path.write_text(fixture_text, encoding="utf-8")
+        # write_bytes, not write_text, so Windows doesn't translate \n
+        # to \r\n — the byte-equality assertion below relies on identity.
+        fixture_path.write_bytes(fixture_text.encode("utf-8"))
 
         result = _FakeResult(
             output_dir=tmp_path,

@@ -847,7 +847,10 @@ class TestChainedReadback:
 
         def writing_sweep(script: Any, **kwargs: Any) -> Any:
             out_dir = Path(kwargs["out"])
-            (out_dir / "manifest.jsonl").write_text(manifest_text, encoding="utf-8")
+            # write_bytes, not write_text, so Windows doesn't translate
+            # \n to \r\n — the byte-equality assertion below relies on
+            # identity.
+            (out_dir / "manifest.jsonl").write_bytes(manifest_text.encode("utf-8"))
             return original_sweep(script, **kwargs)
 
         calls.sweep = writing_sweep  # type: ignore[method-assign]

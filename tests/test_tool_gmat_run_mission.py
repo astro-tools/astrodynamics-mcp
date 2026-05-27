@@ -707,7 +707,10 @@ class TestChainedReadback:
         # the registry verbatim, so the read tool reads these bytes.
         fixture_text = "Sat.UTCGregorian Sat.X\n01 Jan 2026 12:00:00.000 7000.0\n"
         fixture_path = tmp_path / "RF.txt"
-        fixture_path.write_text(fixture_text, encoding="utf-8")
+        # write_bytes, not write_text, so Windows doesn't translate \n
+        # to \r\n — the read tool returns exactly the bytes on disk and
+        # the byte-equality assertion below relies on identity.
+        fixture_path.write_bytes(fixture_text.encode("utf-8"))
 
         result = _FakeResult(
             reports={"RF": _small_report(2)},
