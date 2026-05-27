@@ -1,0 +1,15 @@
+% Fixture for the gmat_validate_script warning path. The script declares a
+% mission command (Propagate) without a preceding BeginMissionSequence,
+% which GMAT loads successfully but flags via `*** WARNING ***
+% BeginMissionSequence command is missing. ...`.
+
+Create Spacecraft Sat
+Sat.SMA = 7000
+
+Create ForceModel FM
+FM.PrimaryBodies = {Earth}
+
+Create Propagator Prop
+Prop.FM = FM
+
+Propagate Prop(Sat) {Sat.ElapsedSecs = 60}

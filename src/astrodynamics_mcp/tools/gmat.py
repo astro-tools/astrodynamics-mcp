@@ -3,8 +3,7 @@
 The four tools (``gmat_run_mission``, ``gmat_sweep``, ``gmat_execute_script``,
 ``gmat_validate_script``) cover the GMAT mission-analysis surface. This
 module owns the conditional-registration mechanism, the shared description
-discipline, and the real bodies for every slot except ``gmat_validate_script``,
-which is still a placeholder pending its own follow-up issue.
+discipline, and the real bodies for every slot.
 
 The guard is intentionally a single ``try: import gmat_run``: ``gmat-sweep``
 declares ``gmat-run`` as a dependency, so resolving the ``[gmat]`` extra
@@ -16,8 +15,11 @@ Streamable HTTP, leaving the trust boundary to the operator.
 from __future__ import annotations
 
 import math
+import os
+import re
 import tempfile
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -54,19 +56,6 @@ _REPORT_HEAD_TAIL_ROWS = 5
 # the response under the ~2 KB small-model target.
 _RAW_REPORT_INLINE_LINE_THRESHOLD = 60
 _RAW_REPORT_HEAD_TAIL_LINES = 20
-
-
-class GmatPlaceholderResponse(BaseModel):
-    """Stub response shape so FastMCP can derive a non-empty ``outputSchema``.
-
-    Used by the slots whose bodies still land in follow-up issues
-    (``gmat_validate_script``); the placeholder raises before constructing
-    one of these, so the only consumer is the schema generator.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    detail: str = Field(description="Human-readable placeholder marker; never returned at runtime.")
 
 
 class ResourceGroupView(BaseModel):
@@ -664,6 +653,108 @@ class GmatSweepResponse(BaseModel):
     )
 
 
+class ParseDiagnostic(BaseModel):
+    """One error or warning extracted from GMAT's load-time log.
+
+    Shared shape across :attr:`GmatValidateScriptResponse.errors` and
+    :attr:`GmatValidateScriptResponse.warnings` — both surfaces carry the
+    same ``{line, message, raw}`` triple, classified by which GMAT marker
+    produced them (``**** ERROR **** Interpreter Exception:`` → error;
+    ``*** WARNING ***`` → warning).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    line: int | None = Field(
+        ...,
+        description=(
+            "Line number in the source script GMAT attributed the diagnostic to. "
+            'Populated when GMAT\'s message carries an ``in line: "<N>: ..."`` '
+            "trailing context; null for cross-resource reference errors and "
+            "warnings that don't pin a single line."
+        ),
+    )
+    message: str = Field(
+        ...,
+        description=(
+            "Cleaned diagnostic text — the substantive portion of GMAT's message "
+            "with the script-path prefix and the ``in line:`` continuation stripped. "
+            'Action-targetable; e.g. \'The field name "WidgetCount" on object '
+            '"Sat" is not permitted\'.'
+        ),
+    )
+    raw: str = Field(
+        ...,
+        description=(
+            "Original log line GMAT emitted, verbatim. Fallback when the scraper "
+            "trims information the caller needs (e.g. the full multi-marker line "
+            "for non-ASCII errors)."
+        ),
+    )
+
+
+class GmatValidateScriptResponse(BaseModel):
+    """Response from :func:`gmat_validate_script`.
+
+    Carries GMAT's view of the script: a parse-success boolean, error and
+    warning lists scraped from the engine's log, the resource and command
+    inventory the parser built on success, and the captured log verbatim
+    as a fallback. No numeric fields — the tool is structural, not
+    physical, so the response is deliberately exempt from the cross-tool
+    ``{value, unit}`` unit discipline.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    ok: bool = Field(
+        ...,
+        description=(
+            "True when GMAT's interpreter loaded the script (LoadScript returned "
+            "True) and the post-load Spacecraft initialisation didn't raise. "
+            "False on any parse-time error. Known false-negative: GMAT's "
+            "interpreter silently accepts missing statement terminators "
+            "(semicolons), so ok=True means the engine built an object graph, "
+            "not that the script is syntactically pristine."
+        ),
+    )
+    errors: list[ParseDiagnostic] = Field(
+        ...,
+        description=(
+            "Parse-time errors GMAT surfaced — ``**** ERROR **** Interpreter "
+            "Exception:`` lines plus any Spacecraft-initialisation APIException. "
+            "Empty when ok=True."
+        ),
+    )
+    warnings: list[ParseDiagnostic] = Field(
+        ...,
+        description=(
+            "Parse-time warnings GMAT surfaced — ``*** WARNING ***`` lines. "
+            "Independent of `ok`: GMAT can warn (e.g. missing BeginMissionSequence) "
+            "while still loading the script successfully."
+        ),
+    )
+    summary: MissionSummaryView | None = Field(
+        ...,
+        description=(
+            "Structured snapshot of what GMAT parsed — resource categories and "
+            "the mission-sequence command outline. Populated on ok=True so the "
+            "caller can confirm the parser saw what it intended to declare. Null "
+            "on ok=False, since the moderator's state after a failed load is "
+            "indeterminate."
+        ),
+    )
+    raw_log: str = Field(
+        ...,
+        description=(
+            "Verbatim GMAT log captured across the LoadScript call. Includes "
+            "build-date headers, ephemeris-source notices, and the error / "
+            "warning lines the structured fields are scraped from. Read this "
+            "when the structured fields miss something — the scraper trades "
+            "robustness for tidiness."
+        ),
+    )
+
+
 _RUN_MISSION_DESCRIPTION = (
     "Run a single GMAT mission script end-to-end and return structured results "
     "(report tables, ephemeris pointers, convergence flags). e.g. "
@@ -737,14 +828,26 @@ _EXECUTE_SCRIPT_DESCRIPTION = (
 )
 
 _VALIDATE_SCRIPT_DESCRIPTION = (
-    "Parse a GMAT script without running the mission sequence; returns parse "
-    "errors, unknown resources or fields, and the declared resource list. "
-    "Intended for a self-correction loop before gmat_run_mission. Placeholder "
-    "slot — the body lands in a follow-up issue. "
-    "e.g. gmat_validate_script(script='Create Spacecraft Sat;...')."
+    "Parse-validate a GMAT mission script without running the mission sequence: "
+    "load it through GMAT's interpreter, capture any errors and warnings GMAT "
+    "itself surfaces, and return them alongside the parsed resource and command "
+    "inventory. Intended for a self-correction loop where an LLM iterates on its "
+    "script — call gmat_validate_script, fix what GMAT flags, then call "
+    "gmat_run_mission. e.g. gmat_validate_script(script='/abs/path/to/"
+    "Ex_HohmannTransfer.script') returns ok=True with a summary listing the "
+    "declared Spacecraft, ForceModel, Propagator, ReportFile resources and the "
+    "mission-sequence commands. `script` must be either an absolute path to a "
+    ".script file or the full inline script text (auto-detected by leading '%' "
+    "/ 'Create' markers); do not pass a Python Mission object. Common-mistake "
+    "notes: validate confirms the script parses, not that the mission runs "
+    "end-to-end — solver convergence and runtime errors still need "
+    "gmat_run_mission. GMAT is case-sensitive: 'Spacecraft sat' and 'Spacecraft "
+    "Sat' are different objects. Missing statement terminators (semicolons) are "
+    "a known false-negative — GMAT's interpreter accepts them silently, so "
+    "ok=True does not guarantee a syntactically pristine script, only that the "
+    "interpreter could build the object graph. Output fields carry no physical "
+    "units (the tool is structural, not numeric)."
 )
-
-_PLACEHOLDER_ANNOTATIONS = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 
 
 def _looks_like_inline_script(text: str) -> bool:
@@ -802,9 +905,14 @@ def _resolve_script_input(script: str) -> tuple[Path, Path | None]:
     return path, None
 
 
-def _build_mission_summary_view(mission: Any) -> MissionSummaryView:
-    """Render :class:`gmat_run.summary.MissionSummary` into the response shape."""
-    summary = mission.summary()
+def _render_mission_summary(summary: Any) -> MissionSummaryView:
+    """Reshape a :class:`gmat_run.summary.MissionSummary` into the response model.
+
+    Shared between :func:`gmat_run_mission` (where the summary is fetched
+    via ``mission.summary()``) and :func:`gmat_validate_script` (where the
+    tool drives ``build_mission_summary`` directly, having bypassed the
+    ``Mission`` wrapper to capture the load-time log).
+    """
     resource_groups = [
         ResourceGroupView(category=g.category, names=list(g.names)) for g in summary.resource_groups
     ]
@@ -824,6 +932,91 @@ def _build_mission_summary_view(mission: Any) -> MissionSummaryView:
         resource_groups=resource_groups,
         commands=commands,
     )
+
+
+def _build_mission_summary_view(mission: Any) -> MissionSummaryView:
+    """Render the loaded mission's structured snapshot."""
+    return _render_mission_summary(mission.summary())
+
+
+# ---------------------------------------------------------------------------
+# GMAT load-time log scraper
+# ---------------------------------------------------------------------------
+#
+# GMAT's LoadScript returns only a bool; the actual error / warning text lives
+# in the engine's log file. The patterns below were derived from R2026a output
+# captured against handcrafted bad scripts (unknown fields, unknown resource
+# types, undeclared references, missing BeginMissionSequence). Three line
+# shapes recognised:
+#
+#   <seqno>: <path>: **** ERROR **** Interpreter Exception: <msg> [in line:\n   "<N>: <text>"]
+#   Interpreter Exception: [<path>: ]<msg>
+#   *** WARNING ***  <msg>
+#
+# Wording can shift between GMAT versions — `raw_log` on the response is the
+# escape hatch for callers when the scraper misses something. Upstream
+# astro-tools/gmat-run#153 promotes this scrape into `Mission.validate()`, at
+# which point this helper collapses into a thin wrapper.
+
+_WARNING_LINE_RE = re.compile(r"\*+\s*WARNING\s*\*+\s+(?P<msg>.+?)\s*$")
+_ERROR_SEQ_RE = re.compile(
+    r"^\d+:\s+\S+:\s+\*+\s*ERROR\s*\*+\s+Interpreter\s+Exception:\s+(?P<msg>.+?)\s*$"
+)
+_ERROR_BARE_RE = re.compile(r"^Interpreter\s+Exception:\s+(?P<msg>.+?)\s*$")
+_LINE_CONTEXT_RE = re.compile(r'^"\s*(?P<line>\d+):\s*[^"]*"\s*$')
+_PATH_PREFIX_RE = re.compile(r"^[^:\n]+\.script:\s*")
+_IN_LINE_SUFFIX_RE = re.compile(r"\s+in\s+line:\s*$")
+
+
+def _parse_gmat_log(raw_log: str) -> tuple[list[ParseDiagnostic], list[ParseDiagnostic]]:
+    """Scrape errors and warnings from a captured GMAT load-time log."""
+    errors: list[ParseDiagnostic] = []
+    warnings: list[ParseDiagnostic] = []
+    raw_lines = raw_log.splitlines()
+    i = 0
+    while i < len(raw_lines):
+        line = raw_lines[i].rstrip()
+        if not line:
+            i += 1
+            continue
+        m_warn = _WARNING_LINE_RE.search(line)
+        if m_warn:
+            warnings.append(
+                ParseDiagnostic(
+                    line=None,
+                    message=m_warn.group("msg").strip(),
+                    raw=line.strip(),
+                )
+            )
+            i += 1
+            continue
+        m_err = _ERROR_SEQ_RE.match(line) or _ERROR_BARE_RE.match(line)
+        if m_err:
+            msg = m_err.group("msg").strip()
+            msg = _PATH_PREFIX_RE.sub("", msg).strip()
+            line_no: int | None = None
+            if _IN_LINE_SUFFIX_RE.search(msg):
+                msg = _IN_LINE_SUFFIX_RE.sub("", msg).strip()
+                # Peek the next non-blank line for the `   "<N>: ..."` context.
+                j = i + 1
+                while j < len(raw_lines) and not raw_lines[j].strip():
+                    j += 1
+                if j < len(raw_lines):
+                    m_ctx = _LINE_CONTEXT_RE.match(raw_lines[j].strip())
+                    if m_ctx:
+                        line_no = int(m_ctx.group("line"))
+                        i = j
+            errors.append(
+                ParseDiagnostic(
+                    line=line_no,
+                    message=msg,
+                    raw=line.strip(),
+                )
+            )
+            i += 1
+            continue
+        i += 1
+    return errors, warnings
 
 
 def _cell_value(value: Any) -> str | float:
@@ -1690,20 +1883,91 @@ def _register_gmat_tools() -> None:
     @register_tool(
         name="gmat_validate_script",
         description=_VALIDATE_SCRIPT_DESCRIPTION,
-        annotations=_PLACEHOLDER_ANNOTATIONS,
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
     )
     async def gmat_validate_script(
         script: Annotated[
             str,
             Field(
                 description=(
-                    "Full GMAT script text to parse-validate without running the mission "
-                    "sequence. Placeholder accepts the argument but does not execute it."
+                    "Either the absolute path to a GMAT .script file (e.g. "
+                    "'/abs/path/to/Ex_HohmannTransfer.script') or the full inline "
+                    "script text starting with '%' comments or 'Create' resource "
+                    "declarations. Auto-detected by content — same shape as the "
+                    "`script` argument of gmat_run_mission."
                 ),
             ),
         ],
-    ) -> GmatPlaceholderResponse:
-        raise NotImplementedError("gmat_validate_script body lands in a follow-up issue")
+    ) -> GmatValidateScriptResponse:
+        # Bypasses gmat_run.Mission.load to capture the GMAT log across the
+        # parse step — Mission.load only redirects UseLogFile during run(),
+        # so its public surface doesn't expose load-time diagnostics. Reaches
+        # into gmat-run private helpers (_get_api_exception,
+        # _initialize_spacecraft) intentionally; once upstream
+        # astro-tools/gmat-run#153 ships Mission.validate(), this body
+        # collapses to a single call into that helper.
+        from gmat_run.install import locate_gmat
+        from gmat_run.mission import _get_api_exception, _initialize_spacecraft
+        from gmat_run.runtime import bootstrap
+        from gmat_run.summary import build_mission_summary
+
+        script_path, cleanup_path = _resolve_script_input(script)
+        try:
+            try:
+                install = locate_gmat()
+                gmat = bootstrap(install)
+            except Exception as exc:
+                raise UpstreamError(
+                    f"GMAT discovery / bootstrap failed: {exc}",
+                    code="upstream.gmat_run_bootstrap_failed",
+                    original_exception=exc,
+                ) from exc
+
+            with tempfile.TemporaryDirectory(prefix="astrodynamics-mcp-validate-") as tmp:
+                log_path = Path(tmp) / "validate.log"
+                # Fresh sandbox so a prior load in the same process can't
+                # leak resources into the summary inventory below. Some
+                # plugins refuse Clear under specific states — suppress
+                # rather than abort.
+                with suppress(Exception):
+                    gmat.Clear()
+                gmat.UseLogFile(str(log_path))
+                init_error: str | None = None
+                load_ok = False
+                try:
+                    load_ok = bool(gmat.LoadScript(str(script_path)))
+                    if load_ok:
+                        api_exception = _get_api_exception(gmat)
+                        try:
+                            _initialize_spacecraft(gmat)
+                        except api_exception as exc:
+                            init_error = f"{type(exc).__name__}: {exc}"
+                finally:
+                    # Repoint the log handle off the temp path before the
+                    # TemporaryDirectory unlinks itself — GMAT's
+                    # MessageInterface holds the file open otherwise (same
+                    # Windows-handle issue Mission.run handles after a run).
+                    with suppress(Exception):
+                        gmat.UseLogFile(os.devnull)
+                raw_log = log_path.read_text(encoding="utf-8", errors="replace")
+
+            ok = load_ok and init_error is None
+            errors, warnings = _parse_gmat_log(raw_log)
+            if init_error is not None:
+                errors.append(ParseDiagnostic(line=None, message=init_error, raw=init_error))
+            summary_view: MissionSummaryView | None = None
+            if ok:
+                summary_view = _render_mission_summary(build_mission_summary(gmat, script_path))
+            return GmatValidateScriptResponse(
+                ok=ok,
+                errors=errors,
+                warnings=warnings,
+                summary=summary_view,
+                raw_log=raw_log,
+            )
+        finally:
+            if cleanup_path is not None:
+                cleanup_path.unlink(missing_ok=True)
 
 
 def _build_response(
