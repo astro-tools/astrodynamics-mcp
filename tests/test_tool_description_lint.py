@@ -27,8 +27,9 @@ class TestRealServerSurfaceIsClean:
 
 
 class TestRealServerCapabilityMetadata:
-    """Smithery quality-score guard: every tool needs annotations, outputSchema, and
-    a non-empty description on every input parameter."""
+    """MCP-client ergonomics guard: every tool needs annotations, outputSchema, and
+    a non-empty description on every input parameter so that any LLM/client
+    consuming `tools/list` over the wire gets the full Tool shape."""
 
     async def test_every_tool_has_annotations(self) -> None:
         tools = await real_mcp.list_tools()

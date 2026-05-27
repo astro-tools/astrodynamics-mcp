@@ -56,21 +56,18 @@ uv run coverage report --include='src/astrodynamics_mcp/schemas/*' --fail-under=
 uv run coverage report --include='src/astrodynamics_mcp/data/*' --fail-under=95
 ```
 
-## MCPB bundles
+## MCPB bundle — `packaging/mcpb/`
 
-Two MCPB bundles ship on every `v*` tag, packed and uploaded by sister
-jobs in `.github/workflows/release.yml`. Both carry a literal
+The canonical MCPB bundle ships on every `v*` tag, packed and uploaded
+by the `pack-mcpb` → `github-release` jobs in
+`.github/workflows/release.yml`. The manifest carries a literal
 `{{VERSION}}` placeholder which the workflow `sed`-substitutes with the
 tag version (`${GITHUB_REF_NAME#v}`) at pack time; never commit a real
 version into the placeholder.
 
-### Canonical bundle — `packaging/mcpb/`
+`manifest_version: "0.4"`, `server.type: "uv"`. Consumed by:
 
-The default, modern bundle. `manifest_version: "0.4"`, `server.type: "uv"`.
-Consumed by:
-
-- The GitHub Release page (attached as `.mcpb` asset by the `pack-mcpb` →
-  `github-release` jobs).
+- The GitHub Release page (attached as `.mcpb` asset).
 - The Anthropic Claude Desktop directory (manual submission of the
   release asset).
 - Any other MCPB-aware client that supports the `uv` server type.
@@ -85,48 +82,8 @@ npx --yes @anthropic-ai/mcpb@2.1.2 pack /tmp/mcpb-test /tmp/astrodynamics-mcp.mc
 uv run --directory /tmp/mcpb-test server.py stdio   # exercise the install-time launch path
 ```
 
-The canonical manifest keeps `"tools": []` empty — Claude Desktop and other
-MCPB-aware clients discover tool definitions at runtime via the MCP protocol,
-and the MCPB spec doesn't accept the richer schemas Smithery wants.
-
-### Smithery bundle — `packaging/mcpb-smithery/`
-
-Smithery's CLI does not yet recognise MCPB `server.type: "uv"`. The
-Smithery bundle uses `server.type: "python"` with
-`mcp_config.command: "uv"` and inline `--with` dependencies — the
-pattern Smithery's own MCPB bundling docs document. Consumed only by
-the `publish-smithery` job; the GitHub Release asset is the canonical
-bundle, not this one.
-
-`packaging/mcpb-smithery/` contains only `manifest.json` (with
-`"tools": []` placeholder); the workflow copies `server.py` from
-`packaging/mcpb/`, generates the real `tools[]` array from the live
-server via `scripts/dump-mcpb-tools.py`, and `jq`-injects it into the
-manifest before building. Each entry carries the real
-`inputSchema` so Smithery's release API accepts the publish.
-
-The `.mcpb` is built as a direct `zip` here — `mcpb pack` rejects
-`inputSchema` per the MCPB spec, but a `.mcpb` is just a zip with
-`manifest.json` at root so the result is byte-equivalent to what
-`mcpb pack` would produce minus the validation:
-
-```bash
-uv sync
-mkdir -p /tmp/mcpb-smithery-test
-cp packaging/mcpb-smithery/manifest.json /tmp/mcpb-smithery-test/
-cp packaging/mcpb/server.py /tmp/mcpb-smithery-test/
-sed -i "s/{{VERSION}}/0.1.4/g" /tmp/mcpb-smithery-test/manifest.json
-uv run python scripts/dump-mcpb-tools.py > /tmp/tools.json
-jq --slurpfile tools /tmp/tools.json '.tools = $tools[0]' \
-  /tmp/mcpb-smithery-test/manifest.json > /tmp/mcpb-smithery-test/manifest.tmp
-mv /tmp/mcpb-smithery-test/manifest.tmp /tmp/mcpb-smithery-test/manifest.json
-(cd /tmp/mcpb-smithery-test && zip -r /tmp/astrodynamics-mcp-smithery.mcpb manifest.json server.py)
-```
-
-There's no local equivalent of `uv run server.py stdio` for the
-Smithery bundle — Smithery's hosted runner is what actually executes
-the `uv run --with ...` command described in the manifest, and the bundle
-ships no `pyproject.toml` to resolve against locally.
+The manifest keeps `"tools": []` empty — Claude Desktop and other
+MCPB-aware clients discover tool definitions at runtime via the MCP protocol.
 
 ### MCP Registry manifest
 
