@@ -50,9 +50,9 @@ dependencies = [
   "platformdirs>=4.0",
 ]
 
-# Placeholder extras — body wiring lands in v0.2 ([gmat]) and v0.3 ([spice], [viz]).
+# Placeholder extras — [spice] and [viz] are deferred until their tools land.
 [project.optional-dependencies]
-gmat = []
+gmat = ["gmat-run>=0.6", "gmat-sweep>=0.6"]
 spice = []
 viz = []
 
@@ -131,6 +131,13 @@ ignore_missing_imports = true
 # inspect-ai is a dev-only eval-suite runner; eval/ scoring imports it lazily.
 [[tool.mypy.overrides]]
 module = ["inspect_ai", "inspect_ai.*"]
+ignore_missing_imports = true
+
+# gmat-run ships with the [gmat] extra only; the unit-test environment doesn't
+# install it. The tools/gmat.py guard tolerates the missing module, so mypy
+# should not flag the import either.
+[[tool.mypy.overrides]]
+module = ["gmat_run", "gmat_run.*"]
 ignore_missing_imports = true
 
 # astropy ships partial type info but the surface we touch (utils.iers,

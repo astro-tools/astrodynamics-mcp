@@ -104,3 +104,36 @@ jobs:
       - run: pip install .
       - run: python -c "import astrodynamics_mcp"
       - run: astrodynamics-mcp --version
+
+  # Parallel smoke-check that `pip install astrodynamics-mcp[gmat]` resolves
+  # and the four GMAT placeholder tool slots register on import. We do not
+  # install a real GMAT binary here — `gmat-run` imports without one and the
+  # placeholder bodies never execute. Per-tool issues will add a real
+  # `setup-gmat` matrix when they need to run end-to-end.
+  gmat-extra-install:
+    name: "[gmat] extra install smoke"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install '.[gmat]'
+      - name: GMAT tool slots register
+        run: |
+          python - <<'PY'
+          import asyncio
+
+          from astrodynamics_mcp.server import mcp
+
+          tools = {t.name for t in asyncio.run(mcp.list_tools())}
+          expected = {
+              "gmat_run_mission",
+              "gmat_sweep",
+              "gmat_execute_script",
+              "gmat_validate_script",
+          }
+          missing = expected - tools
+          assert not missing, f"missing GMAT tool slots after [gmat] install: {missing}"
+          PY
