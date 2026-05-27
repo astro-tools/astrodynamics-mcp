@@ -591,17 +591,9 @@ class TestResponseSchema:
 class TestToolListing:
     """Description lint must accept the real `gmat_run_mission` description."""
 
-    def test_description_passes_lint(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_description_passes_lint(self, monkeypatch: pytest.MonkeyPatch) -> None:
         fresh = _fresh_mcp(monkeypatch)
-
-        # FastMCP.list_tools is async; resolve via the event loop pytest-asyncio
-        # owns by awaiting indirectly through a small helper coroutine.
-        async def _go() -> list[Any]:
-            return await fresh.list_tools()
-
-        import asyncio
-
-        tools = asyncio.get_event_loop().run_until_complete(_go())
+        tools = await fresh.list_tools()
         for tool in tools:
             if tool.name == "gmat_run_mission":
                 violations = check_tool_descriptions([tool])
