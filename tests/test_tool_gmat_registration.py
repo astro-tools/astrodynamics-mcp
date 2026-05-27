@@ -1,11 +1,11 @@
 """Tests for the GMAT tool-slot conditional-registration mechanism.
 
-The contract from issue #70 is: every ``gmat_*`` tool slot registers on the
-module-level ``mcp`` singleton iff ``gmat-run`` is importable. The test env
-does not install ``gmat-run`` (it ships only with the ``[gmat]`` extra), so
-the negative case is verified against the real singleton and the positive
-case is verified against a fresh ``FastMCP`` driven by the registration
-helper directly.
+The contract is: every ``gmat_*`` tool slot registers on the module-level
+``mcp`` singleton iff ``gmat-run`` is importable. The test env does not
+install ``gmat-run`` (it ships only with the ``[gmat]`` extra), so the
+negative case is verified against the real singleton and the positive case
+is verified against a fresh ``FastMCP`` driven by the registration helper
+directly.
 """
 
 from __future__ import annotations
@@ -27,10 +27,10 @@ _EXPECTED_TOOL_NAMES = frozenset(
     }
 )
 
-# Slots still landing in follow-up issues. `gmat_run_mission` graduated to a
-# real body in issue #71; the placeholder body check is parametrized over the
-# remaining stubs only.
-_PLACEHOLDER_TOOL_NAMES = _EXPECTED_TOOL_NAMES - {"gmat_run_mission"}
+# Slots still landing in follow-up work. Tools with real bodies are excluded
+# from the placeholder-body parametrize so this file stays accurate as each
+# slot graduates.
+_PLACEHOLDER_TOOL_NAMES = _EXPECTED_TOOL_NAMES - {"gmat_run_mission", "gmat_sweep"}
 
 
 class TestNegativeCase:
