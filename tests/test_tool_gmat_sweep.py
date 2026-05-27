@@ -427,6 +427,7 @@ class TestBuildSweepResponse:
     def test_small_frame_inlines_head_and_tail_in_summary(self, tmp_path: Path) -> None:
         frame = _trivial_result(rows=2, with_status=True)  # 4 rows total
         response = _build_sweep_response(
+            run_id="0" * 32,
             mode="grid",
             script_name="fixture.script",
             frame=frame,
@@ -447,6 +448,7 @@ class TestBuildSweepResponse:
         # 6 run_ids x 2 time-steps = 12 rows, above the 10-row inline threshold.
         frame = _trivial_result(rows=6, with_status=False)
         response = _build_sweep_response(
+            run_id="0" * 32,
             mode="monte_carlo",
             script_name="fixture.script",
             frame=frame,
@@ -463,6 +465,7 @@ class TestBuildSweepResponse:
     def test_full_mode_returns_every_row(self, tmp_path: Path) -> None:
         frame = _trivial_result(rows=6, with_status=False)
         response = _build_sweep_response(
+            run_id="0" * 32,
             mode="latin_hypercube",
             script_name="fixture.script",
             frame=frame,
@@ -477,6 +480,7 @@ class TestBuildSweepResponse:
     def test_mode_echoed(self, tmp_path: Path) -> None:
         frame = _trivial_result(rows=1, with_status=False)
         response = _build_sweep_response(
+            run_id="0" * 32,
             mode="samples",
             script_name="fixture.script",
             frame=frame,
@@ -733,6 +737,7 @@ class TestResponseSchema:
     def test_response_roundtrips_through_json(self, tmp_path: Path) -> None:
         frame = _trivial_result(rows=2, with_status=True)
         response = _build_sweep_response(
+            run_id="0" * 32,
             mode="monte_carlo",
             script_name="fixture.script",
             frame=frame,

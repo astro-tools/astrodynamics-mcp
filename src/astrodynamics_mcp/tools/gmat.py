@@ -27,6 +27,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from astrodynamics_mcp.errors import InvalidInputError, UpstreamError
+from astrodynamics_mcp.runs import default_registry
 from astrodynamics_mcp.server import register_tool
 from astrodynamics_mcp.units import Quantity
 
@@ -56,6 +57,12 @@ _REPORT_HEAD_TAIL_ROWS = 5
 # the response under the ~2 KB small-model target.
 _RAW_REPORT_INLINE_LINE_THRESHOLD = 60
 _RAW_REPORT_HEAD_TAIL_LINES = 20
+
+# How many bytes gmat_read_run_artefact sniffs from the head of a file
+# to decide text-vs-binary. 8 KB is the grep / git default; large enough
+# to span any plausible text-format header without paying full-file
+# read cost on a multi-hundred-MB SPK ephemeris.
+_BINARY_SNIFF_BYTES = 8192
 
 
 class ResourceGroupView(BaseModel):
@@ -277,6 +284,17 @@ class GmatRunMissionResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    run_id: str = Field(
+        ...,
+        description=(
+            "UUID4 hex identifying this run in the server-process registry. Pass to "
+            "gmat_read_run_artefact along with an output's resource name to read the "
+            "raw bytes in a later tool call — useful when an ephemeris or contact "
+            "report was too large to inline here. The registry retains the last N "
+            "runs per process (configurable via ASTRODYNAMICS_MCP_RUN_REGISTRY_LIMIT, "
+            "default 50); once evicted the id resolves to invalid_input.unknown_run_id."
+        ),
+    )
     summary: MissionSummaryView = Field(
         ...,
         description=(
@@ -415,6 +433,17 @@ class GmatExecuteScriptResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    run_id: str = Field(
+        ...,
+        description=(
+            "UUID4 hex identifying this run in the server-process registry. Pass to "
+            "gmat_read_run_artefact along with an artefact's resource name or "
+            "basename to read the raw bytes in a later tool call. Populated on both "
+            "ok=True and ok=False so a follow-up read can inspect partial outputs "
+            "even after an engine failure; for failures the registry usually carries "
+            "only the GMAT log."
+        ),
+    )
     ok: bool = Field(
         ...,
         description=(
@@ -545,6 +574,16 @@ class GmatSweepResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    run_id: str = Field(
+        ...,
+        description=(
+            "UUID4 hex identifying this sweep in the server-process registry. Pass "
+            "to gmat_read_run_artefact along with 'manifest.jsonl' or a per-run "
+            "artefact basename to read the raw bytes in a later tool call. The same "
+            "retention cap (ASTRODYNAMICS_MCP_RUN_REGISTRY_LIMIT, default 50) covers "
+            "single-mission runs and sweeps."
+        ),
+    )
     mode: Literal["grid", "samples", "monte_carlo", "latin_hypercube"] = Field(
         ...,
         description=(
@@ -849,6 +888,38 @@ _VALIDATE_SCRIPT_DESCRIPTION = (
     "units (the tool is structural, not numeric)."
 )
 
+_READ_RUN_ARTEFACT_DESCRIPTION = (
+    "Read the raw text of one file written by a prior gmat_run_mission, "
+    "gmat_sweep, or gmat_execute_script call, keyed by the `run_id` that "
+    "producer returned. The producer tools shape their inline responses for "
+    "small-model input caps; reach for this tool when you need the verbatim "
+    "bytes of an output that was too large to inline (a long EphemerisFile, a "
+    "ContactLocator report, the GMAT log) or when you want a ReportFile's "
+    "header / units rows preserved exactly. e.g. after gmat_run_mission "
+    "returns run_id='abc...' with an OutputPointer for 'EphemerisFile1', call "
+    "gmat_read_run_artefact(run_id='abc...', name='EphemerisFile1', "
+    "output='summary') to inspect the first and last 20 lines. `name` "
+    "resolves first against the run's declared resource names (ReportFile / "
+    "EphemerisFile / ContactLocator / Solver), then against plain file "
+    "basenames directly under the run's output directory (so 'GMAT.log' and "
+    "solver '.data' files are reachable). `output` controls line shaping: "
+    "the default 'summary' inlines short files (<=60 lines) whole and trims "
+    "longer ones to first/last 20 lines; 'full' returns every line. "
+    "Read-only — this tool does not run GMAT, mutate files, or extend the "
+    "run's retention. The registry retains the last N runs per server "
+    "process (configurable via ASTRODYNAMICS_MCP_RUN_REGISTRY_LIMIT, default "
+    "50); evicted runs return invalid_input.unknown_run_id, and an unknown "
+    "name within a known run returns invalid_input.unknown_artefact_name "
+    "with the available set in `data`. After a server restart the index is "
+    "best-effort: if the run's temp directory still exists the read "
+    "succeeds, otherwise the tool returns invalid_input.artefact_evicted. "
+    "Text outputs only — GMAT's text formats (ReportFile, OEM / CCSDS-OEM / "
+    "CCSDS-AEM / STK ephemerides, ContactLocator, solver .data, GMAT.log, "
+    "sweep manifest.jsonl) all flow through; binary outputs (SPK and "
+    "GMAT Code-500 ephemerides, sweep .parquet) are rejected with "
+    "invalid_input.binary_artefact rather than returned as decoded gibberish."
+)
+
 
 def _looks_like_inline_script(text: str) -> bool:
     """Heuristic: True if ``text`` is GMAT script content rather than a path.
@@ -1148,6 +1219,30 @@ def _walk_artefacts(result: Any) -> list[OutputPointer]:
     return artefacts
 
 
+def _collect_artefact_map(result: Any) -> dict[str, Path]:
+    """Return the GMAT resource-name → path map a producer registers.
+
+    Unions the four ``*_paths`` mappings on the run result so a follow-up
+    ``gmat_read_run_artefact(run_id, name)`` call can resolve any declared
+    output (``ReportFile1``, ``EphemerisFile1``, ``ContactLocator1``,
+    ``DC`` for solver logs, …) directly by its script-side resource name.
+    Stray files (e.g. the GMAT log) are resolved at read time via a
+    basename fallback under ``output_dir`` — they are deliberately not
+    pre-enumerated here so a sweep with thousands of nested files doesn't
+    bloat the registry's JSON index.
+    """
+    collected: dict[str, Path] = {}
+    for paths in (
+        getattr(result, "report_paths", {}),
+        getattr(result, "ephemeris_paths", {}),
+        getattr(result, "contact_paths", {}),
+        getattr(result, "solver_paths", {}),
+    ):
+        for resource_name, path in paths.items():
+            collected[str(resource_name)] = Path(path)
+    return collected
+
+
 def _select_keys(all_keys: list[str], selection: list[str] | None) -> tuple[list[str], list[str]]:
     """Return ``(kept, unknown)`` after applying ``selection`` to ``all_keys``.
 
@@ -1425,6 +1520,7 @@ def _frame_rows(frame: Any) -> list[dict[str, str | float]]:
 
 def _build_sweep_response(
     *,
+    run_id: str,
     mode: Literal["grid", "samples", "monte_carlo", "latin_hypercube"],
     script_name: str,
     frame: Any,
@@ -1468,6 +1564,7 @@ def _build_sweep_response(
     run_count_total = ok + failed + skipped
 
     return GmatSweepResponse(
+        run_id=run_id,
         mode=mode,
         script_name=script_name,
         run_count=Quantity(value=float(run_count_total), unit="1"),
@@ -1556,6 +1653,13 @@ def _register_gmat_tools() -> None:
         from gmat_run import Mission
         from gmat_run.errors import GmatError, GmatLoadError, GmatRunError
 
+        registry = default_registry()
+        run_id = registry.mint()
+        # Bring our own workspace so the dir's lifetime is ours, not tied
+        # to Results._workspace (which the gmat-run runtime cleans up on
+        # GC). The registry owns reclamation now: it ``rmtree``s the dir
+        # on eviction, and never before then.
+        workspace = Path(tempfile.mkdtemp(prefix="astrodynamics-mcp-run-"))
         script_path, cleanup_path = _resolve_script_input(script)
         try:
             try:
@@ -1577,7 +1681,7 @@ def _register_gmat_tools() -> None:
 
             t0 = time.perf_counter()
             try:
-                result = mission.run()
+                result = mission.run(working_dir=workspace)
             except GmatRunError as exc:
                 raise UpstreamError(
                     f"GMAT mission run failed: {exc}",
@@ -1586,7 +1690,14 @@ def _register_gmat_tools() -> None:
                 ) from exc
             wall_clock_s = time.perf_counter() - t0
 
+            registry.register(
+                run_id,
+                output_dir=workspace,
+                artefacts=_collect_artefact_map(result),
+            )
+
             return _build_response(
+                run_id=run_id,
                 mission=mission,
                 result=result,
                 wall_clock_s=wall_clock_s,
@@ -1708,8 +1819,6 @@ def _register_gmat_tools() -> None:
             ),
         ] = "summary",
     ) -> GmatSweepResponse:
-        import tempfile
-
         from gmat_sweep import latin_hypercube, monte_carlo, sweep
         from gmat_sweep.backends.joblib import LocalJoblibPool
         from gmat_sweep.errors import SweepConfigError
@@ -1718,13 +1827,16 @@ def _register_gmat_tools() -> None:
             mode=mode, grid=grid, samples=samples, perturb=perturb, n=n, seed=seed
         )
 
+        registry = default_registry()
+        run_id = registry.mint()
         script_path, cleanup_path = _resolve_script_input(script)
         try:
-            # The sweep's output_dir must outlive this call so `manifest_path` and
-            # `output_dir` remain valid pointers in the response. Tying the temp
-            # dir to the response object via weakref (the gmat-sweep default
-            # behaviour with `out=None`) would cleanup as soon as the response
-            # serialises out; create our own and leave it alive instead.
+            # The sweep's output_dir must outlive this call so `manifest_path`
+            # and `output_dir` remain valid pointers in the response *and* so
+            # ``gmat_read_run_artefact`` can re-read the manifest after the
+            # response serialises out. Owning the dir here (instead of letting
+            # gmat-sweep manage it with ``out=None``) hands its lifetime to
+            # the registry, which ``rmtree``s the dir only on eviction.
             sweep_out_dir = Path(tempfile.mkdtemp(prefix="astrodynamics-mcp-sweep-"))
             backend = LocalJoblibPool(max_workers=max_workers)
             t0 = time.perf_counter()
@@ -1784,12 +1896,20 @@ def _register_gmat_tools() -> None:
                 ) from exc
             wall_clock_s = time.perf_counter() - t0
 
+            manifest_path = sweep_out_dir / "manifest.jsonl"
+            registry.register(
+                run_id,
+                output_dir=sweep_out_dir,
+                artefacts={"manifest.jsonl": manifest_path} if manifest_path.is_file() else {},
+            )
+
             return _build_sweep_response(
+                run_id=run_id,
                 mode=mode,
                 script_name=script_path.name,
                 frame=frame,
                 wall_clock_s=wall_clock_s,
-                manifest_path=sweep_out_dir / "manifest.jsonl",
+                manifest_path=manifest_path,
                 output_dir=sweep_out_dir,
                 output=output,
             )
@@ -1834,6 +1954,9 @@ def _register_gmat_tools() -> None:
         from gmat_run import Mission
         from gmat_run.errors import GmatError, GmatLoadError, GmatRunError
 
+        registry = default_registry()
+        run_id = registry.mint()
+        workspace = Path(tempfile.mkdtemp(prefix="astrodynamics-mcp-run-"))
         script_path, cleanup_path = _resolve_script_input(script)
         try:
             try:
@@ -1853,10 +1976,15 @@ def _register_gmat_tools() -> None:
 
             t0 = time.perf_counter()
             try:
-                result = mission.run()
+                result = mission.run(working_dir=workspace)
             except GmatRunError as exc:
                 wall_clock_s = time.perf_counter() - t0
+                # Register the (likely empty) workspace anyway so the caller
+                # can pull the GMAT log via gmat_read_run_artefact if GMAT
+                # managed to write one before bailing out.
+                registry.register(run_id, output_dir=workspace, artefacts={})
                 return GmatExecuteScriptResponse(
+                    run_id=run_id,
                     ok=False,
                     stderr=exc.log,
                     wall_clock=Quantity(value=float(wall_clock_s), unit="s"),
@@ -1865,11 +1993,18 @@ def _register_gmat_tools() -> None:
                 )
             wall_clock_s = time.perf_counter() - t0
 
+            registry.register(
+                run_id,
+                output_dir=workspace,
+                artefacts=_collect_artefact_map(result),
+            )
+
             reports = [
                 _shape_raw_report(name, Path(result.report_paths[name]), output=output)
                 for name in result.report_paths
             ]
             return GmatExecuteScriptResponse(
+                run_id=run_id,
                 ok=True,
                 stderr=result.log,
                 wall_clock=Quantity(value=float(wall_clock_s), unit="s"),
@@ -1969,9 +2104,132 @@ def _register_gmat_tools() -> None:
             if cleanup_path is not None:
                 cleanup_path.unlink(missing_ok=True)
 
+    @register_tool(
+        name="gmat_read_run_artefact",
+        description=_READ_RUN_ARTEFACT_DESCRIPTION,
+        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+    )
+    async def gmat_read_run_artefact(
+        run_id: Annotated[
+            str,
+            Field(
+                description=(
+                    "UUID4 hex returned by an earlier gmat_run_mission, gmat_sweep, "
+                    "or gmat_execute_script call. The producer's response carries "
+                    "this in its `run_id` field; pass it back verbatim. Unknown ids "
+                    "raise invalid_input.unknown_run_id with the known set in `data`."
+                ),
+            ),
+        ],
+        name: Annotated[
+            str,
+            Field(
+                description=(
+                    "Artefact selector. Resolves first against the run's declared "
+                    "GMAT resource names (e.g. 'ReportFile1', 'EphemerisFile1', "
+                    "'ContactLocator1', or a Solver name like 'DC'); falls back to a "
+                    "plain file basename directly under the run's output directory "
+                    "(e.g. 'GMAT.log', 'manifest.jsonl', or a stray '*.data'). The "
+                    "lookup is non-recursive — files in subdirectories (e.g. the "
+                    "per-run sweep artefacts) are reachable only via their declared "
+                    "names or via the sweep manifest. Unknown names raise "
+                    "invalid_input.unknown_artefact_name with the available set in "
+                    "`data`."
+                ),
+            ),
+        ],
+        output: Annotated[
+            Literal["summary", "full"],
+            Field(
+                description=(
+                    "Line-shaping mode for the artefact text. The default 'summary' "
+                    "inlines short files (<=60 lines) whole and trims longer ones "
+                    "to first/last 20 lines so the response fits small-model input "
+                    "caps. 'full' returns every line — pass only when downstream "
+                    "consumers need the dense data and can absorb the bytes."
+                ),
+            ),
+        ] = "summary",
+    ) -> RawReportContent:
+        registry = default_registry()
+        entry = registry.get(run_id)
+        if entry is None:
+            raise InvalidInputError(
+                f"unknown run_id {run_id!r}; no run with this id is in the server-process registry",
+                code="invalid_input.unknown_run_id",
+                data={"known_run_ids": registry.known_run_ids()},
+            )
+
+        path = entry.artefacts.get(name)
+        if path is None:
+            # Basename fallback: a file written directly under output_dir
+            # that wasn't part of the producer's declared resource map
+            # (the GMAT log, a sweep manifest, stray solver .data).
+            candidate = entry.output_dir / name
+            if candidate.is_file():
+                path = candidate
+
+        if path is None:
+            basenames: list[str] = []
+            if entry.output_dir.is_dir():
+                basenames = sorted(
+                    child.name for child in entry.output_dir.iterdir() if child.is_file()
+                )
+            raise InvalidInputError(
+                f"unknown artefact {name!r} for run_id {run_id!r}; resolves "
+                f"against neither the declared resource names nor a basename "
+                f"under the run's output directory",
+                code="invalid_input.unknown_artefact_name",
+                data={
+                    "available_resource_names": sorted(entry.artefacts.keys()),
+                    "available_basenames": basenames,
+                },
+            )
+
+        path = Path(path)
+        if not path.is_file():
+            # Eagerly drop the dead entry so it doesn't keep a slot in
+            # the LRU cap until the next process restart. Symmetric with
+            # capacity-driven eviction: index JSON removed + output_dir
+            # rmtree'd, all best-effort.
+            registry.drop(run_id)
+            raise InvalidInputError(
+                f"artefact {name!r} for run_id {run_id!r} was registered but "
+                f"is no longer on disk at {path!s}; the temp directory was "
+                f"likely reaped (OS cleanup, manual deletion) between calls",
+                code="invalid_input.artefact_evicted",
+                data={"path": str(path)},
+            )
+
+        # Binary sniff. `_shape_raw_report` reads the whole file into
+        # memory before deciding what to do with it; bypassing it for
+        # binary keeps an SPK ephemeris (hundreds of MB possible) from
+        # OOMing the server only to return U+FFFD-laden garbage. The
+        # heuristic is the standard one (grep -I / git diff --binary):
+        # presence of a NULL byte in the first 8 KB. ASCII text and
+        # GMAT's text formats (OEM, CCSDS-OEM, ContactLocator, .data,
+        # GMAT.log, manifest.jsonl) never contain NULL; the binary
+        # formats (CCSDS SPK, GMAT Code-500, Parquet) do, within their
+        # headers.
+        byte_count = path.stat().st_size
+        with path.open("rb") as fh:
+            head_bytes = fh.read(_BINARY_SNIFF_BYTES)
+        if b"\x00" in head_bytes:
+            raise InvalidInputError(
+                f"artefact {name!r} for run_id {run_id!r} is binary "
+                f"({byte_count} bytes); gmat_read_run_artefact serves text "
+                f"only — binary outputs (SPK / Code-500 ephemerides, "
+                f"Parquet) cannot be returned through this tool",
+                code="invalid_input.binary_artefact",
+                data={"byte_count": byte_count},
+            )
+
+        return _shape_raw_report(name, path, output=output)
+
 
 def _build_response(
     *,
+    run_id: str,
     mission: Any,
     result: Any,
     wall_clock_s: float,
@@ -2017,6 +2275,7 @@ def _build_response(
     ]
 
     return GmatRunMissionResponse(
+        run_id=run_id,
         summary=summary_view,
         wall_clock=Quantity(value=float(wall_clock_s), unit="s"),
         reports=reports,

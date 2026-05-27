@@ -79,7 +79,8 @@ class _FakeMission:
     def summary(self) -> Any:  # pragma: no cover - escape hatch does not call this
         raise AssertionError("gmat_execute_script must not call mission.summary()")
 
-    def run(self) -> _FakeResult:
+    def run(self, *, working_dir: Any = None, overwrite: bool = False) -> _FakeResult:
+        del working_dir, overwrite
         if self._run_error is not None:
             raise self._run_error
         assert self._run_result is not None
@@ -481,7 +482,8 @@ class TestRoundTripWithRunMission:
             def summary(self) -> _Sum:
                 return _Sum()
 
-            def run(self) -> _Result:
+            def run(self, *, working_dir: Any = None, overwrite: bool = False) -> _Result:
+                del working_dir, overwrite
                 return result
 
         _install_fake_gmat_run(monkeypatch, mission=_Mission())  # type: ignore[arg-type]
@@ -505,7 +507,8 @@ class TestRoundTripWithRunMission:
             def summary(self) -> Any:
                 raise AssertionError("summary should not be called on the failure path")
 
-            def run(self) -> Any:
+            def run(self, *, working_dir: Any = None, overwrite: bool = False) -> Any:
+                del working_dir, overwrite
                 raise exc
 
         _install_fake_gmat_run(monkeypatch, mission=_Mission())  # type: ignore[arg-type]

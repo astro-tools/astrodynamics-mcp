@@ -113,7 +113,8 @@ class _FakeMission:
     def summary(self) -> _FakeMissionSummary:
         return self._summary
 
-    def run(self) -> _FakeResult:
+    def run(self, *, working_dir: Any = None, overwrite: bool = False) -> _FakeResult:
+        del working_dir, overwrite
         return self._run_result
 
 
@@ -170,7 +171,8 @@ def _install_fake_gmat_run(
 
     if run_error is not None:
 
-        def _raise() -> _FakeResult:
+        def _raise(*, working_dir: Any = None, overwrite: bool = False) -> _FakeResult:
+            del working_dir, overwrite
             raise run_error
 
         mission.run = _raise  # type: ignore[method-assign]
@@ -608,7 +610,11 @@ class TestResponseSchema:
         )
         mission = _FakeMission(summary=_trivial_summary(), run_result=result)
         response = _build_response(
-            mission=mission, result=result, wall_clock_s=0.05, select_outputs=None
+            run_id="0" * 32,
+            mission=mission,
+            result=result,
+            wall_clock_s=0.05,
+            select_outputs=None,
         )
 
         first = response.model_dump_json()
