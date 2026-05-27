@@ -15,12 +15,12 @@ the absolute path everywhere `astrodynamics-mcp` appears below.
 If your client has a registry browser, the one-click install paths are
 preferable to hand-editing JSON:
 
-- **[Smithery](https://smithery.ai/server/astro-tools/astrodynamics-mcp)** —
-  `astro-tools/astrodynamics-mcp`. Click *Install* and Smithery hands the
-  MCPB bundle to your selected client.
 - **[Official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers/io.github.astro-tools/astrodynamics-mcp)** —
   `io.github.astro-tools/astrodynamics-mcp`. Read by `mcp-cli`, GitHub
   Copilot's MCP UI, and any other registry-aware client.
+- **[Smithery](https://smithery.ai/server/astro-tools/astrodynamics-mcp)** —
+  `astro-tools/astrodynamics-mcp`. Click *Install* and Smithery hands the
+  MCPB bundle to your selected client.
 - **Anthropic's Claude Desktop directory** — surfaces inside Claude
   Desktop's *Browse extensions* UI once the v0.1.1 bundle clears
   Anthropic's review queue.
