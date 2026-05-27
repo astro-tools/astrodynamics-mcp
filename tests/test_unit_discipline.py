@@ -27,6 +27,7 @@ from astrodynamics_mcp.schemas.base import (
 from astrodynamics_mcp.tools.access import AccessWindowsResponse
 from astrodynamics_mcp.tools.bplane import BplaneTargetResponse
 from astrodynamics_mcp.tools.frames import FrameTransformResponse
+from astrodynamics_mcp.tools.gmat import GmatRunMissionResponse
 from astrodynamics_mcp.tools.lambert import LambertSolveResponse
 from astrodynamics_mcp.tools.porkchop import PorkchopResponse
 from astrodynamics_mcp.tools.propagation import Sgp4PropagateResponse
@@ -65,6 +66,7 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
     FrameTransformResponse,
     PorkchopResponse,
     BplaneTargetResponse,
+    GmatRunMissionResponse,
     # TimeConvertResponse is deliberately excluded — see import-level note above.
 ]
 

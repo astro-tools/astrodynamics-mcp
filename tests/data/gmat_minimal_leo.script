@@ -1,0 +1,34 @@
+% Minimal LEO + ReportFile fixture for the astrodynamics-mcp gmat_run_mission
+% integration test. Mirrors gmat-run's Ex_MinimalLEO.script: a single
+% Spacecraft, a barebones ForceModel, a Propagator, and a ReportFile that
+% records Cartesian state across a short propagation arc.
+
+Create Spacecraft Sat
+Sat.DateFormat = UTCGregorian
+Sat.Epoch = '01 Jan 2026 12:00:00.000'
+Sat.CoordinateSystem = EarthMJ2000Eq
+Sat.DisplayStateType = Keplerian
+Sat.SMA = 7000
+Sat.ECC = 0.001
+Sat.INC = 28.5
+Sat.RAAN = 75
+Sat.AOP = 90
+Sat.TA = 0
+
+Create ForceModel FM
+FM.CentralBody = Earth
+FM.PrimaryBodies = {Earth}
+
+Create Propagator Prop
+Prop.FM = FM
+Prop.Type = PrinceDormand78
+Prop.InitialStepSize = 60
+Prop.Accuracy = 1e-9
+
+Create ReportFile RF
+RF.Filename = 'leo_state.txt'
+RF.Add = {Sat.UTCGregorian, Sat.X, Sat.Y, Sat.Z, Sat.SMA}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+Propagate Prop(Sat) {Sat.ElapsedSecs = 600}
