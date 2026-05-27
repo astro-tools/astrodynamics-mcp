@@ -1,11 +1,11 @@
 """GMAT tool slots — registered only when the ``gmat-run`` driver is importable.
 
-The four tools are placeholders for the v0.2 GMAT integration: each per-tool
-issue (``gmat_run_mission``, ``gmat_sweep``, ``gmat_execute_script``,
-``gmat_validate_script``) fills in its own body and refines its own schema.
-This module owns only the conditional-registration mechanism and a uniform
-description discipline so subsequent issues drop in without churning the lint
-or the transport-equivalence contract.
+The four tools (``gmat_run_mission``, ``gmat_sweep``, ``gmat_execute_script``,
+``gmat_validate_script``) are placeholders: each per-tool follow-up issue
+fills in its own body and refines its own schema. This module owns only the
+conditional-registration mechanism and a uniform description discipline so
+subsequent issues drop in without churning the lint or the
+transport-equivalence contract.
 
 The guard is intentionally a single ``try: import gmat_run``: ``gmat-sweep``
 declares ``gmat-run`` as a dependency, so resolving the ``[gmat]`` extra

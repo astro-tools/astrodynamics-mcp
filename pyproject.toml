@@ -50,7 +50,7 @@ dependencies = [
   "platformdirs>=4.0",
 ]
 
-# Placeholder extras — body wiring for [spice] and [viz] lands in v0.3.
+# Placeholder extras — [spice] and [viz] are deferred until their tools land.
 [project.optional-dependencies]
 gmat = ["gmat-run>=0.6", "gmat-sweep>=0.6"]
 spice = []
