@@ -813,3 +813,73 @@ class TestIntegrationAgainstRealGmat:
         assert "run_id" in parsed.head[0]
         # Manifest pointer exists on disk after the tool returns.
         assert Path(parsed.manifest_path).is_file()
+
+
+# ---------------------------------------------------------------------------
+# Chained producer → read seam
+# ---------------------------------------------------------------------------
+
+
+class TestChainedReadback:
+    """Drives gmat_sweep end-to-end, then reads ``manifest.jsonl`` back
+    through gmat_read_run_artefact using the returned run_id. Sweep
+    registers only the manifest (not per-run artefacts) so the chain
+    check rounds through that file rather than a ReportFile — same seam
+    semantics, different file.
+    """
+
+    async def test_sweep_then_read_manifest(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from astrodynamics_mcp import runs as runs_module
+        from astrodynamics_mcp.runs import RunRegistry
+        from astrodynamics_mcp.tools.gmat import RawReportContent
+
+        registry = RunRegistry(directory=tmp_path / "cache", limit=5)
+        monkeypatch.setattr(runs_module, "_default_registry", registry)
+
+        # The bare _FakeSweepCalls.sweep doesn't touch its ``out`` kwarg;
+        # the producer only registers manifest.jsonl when it exists, so
+        # we wrap sweep() to write a tiny manifest before returning.
+        manifest_text = '{"run_id":0,"status":"ok","Sat.SMA":7000.0}\n'
+        calls = _FakeSweepCalls(result=_trivial_result(rows=1, with_status=False))
+        original_sweep = calls.sweep
+
+        def writing_sweep(script: Any, **kwargs: Any) -> Any:
+            out_dir = Path(kwargs["out"])
+            # write_bytes, not write_text, so Windows doesn't translate
+            # \n to \r\n — the byte-equality assertion below relies on
+            # identity.
+            (out_dir / "manifest.jsonl").write_bytes(manifest_text.encode("utf-8"))
+            return original_sweep(script, **kwargs)
+
+        calls.sweep = writing_sweep  # type: ignore[method-assign]
+        _install_fake_gmat_sweep(monkeypatch, calls)
+        fresh = _fresh_mcp(monkeypatch)
+        script = tmp_path / "fixture.script"
+        script.write_text("% noop\n")
+
+        _content, structured = await fresh.call_tool(
+            "gmat_sweep",
+            {
+                "script": str(script),
+                "mode": "grid",
+                "grid": {"Sat.SMA": [7000.0]},
+            },
+        )
+        producer = GmatSweepResponse.model_validate(structured)
+        # The seam: producer registered against this singleton.
+        entry = registry.get(producer.run_id)
+        assert entry is not None
+        assert "manifest.jsonl" in entry.artefacts
+
+        _content, structured = await fresh.call_tool(
+            "gmat_read_run_artefact",
+            {"run_id": producer.run_id, "name": "manifest.jsonl", "output": "full"},
+        )
+        readback = RawReportContent.model_validate(structured)
+        assert readback.content == manifest_text
+        assert readback.truncated is False
+        assert readback.byte_count.value == float(
+            (Path(producer.output_dir) / "manifest.jsonl").stat().st_size
+        )
