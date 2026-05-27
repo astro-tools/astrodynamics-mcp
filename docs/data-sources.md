@@ -6,6 +6,9 @@ calls don't hammer the upstream, and each handles network failure by
 falling back to a cached value flagged `stale=true` rather than
 silently returning nothing.
 
+For credentialled sources (Space-Track, DISCOSweb) the credential
+passthrough is documented separately — see [Credentials](credentials.md).
+
 ## CelesTrak — `tle_lookup`
 
 [CelesTrak](https://celestrak.org) is the canonical no-auth source for
