@@ -157,6 +157,7 @@ pythonpath = ["."]
 addopts = "-ra --strict-markers --strict-config -m 'not integration'"
 markers = [
   "integration: tests that require live external data sources or a real HTTP transport (deselect with -m 'not integration')",
+  "gmat_installed: tests that require a working GMAT install + the [gmat] extra (gmat-run / gmat-sweep); auto-skipped when gmat_run is not importable",
 ]
 asyncio_mode = "auto"
 

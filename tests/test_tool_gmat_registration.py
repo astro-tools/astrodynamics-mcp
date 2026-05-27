@@ -27,6 +27,11 @@ _EXPECTED_TOOL_NAMES = frozenset(
     }
 )
 
+# Slots still landing in follow-up issues. `gmat_run_mission` graduated to a
+# real body in issue #71; the placeholder body check is parametrized over the
+# remaining stubs only.
+_PLACEHOLDER_TOOL_NAMES = _EXPECTED_TOOL_NAMES - {"gmat_run_mission"}
+
 
 class TestNegativeCase:
     """Without ``gmat-run`` installed, the real surface has no GMAT slots."""
@@ -78,7 +83,7 @@ class TestPositiveCase:
                 assert schema.get("description"), f"{t.name}.{param_name} missing description"
         assert check_tool_descriptions(tools) == []
 
-    @pytest.mark.parametrize("tool_name", sorted(_EXPECTED_TOOL_NAMES))
+    @pytest.mark.parametrize("tool_name", sorted(_PLACEHOLDER_TOOL_NAMES))
     async def test_placeholder_body_raises_not_implemented(
         self, _isolated_mcp: FastMCP, tool_name: str
     ) -> None:
