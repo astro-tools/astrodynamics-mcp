@@ -10,7 +10,7 @@ permitted_traces:
         r1: {equals: [5000, 10000, 2100]}
         r2: {equals: [-14600, 2500, 7000]}
         tof: {equals: 3600}
-        mu: {one_of: ["earth", 398600.4418, null]}
+        mu: {one_of: ["earth", 398600.4418]}
         revs: {one_of: [0, null]}
 functional_answer:
   - path: "$.v1.unit"

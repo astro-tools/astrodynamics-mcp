@@ -95,13 +95,16 @@ _DESCRIPTION = (
     "Fetch current two-line element sets (TLEs) from CelesTrak by NORAD "
     "catalogue ID, satellite name, or a CelesTrak group/category name. "
     "Returns parsed OMM JSON plus the raw two-line strings. "
-    "e.g. tle_lookup('25544') for the ISS, tle_lookup('HUBBLE') for the "
-    "Hubble Space Telescope, or tle_lookup('weather') for the multi-satellite "
-    "weather category. Names are case-insensitive but CelesTrak prefers the "
-    "exact catalog spelling — 'ISS (ZARYA)', not 'iss'. If a name lookup "
-    "returns no results, fall back to the NORAD ID. Supported group keywords: "
-    "'active', 'stations', 'weather', 'visual', 'science', 'geo', 'gnss', "
-    "'military', 'last-30-days', 'starlink', 'oneweb'."
+    "e.g. tle_lookup('25544') for the ISS, tle_lookup('HST') for the "
+    "Hubble Space Telescope, or tle_lookup('stations') for the multi-"
+    "satellite space-stations category. CelesTrak's NAME parameter is a "
+    "substring match against the catalog name, which is often abbreviated — "
+    "Hubble Space Telescope is 'HST', not 'HUBBLE' (a name search for "
+    "'HUBBLE' returns unrelated Spire smallsats). Names are case-insensitive. "
+    "If a name lookup returns the wrong satellite or no results, fall back "
+    "to the NORAD ID. Supported group keywords: 'active', 'stations', "
+    "'weather', 'visual', 'science', 'geo', 'gnss', 'military', "
+    "'last-30-days', 'starlink', 'oneweb'."
 )
 
 
@@ -116,11 +119,13 @@ async def tle_lookup(
         Field(
             description=(
                 "What to look up: a NORAD catalogue ID like '25544', a satellite "
-                "name (case-insensitive, prefers exact catalog spelling like "
-                "'ISS (ZARYA)' or 'HUBBLE'), or a CelesTrak group keyword "
-                "('active', 'stations', 'weather', 'visual', 'science', 'geo', "
-                "'gnss', 'military', 'last-30-days', 'starlink', 'oneweb'). "
-                "Name lookups returning zero results should fall back to the NORAD ID."
+                "name (case-insensitive substring match against the catalog name — "
+                "prefer the exact catalog spelling like 'ISS (ZARYA)' or 'HST', "
+                "not the colloquial 'iss' or 'HUBBLE'), or a CelesTrak group "
+                "keyword ('active', 'stations', 'weather', 'visual', 'science', "
+                "'geo', 'gnss', 'military', 'last-30-days', 'starlink', 'oneweb'). "
+                "If a name lookup returns the wrong satellite or zero results, "
+                "fall back to the NORAD ID."
             ),
         ),
     ],

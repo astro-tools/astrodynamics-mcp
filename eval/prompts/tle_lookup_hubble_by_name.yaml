@@ -4,7 +4,7 @@ tools_required: [tle_lookup]
 permitted_traces:
   - - tool: tle_lookup
       arg_constraints:
-        query: {case_insensitive_contains: "HUBBLE"}
+        query: {case_insensitive_contains: "HST"}
   - - tool: tle_lookup
       arg_constraints:
         query: {equals: "20580"}
@@ -14,7 +14,11 @@ functional_answer:
   - path: "$.results[0].norad_id"
     equals: "20580"
   - path: "$.results[0].name"
-    case_insensitive_contains: "HUBBLE"
+    case_insensitive_contains: "HST"
 notes: |
   Off-axis variant — name lookup (vs the NORAD-ID primary). Either route
-  is correct: the LLM can search by name or recall the NORAD ID (20580).
+  is correct: the LLM can search by the catalog name 'HST' or recall the
+  NORAD ID (20580). The colloquial 'HUBBLE' is *not* a viable query —
+  CelesTrak indexes the Hubble Space Telescope as 'HST', and a substring
+  search for 'HUBBLE' returns unrelated Spire Lemur smallsats (NORAD
+  64562, 64565, 64592, 64840 — 'HUBBLE 6', 'LEMUR-2-HUBBLE-4', etc.).

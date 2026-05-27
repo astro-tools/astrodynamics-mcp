@@ -9,7 +9,7 @@ permitted_traces:
       arg_constraints:
         algorithm: {equals: "gooding"}
         tof: {equals: 3600}
-        mu: {one_of: ["earth", 398600.4418, null]}
+        mu: {one_of: ["earth", 398600.4418]}
 functional_answer:
   - path: "$.v1.value"
     numeric_tolerance:
