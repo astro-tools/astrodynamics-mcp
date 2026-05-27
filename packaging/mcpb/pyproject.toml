@@ -1,0 +1,8 @@
+[project]
+name = "astrodynamics-mcp-bundle"
+version = "{{VERSION}}"
+description = "MCPB launcher for astrodynamics-mcp. Resolved by uv at bundle launch time."
+requires-python = ">=3.10"
+dependencies = [
+  "astrodynamics-mcp=={{VERSION}}",
+]

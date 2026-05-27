@@ -51,9 +51,99 @@ jobs:
         with:
           skip-existing: true
 
+  pack-mcpb:
+    name: pack mcpb bundle
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install -g @anthropic-ai/mcpb@2.1.2
+      - name: Substitute {{VERSION}} in bundle templates
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${REF_NAME#v}"
+          sed -i "s/{{VERSION}}/${VERSION}/g" packaging/mcpb/manifest.json
+          sed -i "s/{{VERSION}}/${VERSION}/g" packaging/mcpb/pyproject.toml
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+      - run: mcpb validate packaging/mcpb/manifest.json
+      - run: mcpb pack packaging/mcpb "astrodynamics-mcp-${VERSION}.mcpb"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcpb
+          path: "astrodynamics-mcp-*.mcpb"
+          if-no-files-found: error
+
+  publish-smithery:
+    name: publish to Smithery
+    needs: [pack-mcpb, publish-pypi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install -g @smithery/cli@4.11.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcpb
+          path: .
+      - name: Publish bundle to Smithery
+        env:
+          SMITHERY_API_KEY: ${{ secrets.SMITHERY_API_KEY }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${REF_NAME#v}"
+          smithery mcp publish "astrodynamics-mcp-${VERSION}.mcpb" \
+            -n astro-tools/astrodynamics-mcp
+
+  publish-mcp-registry:
+    name: publish to Official MCP Registry
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mcp-publisher (pinned)
+        # Pinned to a specific release; bump explicitly on each release-cut.
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/download/v1.7.9/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+          chmod +x mcp-publisher
+      - name: Substitute {{VERSION}} in server.json
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${REF_NAME#v}"
+          sed -i "s/{{VERSION}}/${VERSION}/g" packaging/mcp-registry/server.json
+      - name: Wait for PyPI to surface the just-published version
+        # The registry server verifies the PyPI package version exists before
+        # accepting the publish; PyPI replication can lag a few seconds.
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${REF_NAME#v}"
+          for attempt in 1 2 3 4 5 6; do
+            if curl -sfL "https://pypi.org/pypi/astrodynamics-mcp/${VERSION}/json" > /dev/null; then
+              echo "PyPI surfaces ${VERSION}"; exit 0
+            fi
+            echo "Attempt ${attempt}: PyPI does not yet surface ${VERSION}; sleeping 15s"
+            sleep 15
+          done
+          echo "PyPI did not surface ${VERSION} within 90s; aborting"; exit 1
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish packaging/mcp-registry/server.json
+
   github-release:
     name: github release
-    needs: publish-pypi
+    needs: [publish-pypi, pack-mcpb]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -62,6 +152,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: dist
+          path: dist/
+      - uses: actions/download-artifact@v4
+        with:
+          name: mcpb
           path: dist/
       - name: Create GitHub Release
         env:
