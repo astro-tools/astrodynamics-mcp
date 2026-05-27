@@ -5,6 +5,23 @@ All notable changes to astrodynamics-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-05-27
+
+### Fixed
+
+- Release workflow's `publish-smithery` and `publish-mcp-registry` jobs, both
+  of which failed on the v0.1.1 tag fire. The Official MCP Registry rejects
+  any `$schema` URL outside the canonical static form
+  (`https://static.modelcontextprotocol.io/schemas/<date>/server.schema.json`);
+  the GitHub-raw URL the schema's own `$id` claims was the wrong source of
+  truth. Smithery's CLI does not recognise MCPB `server.type: "uv"`. Fix:
+  corrected the registry `$schema`, and added a Smithery-specific bundle
+  under `packaging/mcpb-smithery/` with `type: "python"` plus
+  `mcp_config.command: "uv"` and inline `--with` deps — the pattern
+  Smithery's own MCPB bundling docs document. The canonical
+  `packaging/mcpb/` bundle (`type: "uv"`) is unchanged and remains the
+  asset attached to the GitHub Release.
+
 ## [0.1.1] — 2026-05-26
 
 ### Added
@@ -111,5 +128,6 @@ GitHub Models on every workflow dispatch.
   trusted publishing, and creates the GitHub Release on every `v*` tag.
   macOS is deferred to v0.2 (#1, #2).
 
+[0.1.2]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/astro-tools/astrodynamics-mcp/releases/tag/v0.1.0
