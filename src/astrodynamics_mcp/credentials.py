@@ -1,6 +1,6 @@
 """Credential passthrough for credentialled upstream data sources.
 
-The v0.2 surface introduces tools backed by sources that require per-user
+Some upstream sources behind the tool surface require per-user
 credentials (Space-Track, ESA DISCOSweb, …). This module provides the
 single lookup function tool bodies call to fetch those credentials:
 :func:`require_credential`. It returns a field dict when the credential
@@ -60,10 +60,11 @@ SOURCES: Final[Mapping[str, Credential]] = {
     "spacetrack": Credential(name="spacetrack", fields=("username", "password")),
     "discosweb": Credential(name="discosweb", fields=("token",)),
 }
-"""The registry of known credentialled sources for v0.2.
+"""The registry of known credentialled sources.
 
-NASA Earthdata is intentionally absent — it is deferred to v0.3 alongside
-the SPICE tooling, since no v0.2 tool consumes it.
+Each entry is referenced by its lowercase name in environment-variable
+names, ``_meta`` keys, and error codes. A new credentialled source means
+a new entry here and a new row in the docs matrix.
 """
 
 

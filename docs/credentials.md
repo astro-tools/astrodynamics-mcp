@@ -1,6 +1,6 @@
 # Credentials
 
-A small number of credentialled upstream sources back the v0.2+ tool
+A small number of credentialled upstream sources back the tool
 surface: ESA DISCOSweb and 18 SDS / USSPACECOM's Space-Track. Both
 require per-user accounts; neither permits redistribution of derived
 products that would let astrodynamics-mcp ship one shared account on
@@ -27,11 +27,6 @@ is where the credential came from.
 |--------|-----------------|-------------------|
 | `spacetrack` | `username`, `password` | `credential_required.spacetrack` |
 | `discosweb` | `token` | `credential_required.discosweb` |
-
-NASA Earthdata is **deferred to v0.3** alongside the SPICE tooling, since
-no v0.2 tool consumes it. LeoLabs is not on the list at all — their
-commercial ToS prohibits redistribution of derived products and we don't
-anticipate adding passthrough for individual paid subscribers.
 
 ## stdio — environment variables
 

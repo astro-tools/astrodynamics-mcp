@@ -74,7 +74,7 @@ class TestRegistry:
         assert spec.fields == ("token",)
 
     def test_earthdata_not_registered(self) -> None:
-        """v0.3 deferred — must not silently register before its consumer ships."""
+        """Earthdata has no consumer tool yet — must not silently land on the registry."""
         assert "earthdata" not in SOURCES
 
 
@@ -251,9 +251,7 @@ class TestMissingCredentials:
             "missing_fields": ["password"],
         }
 
-    def test_partial_meta_satisfied_by_partial_env(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_partial_meta_satisfied_by_partial_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Cross-source missing-fields accounting: meta has X, env has Y → still missing.
 
         Atomic-source rule: even though X is at meta and Y is at env, no
