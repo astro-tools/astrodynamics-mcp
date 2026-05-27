@@ -221,6 +221,11 @@ class TestErrorShapes:
                 {"run_id": run_id, "name": "ReportFile1"},
             )
         assert "invalid_input.artefact_evicted" in str(excinfo.value)
+        # Eager eviction: the dead entry is dropped right away so a
+        # subsequent call surfaces unknown_run_id rather than spinning
+        # on the same stale path.
+        assert registry.get(run_id) is None
+        assert run_id not in registry.known_run_ids()
 
 
 # ---------------------------------------------------------------------------

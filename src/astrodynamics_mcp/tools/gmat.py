@@ -2177,6 +2177,11 @@ def _register_gmat_tools() -> None:
 
         path = Path(path)
         if not path.is_file():
+            # Eagerly drop the dead entry so it doesn't keep a slot in
+            # the LRU cap until the next process restart. Symmetric with
+            # capacity-driven eviction: index JSON removed + output_dir
+            # rmtree'd, all best-effort.
+            registry.drop(run_id)
             raise InvalidInputError(
                 f"artefact {name!r} for run_id {run_id!r} was registered but "
                 f"is no longer on disk at {path!s}; the temp directory was "

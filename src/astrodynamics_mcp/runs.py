@@ -190,6 +190,25 @@ class RunRegistry:
         self._ensure_loaded()
         return self._entries.get(run_id)
 
+    def drop(self, run_id: str) -> bool:
+        """Remove ``run_id`` eagerly. Returns whether anything was removed.
+
+        Symmetric with cap-driven eviction: drops the in-memory entry,
+        unlinks its disk-index JSON, and ``shutil.rmtree``s the run's
+        ``output_dir`` (``ignore_errors=True`` so a partially-reaped dir
+        is fine). Called from the read tool when an external reaper
+        (systemd-tmpfiles, manual cleanup) made the registered path
+        unreadable mid-process — keeping the dead entry around would
+        otherwise occupy a slot in the LRU cap until the next process
+        restart.
+        """
+        self._ensure_loaded()
+        entry = self._entries.pop(run_id, None)
+        if entry is None:
+            return False
+        self._drop_payload(entry)
+        return True
+
     def known_run_ids(self) -> list[str]:
         """Return all known ``run_id``s in creation order (oldest first)."""
         self._ensure_loaded()

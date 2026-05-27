@@ -159,6 +159,41 @@ class TestEviction:
         assert reg.get(rid).output_dir == out_b  # type: ignore[union-attr]
 
 
+class TestDrop:
+    def test_drop_removes_entry_and_payload(self, tmp_path: Path, workspace: Path) -> None:
+        reg = RunRegistry(directory=tmp_path, limit=5)
+        out = _make_workspace(workspace, "run-a")
+        rid = reg.mint()
+        reg.register(rid, output_dir=out, artefacts={"ReportFile1": out / "ReportFile1.txt"})
+
+        assert reg.drop(rid) is True
+        assert reg.get(rid) is None
+        assert reg.known_run_ids() == []
+        # Index JSON is gone …
+        assert not (tmp_path / "runs" / f"{rid}.json").exists()
+        # … and the output dir is rmtreed.
+        assert not out.exists()
+
+    def test_drop_unknown_id_is_noop(self, tmp_path: Path) -> None:
+        reg = RunRegistry(directory=tmp_path, limit=5)
+        assert reg.drop("does-not-exist") is False
+
+    def test_drop_survives_already_missing_output_dir(
+        self, tmp_path: Path, workspace: Path
+    ) -> None:
+        """The motivating case: an external reaper got there first."""
+        reg = RunRegistry(directory=tmp_path, limit=5)
+        out = _make_workspace(workspace, "run-a")
+        rid = reg.mint()
+        reg.register(rid, output_dir=out, artefacts={"ReportFile1": out / "ReportFile1.txt"})
+        import shutil
+
+        shutil.rmtree(out)
+        # Should not raise.
+        assert reg.drop(rid) is True
+        assert reg.get(rid) is None
+
+
 class TestLimitResolution:
     def test_constructor_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ASTRODYNAMICS_MCP_RUN_REGISTRY_LIMIT", "10")
