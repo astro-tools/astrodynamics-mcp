@@ -20,7 +20,7 @@ import math
 import tempfile
 import time
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
@@ -175,10 +175,13 @@ class MissionSummaryView(BaseModel):
 class ReportFileShape(BaseModel):
     """Shape-disciplined inline view of one ReportFile output.
 
-    Small reports (``row_count <= 20``) come back fully inline via ``rows``;
-    larger reports populate ``head`` (first five rows) and ``tail`` (last
-    five rows) so the response fits small-model input caps regardless of how
-    long the run was. ``truncated`` distinguishes the two modes.
+    In the default ``output="summary"`` mode, small reports (``row_count
+    <= 20``) come back fully inline via ``rows`` while larger reports
+    populate ``head`` (first five rows) and ``tail`` (last five rows) so
+    the response fits small-model input caps regardless of how long the
+    run was. In ``output="full"`` mode the response always carries every
+    row regardless of size; ``head`` / ``tail`` are unused there.
+    ``truncated`` distinguishes the two cases at read time.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -339,9 +342,12 @@ _RUN_MISSION_DESCRIPTION = (
     "the same grammar as the GMAT script — Sat.SMA not Sat['SMA'], and the value's "
     "Python type must match the field's GMAT type. `select_outputs` filters which "
     "ReportFile / EphemerisFile / ContactLocator outputs appear in the response; "
-    "leave it null to return every output. Engine failures (script parse errors, "
-    "RunScript errors) surface as upstream.gmat_run_* error codes; invalid override "
-    "paths surface as invalid_input.gmat_override_*."
+    "leave it null to return every output. `output` controls row shaping for "
+    "ReportFile data: the default 'summary' inlines small reports and trims large "
+    "ones to first/last five rows so the response fits small-model input caps; "
+    "'full' returns every row of every selected report. Engine failures (script "
+    "parse errors, RunScript errors) surface as upstream.gmat_run_* error codes; "
+    "invalid override paths surface as invalid_input.gmat_override_*."
 )
 
 _SWEEP_DESCRIPTION = (
@@ -470,12 +476,20 @@ def _row_to_dict(columns: list[str], row: Any) -> dict[str, str | float]:
     return {col: _cell_value(row[i]) for i, col in enumerate(columns)}
 
 
-def _shape_report(name: str, path: Path, frame: Any) -> ReportFileShape:
-    """Build a :class:`ReportFileShape` from a parsed ReportFile DataFrame."""
+def _shape_report(
+    name: str, path: Path, frame: Any, *, output: Literal["summary", "full"]
+) -> ReportFileShape:
+    """Build a :class:`ReportFileShape` from a parsed ReportFile DataFrame.
+
+    In ``output="summary"`` mode the response trims rows past the inline
+    threshold to head + tail; in ``output="full"`` mode every row is
+    inlined regardless of size.
+    """
     columns = [str(c) for c in frame.columns]
     row_count = len(frame.index)
     values = frame.to_numpy(dtype=object)
-    if row_count <= _REPORT_INLINE_ROW_THRESHOLD:
+    inline_full = output == "full" or row_count <= _REPORT_INLINE_ROW_THRESHOLD
+    if inline_full:
         rows = [_row_to_dict(columns, values[i]) for i in range(row_count)]
         head: list[dict[str, str | float]] = []
         tail: list[dict[str, str | float]] = []
@@ -592,6 +606,21 @@ def _register_gmat_tools() -> None:
                 ),
             ),
         ] = None,
+        output: Annotated[
+            Literal["summary", "full"],
+            Field(
+                description=(
+                    "Row-shaping mode for ReportFile outputs. The default 'summary' "
+                    "inlines small reports (<=20 rows) whole and trims larger ones "
+                    "to first/last five rows so the response fits small-model input "
+                    "caps. 'full' returns every row of every selected report — pass "
+                    "only when downstream consumers need the dense data and can "
+                    "absorb the bytes. Ephemerides and ContactLocators are always "
+                    "pointer-only regardless of mode (they are intrinsically too "
+                    "large to inline)."
+                ),
+            ),
+        ] = "summary",
     ) -> GmatRunMissionResponse:
         from gmat_run import Mission
         from gmat_run.errors import GmatError, GmatLoadError, GmatRunError
@@ -631,6 +660,7 @@ def _register_gmat_tools() -> None:
                 result=result,
                 wall_clock_s=wall_clock_s,
                 select_outputs=select_outputs,
+                output=output,
             )
         finally:
             if cleanup_path is not None:
@@ -697,6 +727,7 @@ def _build_response(
     result: Any,
     wall_clock_s: float,
     select_outputs: list[str] | None,
+    output: Literal["summary", "full"] = "summary",
 ) -> GmatRunMissionResponse:
     """Assemble a :class:`GmatRunMissionResponse` from a finished run.
 
@@ -727,7 +758,7 @@ def _build_response(
     reports: list[ReportFileShape] = []
     for name in report_names:
         frame = result.reports[name]
-        reports.append(_shape_report(name, result.report_paths[name], frame))
+        reports.append(_shape_report(name, result.report_paths[name], frame, output=output))
 
     ephemerides = [
         OutputPointer(name=name, path=str(result.ephemeris_paths[name])) for name in ephemeris_names

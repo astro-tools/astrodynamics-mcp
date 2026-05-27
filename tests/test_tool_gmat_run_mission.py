@@ -302,7 +302,7 @@ class TestScriptInputResolution:
 class TestReportShape:
     def test_small_report_inlines_full_rows(self, tmp_path: Path) -> None:
         df = _small_report(rows=5)
-        shape = _shape_report("RF", tmp_path / "leo.txt", df)
+        shape = _shape_report("RF", tmp_path / "leo.txt", df, output="summary")
         assert shape.truncated is False
         assert shape.head == []
         assert shape.tail == []
@@ -313,9 +313,9 @@ class TestReportShape:
         assert shape.row_count.unit == "1"
         assert shape.columns == ["Sat.UTCGregorian", "Sat.X", "Sat.Y", "Sat.SMA"]
 
-    def test_large_report_emits_head_and_tail(self, tmp_path: Path) -> None:
+    def test_large_report_emits_head_and_tail_in_summary_mode(self, tmp_path: Path) -> None:
         df = _large_report(rows=100)
-        shape = _shape_report("RF", tmp_path / "leo.txt", df)
+        shape = _shape_report("RF", tmp_path / "leo.txt", df, output="summary")
         assert shape.truncated is True
         assert shape.rows == []
         assert len(shape.head) == 5
@@ -324,16 +324,26 @@ class TestReportShape:
         assert shape.tail[-1]["Sat.UTCGregorian"] == "row-0099"
         assert shape.row_count.value == 100.0
 
-    def test_threshold_boundary_inlines(self, tmp_path: Path) -> None:
+    def test_large_report_inlines_every_row_in_full_mode(self, tmp_path: Path) -> None:
+        df = _large_report(rows=100)
+        shape = _shape_report("RF", tmp_path / "leo.txt", df, output="full")
+        assert shape.truncated is False
+        assert shape.head == []
+        assert shape.tail == []
+        assert len(shape.rows) == 100
+        assert shape.rows[0]["Sat.UTCGregorian"] == "row-0000"
+        assert shape.rows[-1]["Sat.UTCGregorian"] == "row-0099"
+
+    def test_threshold_boundary_inlines_in_summary_mode(self, tmp_path: Path) -> None:
         # row_count == 20 is the inclusive inline threshold.
         df = _large_report(rows=20)
-        shape = _shape_report("RF", tmp_path / "leo.txt", df)
+        shape = _shape_report("RF", tmp_path / "leo.txt", df, output="summary")
         assert shape.truncated is False
         assert len(shape.rows) == 20
 
-    def test_threshold_boundary_truncates(self, tmp_path: Path) -> None:
+    def test_threshold_boundary_truncates_in_summary_mode(self, tmp_path: Path) -> None:
         df = _large_report(rows=21)
-        shape = _shape_report("RF", tmp_path / "leo.txt", df)
+        shape = _shape_report("RF", tmp_path / "leo.txt", df, output="summary")
         assert shape.truncated is True
         assert len(shape.head) == 5
         assert len(shape.tail) == 5
@@ -448,6 +458,26 @@ class TestToolThroughMcp:
         )
         parsed = GmatRunMissionResponse.model_validate(structured)
         assert [r.name for r in parsed.reports] == ["RF2"]
+
+    async def test_output_full_inlines_every_row(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        script = tmp_path / "fixture.script"
+        script.write_text("% noop\n")
+        result = _FakeResult(
+            reports={"RF": _large_report(50)},
+            report_paths={"RF": tmp_path / "leo.txt"},
+        )
+        mission = _FakeMission(summary=_trivial_summary(), run_result=result)
+        _install_fake_gmat_run(monkeypatch, mission=mission)
+        fresh = _fresh_mcp(monkeypatch)
+
+        _content, structured = await fresh.call_tool(
+            "gmat_run_mission", {"script": str(script), "output": "full"}
+        )
+        parsed = GmatRunMissionResponse.model_validate(structured)
+        assert parsed.reports[0].truncated is False
+        assert len(parsed.reports[0].rows) == 50
 
     async def test_select_outputs_rejects_unknown_names(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
