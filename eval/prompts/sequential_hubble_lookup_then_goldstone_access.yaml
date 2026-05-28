@@ -10,9 +10,7 @@ permitted_traces:
         query:
           one_of:
             - "20580"
-            - "HUBBLE"
-            - "Hubble"
-            - "hubble"
+            - "HST"
     - tool: access_windows
       arg_constraints:
         observer:
@@ -27,4 +25,7 @@ functional_answer:
 notes: |
   Cross-tool: tle_lookup feeds access_windows. The 15-degree mask is
   the DSN-style threshold documented in the access_windows tool
-  description.
+  description. The valid Hubble queries are the catalog name 'HST' or
+  the NORAD ID 20580 — the colloquial 'HUBBLE' is *not* viable (CelesTrak
+  indexes Hubble as 'HST'; a 'HUBBLE' substring search returns unrelated
+  Spire Lemur smallsats).

@@ -12,9 +12,7 @@ permitted_traces:
         query:
           one_of:
             - "20580"
-            - "HUBBLE"
-            - "Hubble"
-            - "hubble"
+            - "HST"
     - tool: access_windows
       arg_constraints:
         observer:
@@ -29,4 +27,7 @@ functional_answer:
 notes: |
   Planning tier: the user asks an open question and the LLM is expected
   to decompose it into the (tle_lookup, access_windows) pair, then
-  read AOS/peak/range off the response.
+  read AOS/peak/range off the response. The valid Hubble queries are the
+  catalog name 'HST' or the NORAD ID 20580 — the colloquial 'HUBBLE' is
+  *not* viable (CelesTrak indexes Hubble as 'HST'; a 'HUBBLE' substring
+  search returns unrelated Spire Lemur smallsats).
