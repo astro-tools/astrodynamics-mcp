@@ -27,6 +27,39 @@ preferable to hand-editing JSON:
 For everything else — and for any client where the JSON config is the
 fastest path — the per-client snippets below cover the same ground.
 
+## Credential plumbing
+
+Most tools need no credential. Two sources do — Space-Track (deeper TLE
+records) and ESA DISCOSweb (`satellite_metadata`). For a stdio client the
+credential travels as an environment variable on the server process, which
+every client below sets the same way: an `env` block alongside `command` /
+`args`. The keys follow `ASTRODYNAMICS_MCP_<SOURCE>_<FIELD>`:
+
+```json
+{
+  "mcpServers": {
+    "astrodynamics": {
+      "command": "astrodynamics-mcp",
+      "args": ["stdio"],
+      "env": {
+        "ASTRODYNAMICS_MCP_SPACETRACK_USERNAME": "alice@example.org",
+        "ASTRODYNAMICS_MCP_SPACETRACK_PASSWORD": "...",
+        "ASTRODYNAMICS_MCP_DISCOSWEB_TOKEN": "..."
+      }
+    }
+  }
+}
+```
+
+Claude Code and Cursor both read the `env` block from their `mcp.json`;
+ChatGPT desktop exposes the same fields through its server-settings UI. A
+remote HTTP agent does not use `env` — it sends the credential in the
+`initialize` request's `_meta` block instead. Either way, the server reads
+the credential once and never echoes it back to the model. The full matrix,
+the `_meta` shape, and the security guarantees live in
+[Credentials](credentials.md); skip this section entirely if you only use the
+no-auth tools.
+
 ## Claude Code
 
 Claude Code reads MCP server definitions from its `mcp` settings. Add:
@@ -42,9 +75,12 @@ Claude Code reads MCP server definitions from its `mcp` settings. Add:
 }
 ```
 
-Restart Claude Code. The registered tools (`tle_lookup`, `sgp4_propagate`,
+Restart Claude Code. The no-auth core (`tle_lookup`, `sgp4_propagate`,
 `lambert_solve`, `access_windows`, `time_convert`, `frame_transform`,
-`porkchop`, `bplane_target`) appear in the tool list.
+`porkchop`, `bplane_target`) plus `satellite_metadata` appears in the tool
+list; the GMAT tools join it when the `[gmat]` extra is installed (see
+[GMAT integration](gmat-integration.md)). The [tool reference](tool-reference.md)
+is the live catalogue.
 
 To enable verbose server-side logging while debugging, swap the `args`:
 
@@ -136,10 +172,11 @@ section](eval-suite.md#how-this-is-validated) of the eval suite docs for
 how this is enforced.
 
 !!! warning "Trust boundary"
-    Streamable HTTP exposes every tool to any caller that can reach the
-    port. The server ships no built-in auth and the current tool surface
-    does not execute arbitrary scripts — but bind to `127.0.0.1` (the
-    default) unless you intentionally want the server reachable across
-    the network, and put it behind your own auth proxy when you do.
-    Sandboxing for arbitrary-script tools is one of the open design
-    questions for the planned GMAT integration.
+    Streamable HTTP exposes every registered tool to any caller that can
+    reach the port. The server ships no built-in auth. When the `[gmat]`
+    extra is installed, `gmat_run_mission` and `gmat_execute_script` run
+    arbitrary GMAT scripts, so an exposed HTTP port is an arbitrary-code
+    surface — bind to `127.0.0.1` (the default) unless you intentionally
+    want the server reachable across the network, and put it behind your
+    own auth proxy when you do. The operator owns this trust boundary; see
+    [GMAT integration](gmat-integration.md#transports).
