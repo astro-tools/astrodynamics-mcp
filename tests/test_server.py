@@ -18,6 +18,7 @@ from astrodynamics_mcp.errors import (
 )
 from astrodynamics_mcp.server import (
     _envelope_to_tool_error,
+    _lifespan,
     _resolve_error,
     _validation_to_invalid_input,
     _wrap_unexpected,
@@ -68,6 +69,40 @@ class TestServerInstance:
         tools = await mcp.list_tools()
         tool_names = {t.name for t in tools}
         assert "tle_lookup" in tool_names
+
+
+class TestLifespanClosesDataClients:
+    """The FastMCP lifespan must release the long-lived data-adapter clients."""
+
+    async def test_lifespan_teardown_closes_singletons(self) -> None:
+        import httpx
+
+        import astrodynamics_mcp.data.discosweb as discosweb_module
+        import astrodynamics_mcp.data.spacetrack as spacetrack_module
+
+        st_client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+        dw_client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+        spacetrack_module._singleton_client = st_client
+        discosweb_module._singleton_client = dw_client
+        try:
+            async with _lifespan(mcp):
+                # Inside the running server the clients are live.
+                assert not st_client.is_closed
+                assert not dw_client.is_closed
+            # Teardown closed and reset both singletons.
+            assert st_client.is_closed
+            assert dw_client.is_closed
+            assert spacetrack_module._singleton_client is None
+            assert discosweb_module._singleton_client is None
+        finally:
+            if not st_client.is_closed:
+                await st_client.aclose()
+            if not dw_client.is_closed:
+                await dw_client.aclose()
+            spacetrack_module._singleton_client = None
+            spacetrack_module._singleton_loop = None
+            discosweb_module._singleton_client = None
+            discosweb_module._singleton_loop = None
 
 
 class TestEnvelopeSerialisation:

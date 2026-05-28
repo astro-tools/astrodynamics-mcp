@@ -18,6 +18,7 @@ Failure modes match the data-adapter contract described in the issue:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -31,6 +32,8 @@ from astrodynamics_mcp import __version__
 from astrodynamics_mcp.cache import DEFAULT_TTLS, Cache, default_cache
 from astrodynamics_mcp.errors import DataSourceError, UpstreamError
 from astrodynamics_mcp.schemas.base import TleLines
+
+_logger = logging.getLogger(__name__)
 
 _CELESTRAK_GP_URL = "https://celestrak.org/NORAD/elements/gp.php"
 _SOURCE = "celestrak"
@@ -238,7 +241,20 @@ async def fetch_tle(
         # the operator has *any* recent value in the cache.
         stale_hit = cache.get_stale(_SOURCE, key)
         if stale_hit is not None:
-            return _build_response(stale_hit.value, stale_hit.fetched_at, stale=True)
+            try:
+                return _build_response(stale_hit.value, stale_hit.fetched_at, stale=True)
+            except Exception as rebuild_exc:
+                # The cached payload no longer rebuilds — schema tightened
+                # since it was written, or sgp4's omm.initialize chokes on an
+                # ``extra="allow"`` field. "Outage beats hard error" only
+                # holds if we can serve the stale value; when we can't, fall
+                # through to the typed unreachable error rather than raising a
+                # confusing parse/validation failure during an outage.
+                _logger.warning(
+                    "CelesTrak stale cache entry for %r is unusable: %s",
+                    query,
+                    rebuild_exc,
+                )
         raise DataSourceError(
             f"CelesTrak unreachable for query {query!r}: {exc}",
             code="data_source.celestrak_unreachable",

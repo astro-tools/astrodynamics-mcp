@@ -32,7 +32,8 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any, TypeVar
 
 from mcp.server.fastmcp import FastMCP
@@ -50,7 +51,29 @@ _SERVER_INSTRUCTIONS = (
     "error envelopes with stable string codes — see docs for the taxonomy."
 )
 
-mcp: FastMCP = FastMCP(_SERVER_NAME, instructions=_SERVER_INSTRUCTIONS)
+
+@asynccontextmanager
+async def _lifespan(_server: FastMCP) -> AsyncIterator[None]:
+    """Release long-lived data-adapter clients on server shutdown.
+
+    The Space-Track and DISCOSweb adapters keep a module-level
+    :class:`httpx.AsyncClient` singleton alive across tool calls (to preserve
+    the Space-Track session cookie and keep both HTTPS connection pools warm).
+    Closing them here — inside the running event loop, after request handling
+    stops — releases their sockets / SSL contexts instead of leaking them on
+    shutdown. Imported lazily so importing :mod:`server` does not pull the
+    data layer (and its transitive deps) at registration time.
+    """
+    from astrodynamics_mcp.data import discosweb, spacetrack
+
+    try:
+        yield
+    finally:
+        await spacetrack.aclose()
+        await discosweb.aclose()
+
+
+mcp: FastMCP = FastMCP(_SERVER_NAME, instructions=_SERVER_INSTRUCTIONS, lifespan=_lifespan)
 """Module-level singleton — tool modules register against this instance on import."""
 
 

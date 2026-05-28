@@ -72,6 +72,7 @@ def reset_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
     import astrodynamics_mcp.data.spacetrack as spacetrack_module
 
     monkeypatch.setattr(spacetrack_module, "_singleton_client", None)
+    monkeypatch.setattr(spacetrack_module, "_singleton_loop", None)
 
 
 def _mock_client(handler: Any) -> httpx.AsyncClient:
@@ -466,3 +467,131 @@ class TestSingletonClientPath:
         assert first.results[0].NORAD_CAT_ID == 25544
         assert second.results[0].NORAD_CAT_ID == 25544  # mock returns same payload
         assert login_count["n"] == 1  # singleton's cookie jar survives the second call
+
+
+class TestNameQueryEncoding:
+    """A ``/`` in a satellite name must not inject extra URL path segments."""
+
+    async def test_name_with_slash_is_percent_encoded(self, cache: Cache) -> None:
+        seen_raw_paths: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/ajaxauth/login":
+                return httpx.Response(200, headers={"set-cookie": _LOGIN_COOKIE_HEADER})
+            seen_raw_paths.append(request.url.raw_path.decode())
+            return httpx.Response(200, json=[])
+
+        client = _mock_client(handler)
+        try:
+            await fetch_tle("COSMOS 2251/DEB", _CREDENTIAL, client=client, cache=cache)
+        finally:
+            await client.aclose()
+
+        # The slash is %2F-encoded inside the OBJECT_NAME value, so the
+        # class/gp/.../format/json predicate stays intact. The space is %20.
+        assert any("OBJECT_NAME/~~COSMOS%202251%2FDEB~~" in p for p in seen_raw_paths)
+        # The literal slash must not survive as a raw path separator inside
+        # the value (it would split the predicate).
+        assert not any("~~COSMOS 2251/DEB~~" in p for p in seen_raw_paths)
+
+
+class TestClientLifecycle:
+    """The singleton client is closeable (FastMCP lifespan teardown) and
+    rebuilds when a stale event loop owns it."""
+
+    async def test_aclose_closes_and_resets_singleton(self, cache: Cache) -> None:
+        import astrodynamics_mcp.data.spacetrack as spacetrack_module
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/ajaxauth/login":
+                return httpx.Response(200, headers={"set-cookie": _LOGIN_COOKIE_HEADER})
+            return httpx.Response(200, json=[_SAMPLE_OMM_ISS])
+
+        mock_built = _mock_client(handler)
+        with patch(
+            "astrodynamics_mcp.data.spacetrack._build_singleton_client",
+            return_value=mock_built,
+        ):
+            await fetch_tle("25544", _CREDENTIAL, cache=cache)
+            assert spacetrack_module._singleton_client is mock_built
+
+            await spacetrack_module.aclose()
+
+        assert spacetrack_module._singleton_client is None
+        assert spacetrack_module._singleton_loop is None
+        assert mock_built.is_closed
+
+    async def test_aclose_is_noop_when_no_client_built(self) -> None:
+        import astrodynamics_mcp.data.spacetrack as spacetrack_module
+
+        # reset_singleton fixture guarantees the singleton is None here.
+        assert spacetrack_module._singleton_client is None
+        await spacetrack_module.aclose()  # must not raise
+        assert spacetrack_module._singleton_client is None
+
+    async def test_stale_owning_loop_triggers_rebuild(self) -> None:
+        import asyncio
+
+        import astrodynamics_mcp.data.spacetrack as spacetrack_module
+
+        stale_client = _mock_client(lambda request: httpx.Response(200, json=[]))
+        stale_loop = asyncio.new_event_loop()
+        try:
+            spacetrack_module._singleton_client = stale_client
+            spacetrack_module._singleton_loop = stale_loop
+
+            rebuilt = _mock_client(lambda request: httpx.Response(200, json=[]))
+            with patch(
+                "astrodynamics_mcp.data.spacetrack._build_singleton_client",
+                return_value=rebuilt,
+            ):
+                got = spacetrack_module._get_singleton_client()
+
+            # Mismatch between the stale owning loop and the running loop forces
+            # a rebuild bound to the current loop.
+            assert got is rebuilt
+            assert spacetrack_module._singleton_loop is asyncio.get_running_loop()
+        finally:
+            await stale_client.aclose()
+            await rebuilt.aclose()
+            stale_loop.close()
+            spacetrack_module._singleton_client = None
+            spacetrack_module._singleton_loop = None
+
+
+class TestStaleFallbackUnusable:
+    """When the stale cached payload no longer rebuilds, fall through to the
+    typed unreachable error instead of raising a parse/validation failure."""
+
+    async def test_unparseable_stale_payload_raises_unreachable(self, cache: Cache) -> None:
+        import json as _json
+
+        # Seed the cache with a payload that is missing a required mean
+        # element, simulating a schema that tightened since the entry was
+        # written. Write it directly so we bypass the put-time validation.
+        broken = dict(_SAMPLE_OMM_ISS)
+        del broken["INCLINATION"]
+        path = cache._path("spacetrack", "catnr:25544")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            _json.dumps(
+                {
+                    "key": "catnr:25544",
+                    "fetched_at": (datetime.now(tz=timezone.utc) - timedelta(days=1)).isoformat(),
+                    "value": [broken],
+                }
+            )
+        )
+
+        def fail_handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/ajaxauth/login":
+                return httpx.Response(200, headers={"set-cookie": _LOGIN_COOKIE_HEADER})
+            raise httpx.ConnectError("simulated outage")
+
+        client = _mock_client(fail_handler)
+        try:
+            with pytest.raises(DataSourceError) as excinfo:
+                await fetch_tle("25544", _CREDENTIAL, client=client, cache=cache)
+        finally:
+            await client.aclose()
+        assert excinfo.value.code == "data_source.spacetrack_unreachable"

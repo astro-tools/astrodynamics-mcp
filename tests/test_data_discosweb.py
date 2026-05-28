@@ -134,6 +134,7 @@ def reset_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
     import astrodynamics_mcp.data.discosweb as discosweb_module
 
     monkeypatch.setattr(discosweb_module, "_singleton_client", None)
+    monkeypatch.setattr(discosweb_module, "_singleton_loop", None)
 
 
 def _mock_client(handler: Any) -> httpx.AsyncClient:
@@ -616,3 +617,94 @@ class TestSingletonClientPath:
         assert first.record is not None
         assert second.record is not None
         assert request_count["n"] == 2
+
+
+class TestClientLifecycle:
+    """The singleton client is closeable (FastMCP lifespan teardown) and
+    rebuilds when a stale event loop owns it."""
+
+    async def test_aclose_closes_and_resets_singleton(self, cache: Cache) -> None:
+        import astrodynamics_mcp.data.discosweb as discosweb_module
+
+        mock_built = _mock_client(_static_handler(_sample_payload_iss()))
+        with patch(
+            "astrodynamics_mcp.data.discosweb._build_singleton_client",
+            return_value=mock_built,
+        ):
+            await fetch_metadata("25544", _CREDENTIAL, cache=cache)
+            assert discosweb_module._singleton_client is mock_built
+
+            await discosweb_module.aclose()
+
+        assert discosweb_module._singleton_client is None
+        assert discosweb_module._singleton_loop is None
+        assert mock_built.is_closed
+
+    async def test_aclose_is_noop_when_no_client_built(self) -> None:
+        import astrodynamics_mcp.data.discosweb as discosweb_module
+
+        assert discosweb_module._singleton_client is None
+        await discosweb_module.aclose()  # must not raise
+        assert discosweb_module._singleton_client is None
+
+    async def test_stale_owning_loop_triggers_rebuild(self) -> None:
+        import asyncio
+
+        import astrodynamics_mcp.data.discosweb as discosweb_module
+
+        stale_client = _mock_client(_static_handler(_sample_payload_iss()))
+        stale_loop = asyncio.new_event_loop()
+        try:
+            discosweb_module._singleton_client = stale_client
+            discosweb_module._singleton_loop = stale_loop
+
+            rebuilt = _mock_client(_static_handler(_sample_payload_iss()))
+            with patch(
+                "astrodynamics_mcp.data.discosweb._build_singleton_client",
+                return_value=rebuilt,
+            ):
+                got = discosweb_module._get_singleton_client()
+
+            assert got is rebuilt
+            assert discosweb_module._singleton_loop is asyncio.get_running_loop()
+        finally:
+            await stale_client.aclose()
+            await rebuilt.aclose()
+            stale_loop.close()
+            discosweb_module._singleton_client = None
+            discosweb_module._singleton_loop = None
+
+
+class TestStaleFallbackUnusable:
+    """When the stale cached payload no longer rebuilds (e.g. the JSON-API
+    schema tightened since it was written), fall through to the typed
+    unreachable error instead of raising a parse failure during an outage."""
+
+    async def test_unparseable_stale_payload_raises_unreachable(self, cache: Cache) -> None:
+        import json as _json
+
+        # An envelope whose data[0] has no 'attributes' — _parse_payload raises
+        # upstream.discosweb_invalid_record on rebuild. Write it directly to
+        # bypass put-time validation.
+        path = cache._path("discosweb", "norad:25544")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            _json.dumps(
+                {
+                    "key": "norad:25544",
+                    "fetched_at": (datetime.now(tz=timezone.utc) - timedelta(days=2)).isoformat(),
+                    "value": {"data": [{"id": "1", "type": "object"}]},
+                }
+            )
+        )
+
+        def outage(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("simulated outage")
+
+        client = _mock_client(outage)
+        try:
+            with pytest.raises(DataSourceError) as excinfo:
+                await fetch_metadata("25544", _CREDENTIAL, client=client, cache=cache)
+        finally:
+            await client.aclose()
+        assert excinfo.value.code == "data_source.discosweb_unreachable"

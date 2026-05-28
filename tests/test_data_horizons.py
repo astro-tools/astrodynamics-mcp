@@ -239,6 +239,98 @@ class TestUpstreamShapeGuard:
         assert excinfo.value.code == "upstream.horizons_unexpected_shape"
 
 
+class TestErrorBlobGuard:
+    """Horizons returns HTTP 200 + an in-band ``error`` for bad inputs; that
+    blob must surface as a typed error and never be cached."""
+
+    async def test_error_blob_raises_typed_error(self, cache: Cache) -> None:
+        def error_blob(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={"error": "No matches found for COMMAND='nonsense'."},
+            )
+
+        client = _mock_client(error_blob)
+        try:
+            with pytest.raises(UpstreamError) as excinfo:
+                await fetch_ephemeris(
+                    "nonsense",
+                    "@sun",
+                    "2026-01-01",
+                    "2026-12-31",
+                    "1d",
+                    client=client,
+                    cache=cache,
+                )
+        finally:
+            await client.aclose()
+        assert excinfo.value.code == "upstream.horizons_error"
+        assert "No matches found" in excinfo.value.data["horizons_error"]
+
+    async def test_error_blob_is_not_cached(self, cache: Cache) -> None:
+        key = _cache_key(_signature("nonsense", "@sun", "2026-01-01", "2026-12-31", "1d"))
+
+        def error_blob(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"error": "bad CENTER"})
+
+        client = _mock_client(error_blob)
+        try:
+            with pytest.raises(UpstreamError):
+                await fetch_ephemeris(
+                    "nonsense",
+                    "@sun",
+                    "2026-01-01",
+                    "2026-12-31",
+                    "1d",
+                    client=client,
+                    cache=cache,
+                )
+        finally:
+            await client.aclose()
+        # The error blob must not poison the cache under the valid signature key.
+        assert cache.get_stale("horizons", key) is None
+
+
+class TestStaleFallbackUnusable:
+    """When the stale cached payload no longer rebuilds (e.g. an older entry
+    with no 'result' key), fall through to the typed unreachable error."""
+
+    async def test_unparseable_stale_payload_raises_unreachable(self, cache: Cache) -> None:
+        key = _cache_key(_signature("499", "@sun", "2026-01-01", "2026-12-31", "1d"))
+        # Seed the cache directly with a payload that lacks 'result', so the
+        # stale rebuild raises a KeyError inside _build_response.
+        path = cache._path("horizons", key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            _json.dumps(
+                {
+                    "key": key,
+                    "fetched_at": (datetime.now(tz=timezone.utc) - timedelta(days=30)).isoformat(),
+                    "value": {"signature": {"foo": "bar"}},
+                }
+            )
+        )
+
+        def outage(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("simulated outage")
+
+        client = _mock_client(outage)
+        try:
+            with pytest.raises(DataSourceError) as excinfo:
+                await fetch_ephemeris(
+                    "499",
+                    "@sun",
+                    "2026-01-01",
+                    "2026-12-31",
+                    "1d",
+                    client=client,
+                    cache=cache,
+                )
+        finally:
+            await client.aclose()
+        assert excinfo.value.code == "data_source.horizons_unreachable"
+
+
 class TestDefaultClientAndCachePaths:
     async def test_default_client_path(self, cache: Cache) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
