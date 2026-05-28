@@ -1515,7 +1515,6 @@ def _samples_to_dataframe(samples: list[dict[str, Any]]) -> Any:
             f"samples must be a non-empty list of dotted-path → value dicts, got {samples!r}",
             code="invalid_input.gmat_sweep_samples_empty",
         )
-    import pandas as pd
 
     first = samples[0]
     if not isinstance(first, dict) or not first:
@@ -1539,6 +1538,13 @@ def _samples_to_dataframe(samples: list[dict[str, Any]]) -> Any:
                 code="invalid_input.gmat_sweep_samples_row_drift",
             )
         rows.append([row[c] for c in columns])
+
+    # Import pandas only after every validation has passed so a bare
+    # environment without gmat-sweep (which transitively pulls pandas)
+    # still surfaces typed invalid_input.gmat_sweep_samples_* errors
+    # instead of leaking a ModuleNotFoundError on the import line.
+    import pandas as pd
+
     return pd.DataFrame(rows, columns=columns)
 
 
