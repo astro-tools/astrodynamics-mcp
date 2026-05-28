@@ -45,8 +45,8 @@ eval/
     └── *.yaml            ← one prompt per file (40 prompts spanning single-tool, sequential, and planning tiers)
 ```
 
-The suite covers the v0.1 core tools plus the v0.2 surface: the GMAT
-tools (`gmat_run_mission`, `gmat_sweep`, `gmat_execute_script`,
+The suite covers the core read-only tools plus the GMAT tools
+(`gmat_run_mission`, `gmat_sweep`, `gmat_execute_script`,
 `gmat_read_run_artefact`), the DISCOSweb `satellite_metadata`
 cross-reference, the Space-Track passthrough, and the credentialed
 typed-error contract (`credential_required.*`).
