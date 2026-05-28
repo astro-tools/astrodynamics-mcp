@@ -2,7 +2,8 @@
 
 Model Context Protocol server giving any LLM client (Claude, ChatGPT, Cursor,
 custom agents) authoritative astrodynamics tools — TLE/SGP4, Lambert,
-ground-station access, time/frame conversions, porkchop, B-plane.
+ground-station access, time/frame conversions, porkchop, B-plane, satellite
+metadata, and NASA GMAT mission analysis.
 
 ## What it is
 
@@ -12,10 +13,18 @@ ephemerides. astrodynamics-mcp lets you plug authoritative tools into any
 [Model Context Protocol](https://modelcontextprotocol.io)-capable client so
 the LLM calls vetted upstream libraries instead of hallucinating numbers.
 
-The current surface wraps eight no-auth tools across the most common
-single-satellite questions: `tle_lookup`, `sgp4_propagate`, `lambert_solve`,
-`access_windows`, `time_convert`, `frame_transform`, `porkchop`,
-`bplane_target`.
+The base surface wraps nine tools across the most common single-satellite
+questions: eight no-auth tools — `tle_lookup`, `sgp4_propagate`,
+`lambert_solve`, `access_windows`, `time_convert`, `frame_transform`,
+`porkchop`, `bplane_target` — plus `satellite_metadata`, which pulls
+persistent object metadata (mass, dimensions, launch, operator) from ESA
+DISCOSweb with a per-user credential. `tle_lookup` can also fall back to
+Space-Track for deeper, fresher catalogue records when you provide a
+credential — see [Credentials](credentials.md).
+
+Installing the [`[gmat]` extra](gmat-integration.md) adds five GMAT
+mission-analysis tools, letting a client author, validate, run, and sweep
+NASA GMAT mission scripts and read back their reports and ephemerides.
 
 ## Quick start
 
@@ -38,7 +47,7 @@ Add it to your MCP client. Claude Code, for example:
 }
 ```
 
-Restart the client. The eight tools appear in its tool list. Ask:
+Restart the client. The base tools appear in its tool list. Ask:
 
 > Compute the Hohmann Δv from a 250 km circular LEO to GEO.
 

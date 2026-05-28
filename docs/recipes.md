@@ -30,6 +30,35 @@ frame; the tool transforms via astropy with the correct per-epoch
 `obstime`. See [`tle_lookup`](tool-reference.md) and
 [`sgp4_propagate`](tool-reference.md) for the full schema.
 
+## A TLE for a fresh launch (Space-Track)
+
+> **You:** Get me the latest TLE for NORAD 62000 — it's a recent launch and I
+> don't see it on CelesTrak.
+
+CelesTrak's general-perturbations feed trails the catalogue for very recent
+launches. The model retries `tle_lookup` against Space-Track, which carries
+the deeper, more current GP records:
+
+```jsonc
+// tools/call → tle_lookup
+{ "query": "62000", "source": "space-track" }
+```
+
+Space-Track requires a per-user account. If no credential is configured, the
+call returns *before any network request* with the typed error
+`credential_required.spacetrack`, listing the fields it needs. The LLM relays
+that you must set `ASTRODYNAMICS_MCP_SPACETRACK_USERNAME` and
+`ASTRODYNAMICS_MCP_SPACETRACK_PASSWORD` (stdio) or pass the credential in the
+`initialize` `_meta` block (HTTP) — see [Credentials](credentials.md). Once
+the credential is present, the same call returns the TLE plus parsed OMM JSON,
+cached on disk for six hours so a repeat lookup within that window costs no
+request against Space-Track's per-account rate limit.
+
+A numeric query becomes a `NORAD_CAT_ID` lookup and anything else an
+`OBJECT_NAME` substring search; Space-Track has no CelesTrak-style group
+keywords. See [Data sources](data-sources.md#space-track-tle_lookup-with-credentials)
+for the auth, caching, and rate-limit story.
+
 ## Ground-station passes for a named observer
 
 > **You:** Show me Hubble passes above 10° from Madrid over the next
@@ -141,3 +170,41 @@ representations on either side via the `in_format` / `out_format`
 arguments. See [`time_convert`](tool-reference.md) for the full scale and
 format lists; the time-scale Python type is
 [`astrodynamics_mcp.schemas.base.TimeScale`](api.md#schemas).
+
+## Run a GMAT mission from a skeleton
+
+Requires the `[gmat]` extra — see [GMAT integration](gmat-integration.md) for
+install and the full tool surface.
+
+> **You:** Run a Hohmann transfer from a 7000 km circular LEO to GEO and give
+> me the total Δv.
+
+The client lists the GMAT skeleton resources, reads
+`gmat-skeleton://hohmann-transfer`, and edits it for the requested geometry.
+Before spending a full mission run, it parses the script with
+`gmat_validate_script`:
+
+```jsonc
+// tools/call → gmat_validate_script
+{ "script": "Create Spacecraft LEOSat; ... (edited skeleton text)" }
+```
+
+GMAT returns the declared resources and any parse errors. The model fixes a
+mistyped field name GMAT flagged, re-validates clean, then runs it:
+
+```jsonc
+// tools/call → gmat_run_mission
+{
+  "script": "Create Spacecraft LEOSat; ... ",
+  "overrides": { "LEOSat.SMA": 7000 }
+}
+```
+
+The response carries a `run_id`, the mission summary, and the small report
+inline; the model reads the two-impulse Δv from the report rows. Ephemerides
+and oversized reports come back as pointers — pull the full bytes with
+`gmat_read_run_artefact(run_id="…", name="EphemerisFile1")`. To explore how
+the Δv responds across a range of burn magnitudes instead of a single run,
+reach for `gmat_sweep`; see
+[GMAT integration](gmat-integration.md#worked-recipes) for the sweep and
+validate-then-run patterns in full.

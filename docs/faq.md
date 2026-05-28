@@ -4,9 +4,10 @@
 
 **Stdio** is the default for desktop chat clients. The client launches
 `astrodynamics-mcp stdio` as a subprocess and speaks MCP over its
-stdin/stdout. No port to manage, no auth to think about, runs as the
-user, lives only while the client is up. Pick stdio unless you have a
-specific reason otherwise.
+stdin/stdout. No port to manage, no network auth, runs as the user,
+lives only while the client is up; any upstream credential rides along
+as an environment variable on the subprocess. Pick stdio unless you have
+a specific reason otherwise.
 
 **Streamable HTTP** is for remote agents — pipelines, hosted services,
 long-running automation that can't or shouldn't co-locate with a chat
@@ -60,19 +61,21 @@ astrodynamics-mcp is the LLM-callable front-end for these libraries.
 Their `pip install` is the recommended fallback when you need surface
 area we haven't exposed yet.
 
-## Why no LeoLabs / Space-Track / DISCOS?
+## What about LeoLabs / Space-Track / DISCOS?
+
+[Space-Track](https://www.space-track.org/) and
+[DISCOSweb](https://discosweb.esoc.esa.int/) are supported through
+credential passthrough: you provide your own per-user account and the
+server reaches the upstream as you. Space-Track backs `tle_lookup`'s
+deeper-catalogue path; DISCOSweb backs `satellite_metadata`. The
+no-auth core still works with no credential, so the quick-start is still
+`pip install astrodynamics-mcp` plus a one-block client config — the
+credential only enters when you call a tool that needs it. See
+[Credentials](credentials.md) for how to provide one.
 
 [LeoLabs](https://leolabs.space/)'s commercial ToS prohibits
 redistribution of derived products, so passthrough credentialling for
 individual paid subscribers is deliberately not in any current plan.
-
-[Space-Track](https://www.space-track.org/) and
-[DISCOSweb](https://discosweb.esoc.esa.int/) require per-user accounts
-and bearer tokens. The current surface is intentionally no-auth so the
-quick-start is `pip install astrodynamics-mcp` plus a one-block client
-config — no credential dance. A future milestone will add credentialled
-passthrough for Space-Track, DISCOSweb, and NASA Earthdata via env-var
-loading (stdio) and session-init metadata (HTTP).
 
 ## How do I trust the numbers?
 

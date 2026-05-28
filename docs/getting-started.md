@@ -12,9 +12,12 @@ The server is a pure-Python package; the runtime install pulls
 [`sgp4`](https://github.com/brandon-rhodes/python-sgp4),
 [`lamberthub`](https://github.com/jorgepiloto/lamberthub),
 [`skyfield`](https://rhodesmill.org/skyfield/),
-[`astropy`](https://www.astropy.org/), and a few smaller dependencies. No
-external services are required for the current tool surface — every tool either
-runs offline or calls a no-auth data source (CelesTrak, JPL Horizons, IERS).
+[`astropy`](https://www.astropy.org/), and a few smaller dependencies. Most
+tools need no credential — they run offline or call a no-auth data source
+(CelesTrak, JPL Horizons, IERS). Two sources need a per-user account:
+Space-Track (deeper TLE records) and ESA DISCOSweb (`satellite_metadata`);
+see [Credentials](credentials.md). The optional `[gmat]` extra adds the GMAT
+mission-analysis tools — see [GMAT integration](gmat-integration.md).
 
 The recommended install path is `uv` or `pipx` so the `astrodynamics-mcp`
 console script lives in an isolated environment that your MCP client can
@@ -70,7 +73,9 @@ your MCP client config:
 }
 ```
 
-Restart the client. All eight tools appear in its tool list.
+Restart the client. The tools appear in its tool list — the no-auth core plus
+`satellite_metadata`, and the GMAT tools too if you installed the `[gmat]`
+extra.
 
 ## The vision conversation
 

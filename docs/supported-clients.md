@@ -18,7 +18,7 @@ records which clients the maintainers have verified end-to-end.
 
 Legend:
 
-- ✅ **Verified** — the maintainers have run the full eight-tool surface
+- ✅ **Verified** — the maintainers have run the full base tool surface
   through this client and confirmed all calls round-trip. Reported in
   the project's release notes.
 - ⏳ **Expected to work** — the client speaks compliant MCP; the
@@ -35,7 +35,7 @@ with:
 - Client name and version.
 - Transport used (stdio / HTTP).
 - A snippet of your client config or initialisation code.
-- Whether all eight tools appear and round-trip.
+- Whether the tools appear and round-trip.
 
 Verified entries land in the next release's matrix.
 
