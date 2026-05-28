@@ -77,6 +77,11 @@ DEFAULT_TTLS: Mapping[str, float] = {
     # API Rules of Behaviour ("save it locally; do not query for the
     # same data repeatedly").
     "spacetrack": 6 * 60 * 60,
+    # DISCOSweb publishes persistent satellite metadata (mass, dimensions,
+    # launch / decay events). Decay events at most weekly per object; mass
+    # and dimensions almost never change. The 24h TTL also conserves the
+    # per-account daily quota that the free DISCOSweb tier enforces.
+    "discosweb": 24 * 60 * 60,
 }
 
 
