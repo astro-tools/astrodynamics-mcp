@@ -149,7 +149,6 @@ def _get_singleton_client() -> httpx.AsyncClient:
     global _singleton_client, _singleton_loop
     running = asyncio.get_running_loop()
     if _singleton_client is not None and _singleton_loop is not running:
-        _logger.debug("DISCOSweb client bound to a stale event loop; rebuilding")
         _singleton_client = None
         _singleton_loop = None
     if _singleton_client is None:
