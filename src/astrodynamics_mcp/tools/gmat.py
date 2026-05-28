@@ -1243,24 +1243,26 @@ def _shape_report(
 
     In ``output="summary"`` mode the response trims rows past the inline
     threshold to head + tail; in ``output="full"`` mode every row is
-    inlined regardless of size.
+    inlined regardless of size. The truncated branch materialises only
+    the head + tail slices via ``frame.head()`` / ``frame.tail()`` so a
+    100k-row sweep doesn't pay full-frame numpy materialisation cost
+    just to emit ten rows.
     """
     columns = [str(c) for c in frame.columns]
     row_count = len(frame.index)
-    values = frame.to_numpy(dtype=object)
     inline_full = output == "full" or row_count <= _REPORT_INLINE_ROW_THRESHOLD
     if inline_full:
+        values = frame.to_numpy(dtype=object)
         rows = [_row_to_dict(columns, values[i]) for i in range(row_count)]
         head: list[dict[str, str | float]] = []
         tail: list[dict[str, str | float]] = []
         truncated = False
     else:
         rows = []
-        head = [_row_to_dict(columns, values[i]) for i in range(_REPORT_HEAD_TAIL_ROWS)]
-        tail = [
-            _row_to_dict(columns, values[i])
-            for i in range(row_count - _REPORT_HEAD_TAIL_ROWS, row_count)
-        ]
+        head_values = frame.head(_REPORT_HEAD_TAIL_ROWS).to_numpy(dtype=object)
+        tail_values = frame.tail(_REPORT_HEAD_TAIL_ROWS).to_numpy(dtype=object)
+        head = [_row_to_dict(columns, head_values[i]) for i in range(_REPORT_HEAD_TAIL_ROWS)]
+        tail = [_row_to_dict(columns, tail_values[i]) for i in range(_REPORT_HEAD_TAIL_ROWS)]
         truncated = True
     return ReportFileShape(
         name=name,
@@ -1279,27 +1281,57 @@ def _shape_raw_report(
 ) -> RawReportContent:
     """Read a ReportFile from disk into a :class:`RawReportContent`.
 
-    Reads bytes once for the byte_count, decodes UTF-8 (with ``replace``
-    so a stray binary byte doesn't abort the tool), and splits on
-    universal newlines. The file is closed before this function returns;
-    the caller's responsibility is to read it while the temp directory is
-    still alive.
+    Stream the file line-by-line with bounded memory: keep the first
+    ``_RAW_REPORT_HEAD_TAIL_LINES`` lines in ``head_buf``, the last
+    ``_RAW_REPORT_HEAD_TAIL_LINES`` lines in a deque, and accumulate the
+    full text only while we're still under the inline threshold (or when
+    ``output="full"`` asks for everything). A 200 MB ``GMAT.log`` therefore
+    pays O(threshold) memory in summary mode instead of slurping the
+    whole file via ``read_bytes()``. The byte count comes from
+    ``stat().st_size`` so the helper never materialises bytes it
+    doesn't need.
     """
-    raw_bytes = path.read_bytes()
-    byte_count = len(raw_bytes)
-    text = raw_bytes.decode("utf-8", errors="replace")
-    lines = text.splitlines()
-    line_count = len(lines)
-    inline_full = output == "full" or line_count <= _RAW_REPORT_INLINE_LINE_THRESHOLD
+    from collections import deque
+
+    byte_count = path.stat().st_size
+    head_buf: list[str] = []
+    tail_buf: deque[str] = deque(maxlen=_RAW_REPORT_HEAD_TAIL_LINES)
+    full_lines: list[str] = []
+    truncating = output != "full"
+    line_count = 0
+    trailing_newline = False
+
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        for raw_line in fh:
+            trailing_newline = raw_line.endswith("\n")
+            stripped = raw_line.rstrip("\n")
+            line_count += 1
+            if len(head_buf) < _RAW_REPORT_HEAD_TAIL_LINES:
+                head_buf.append(stripped)
+            tail_buf.append(stripped)
+            if not truncating or line_count <= _RAW_REPORT_INLINE_LINE_THRESHOLD:
+                full_lines.append(stripped)
+            elif full_lines:
+                # Crossed the inline threshold under summary mode -- the
+                # response will carry head + tail instead, so we no
+                # longer need the accumulated full-text buffer.
+                full_lines = []
+
+    inline_full = not truncating or line_count <= _RAW_REPORT_INLINE_LINE_THRESHOLD
     if inline_full:
-        content = text
+        # Preserve the file's trailing newline when present so consumers
+        # that diff content against the original bytes see the same byte
+        # sequence the producer wrote.
+        content = "\n".join(full_lines)
+        if trailing_newline and full_lines:
+            content += "\n"
         head = ""
         tail = ""
         truncated = False
     else:
         content = ""
-        head = "\n".join(lines[:_RAW_REPORT_HEAD_TAIL_LINES])
-        tail = "\n".join(lines[-_RAW_REPORT_HEAD_TAIL_LINES:])
+        head = "\n".join(head_buf)
+        tail = "\n".join(tail_buf)
         truncated = True
     return RawReportContent(
         name=name,
@@ -1367,20 +1399,30 @@ def _collect_artefact_map(result: Any) -> dict[str, Path]:
     return collected
 
 
-def _select_keys(all_keys: list[str], selection: list[str] | None) -> tuple[list[str], list[str]]:
-    """Return ``(kept, unknown)`` after applying ``selection`` to ``all_keys``.
+def _unknown_names(all_keys: list[str], selection: list[str] | None) -> list[str]:
+    """Return the entries in ``selection`` that are not present in ``all_keys``.
 
-    ``None`` means "everything"; the unknown list is empty. With a
-    selection, ``kept`` preserves the caller's order so a deliberate
-    ordering is honoured, and ``unknown`` carries names that didn't match
-    any output for a typed error downstream.
+    ``None`` selection means "no validation needed" -- returns an empty list.
     """
     if selection is None:
-        return list(all_keys), []
+        return []
     known = set(all_keys)
-    kept = [name for name in selection if name in known]
-    unknown = [name for name in selection if name not in known]
-    return kept, unknown
+    return [name for name in selection if name not in known]
+
+
+def _filter_names(all_keys: list[str], selection: list[str] | None) -> list[str]:
+    """Filter ``all_keys`` through ``selection``, preserving the caller's order.
+
+    ``None`` selection means "all keys, in their original order"; an
+    explicit selection keeps only the names that exist in ``all_keys``,
+    in the order they appear in the selection. Unknown names in
+    ``selection`` are silently dropped here -- :func:`_unknown_names`
+    is the validation pass.
+    """
+    if selection is None:
+        return list(all_keys)
+    known = set(all_keys)
+    return [name for name in selection if name in known]
 
 
 def _apply_overrides(mission: Any, overrides: dict[str, Any]) -> None:
@@ -2365,7 +2407,7 @@ def _build_response(
         *result.ephemeris_paths.keys(),
         *result.contact_paths.keys(),
     ]
-    _, unknown = _select_keys(all_output_names, select_outputs)
+    unknown = _unknown_names(all_output_names, select_outputs)
     if unknown:
         raise InvalidInputError(
             f"select_outputs contains unknown resource names: {unknown}; "
@@ -2375,9 +2417,9 @@ def _build_response(
             data={"unknown": unknown, "available": sorted(all_output_names)},
         )
 
-    report_names, _ = _select_keys(list(result.report_paths.keys()), select_outputs)
-    ephemeris_names, _ = _select_keys(list(result.ephemeris_paths.keys()), select_outputs)
-    contact_names, _ = _select_keys(list(result.contact_paths.keys()), select_outputs)
+    report_names = _filter_names(list(result.report_paths.keys()), select_outputs)
+    ephemeris_names = _filter_names(list(result.ephemeris_paths.keys()), select_outputs)
+    contact_names = _filter_names(list(result.contact_paths.keys()), select_outputs)
 
     reports: list[ReportFileShape] = []
     for name in report_names:
