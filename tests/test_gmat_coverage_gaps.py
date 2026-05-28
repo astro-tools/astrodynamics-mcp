@@ -237,27 +237,29 @@ class TestBinarySniffBoundaries:
 
 
 class TestSweepSamplesPayloadGaps:
-    """Empty sample list / row-with-no-keys both produce typed errors."""
+    """Empty sample list / row-with-no-keys both produce typed errors.
 
-    async def test_samples_empty_list_rejected(self, gmat_mcp: FastMCP, tmp_path: Path) -> None:
-        script = tmp_path / "noop.script"
-        script.write_text("% noop\n")
-        with pytest.raises(ToolError) as excinfo:
-            await gmat_mcp.call_tool(
-                "gmat_sweep",
-                {"script": str(script), "mode": "samples", "samples": []},
-            )
-        assert "invalid_input.gmat_sweep_samples_empty" in str(excinfo.value)
+    Drives ``_samples_to_dataframe`` directly rather than going through the
+    live tool because the bare CI environment doesn't install ``gmat_sweep``
+    (the ``[gmat]`` extra ships it); driving the tool here would surface
+    ``ModuleNotFoundError`` before the validation path runs.
+    """
 
-    async def test_samples_empty_row_rejected(self, gmat_mcp: FastMCP, tmp_path: Path) -> None:
-        script = tmp_path / "noop.script"
-        script.write_text("% noop\n")
-        with pytest.raises(ToolError) as excinfo:
-            await gmat_mcp.call_tool(
-                "gmat_sweep",
-                {"script": str(script), "mode": "samples", "samples": [{}]},
-            )
-        assert "invalid_input.gmat_sweep_samples_row_shape" in str(excinfo.value)
+    def test_samples_empty_list_rejected(self) -> None:
+        from astrodynamics_mcp.errors import InvalidInputError
+        from astrodynamics_mcp.tools.gmat import _samples_to_dataframe
+
+        with pytest.raises(InvalidInputError) as excinfo:
+            _samples_to_dataframe([])
+        assert excinfo.value.code == "invalid_input.gmat_sweep_samples_empty"
+
+    def test_samples_empty_row_rejected(self) -> None:
+        from astrodynamics_mcp.errors import InvalidInputError
+        from astrodynamics_mcp.tools.gmat import _samples_to_dataframe
+
+        with pytest.raises(InvalidInputError) as excinfo:
+            _samples_to_dataframe([{}])
+        assert excinfo.value.code == "invalid_input.gmat_sweep_samples_row_shape"
 
 
 # ---------------------------------------------------------------------------
