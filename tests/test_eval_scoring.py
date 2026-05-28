@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 from eval.scoring import (
+    extract_errored_call_ids,
     extract_final_tool_response,
     extract_trace,
     hybrid_scorer,
@@ -32,6 +33,7 @@ from inspect_ai.model._model import ModelName
 from inspect_ai.scorer import Score, Target
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import ToolCall
+from inspect_ai.tool._tool_call import ToolCallError
 
 
 def _tool_call(name: str, args: dict[str, Any], call_id: str = "c1") -> ToolCall:
@@ -44,24 +46,37 @@ def _build_state(
     assistant_calls: list[ToolCall],
     tool_responses: list[tuple[str, dict[str, Any]]],
     metadata: dict[str, Any],
+    errored_ids: set[str] | None = None,
 ) -> TaskState:
     """Assemble a ``TaskState`` carrying a synthetic LLM conversation.
 
-    ``tool_responses`` is ``[(tool_call_id, response_payload), ...]`` —
-    each gets JSON-encoded onto a :class:`ChatMessageTool`.
+    ``tool_responses`` is ``[(tool_call_id, response_payload), ...]`` — each
+    gets JSON-encoded onto a :class:`ChatMessageTool`. Any id in
+    ``errored_ids`` gets a :class:`ToolCallError` instead, mirroring how
+    Inspect AI surfaces a failed tool call.
     """
+    errored = errored_ids or set()
     sample = Sample(input=user_prompt, metadata=metadata)
     messages: list[Any] = [
         ChatMessageUser(content=user_prompt),
         ChatMessageAssistant(content="", tool_calls=assistant_calls),
     ]
     for call_id, payload in tool_responses:
-        messages.append(
-            ChatMessageTool(
-                content=json.dumps(payload),
-                tool_call_id=call_id,
+        if call_id in errored:
+            messages.append(
+                ChatMessageTool(
+                    content="Error executing tool: the tool failed",
+                    tool_call_id=call_id,
+                    error=ToolCallError("unknown", "the tool failed"),
+                )
             )
-        )
+        else:
+            messages.append(
+                ChatMessageTool(
+                    content=json.dumps(payload),
+                    tool_call_id=call_id,
+                )
+            )
     state = TaskState(
         model=ModelName("test/model"),
         sample_id=sample.id or 0,
@@ -162,6 +177,21 @@ class TestExtractHelpers:
         assert response is None
         assert err is not None
         assert "not valid JSON" in err
+
+    def test_extract_errored_call_ids_collects_failed_calls(self) -> None:
+        msgs: list[Any] = [
+            ChatMessageTool(
+                content="boom",
+                tool_call_id="c1",
+                error=ToolCallError("unknown", "the tool failed"),
+            ),
+            ChatMessageTool(content='{"ok": true}', tool_call_id="c2"),
+        ]
+        assert extract_errored_call_ids(msgs) == {"c1"}
+
+    def test_extract_errored_call_ids_empty_when_all_succeed(self) -> None:
+        msgs: list[Any] = [ChatMessageTool(content='{"ok": true}', tool_call_id="c1")]
+        assert extract_errored_call_ids(msgs) == set()
 
 
 @pytest.mark.asyncio
@@ -290,3 +320,41 @@ class TestHybridScorer:
         assert score.explanation is not None
         assert "trace_check: PASS" in score.explanation
         assert "functional_check: PASS" in score.explanation
+
+
+@pytest.mark.asyncio
+class TestErroredCallGuard:
+    """A trace step must not match a tool call that errored."""
+
+    async def test_step_does_not_match_errored_call(self) -> None:
+        metadata = _good_prompt_metadata()
+        metadata["functional_answer"] = []
+        state = _build_state(
+            user_prompt="Fetch the ISS TLE.",
+            assistant_calls=[_tool_call("tle_lookup", {"query": "25544"})],
+            tool_responses=[("c1", {})],
+            errored_ids={"c1"},
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 0.0
+        assert meta["trace_passed"] is False
+        assert any("errored" in r for r in meta["trace_failure_reasons"])
+
+    async def test_errored_call_then_successful_retry_matches(self) -> None:
+        """Greedy matcher skips the errored call and anchors on the later success."""
+        metadata = _good_prompt_metadata()
+        metadata["functional_answer"] = []
+        state = _build_state(
+            user_prompt="Fetch the ISS TLE.",
+            assistant_calls=[
+                _tool_call("tle_lookup", {"query": "25544"}, "c1"),
+                _tool_call("tle_lookup", {"query": "25544"}, "c2"),
+            ],
+            tool_responses=[("c1", {}), ("c2", _good_response())],
+            errored_ids={"c1"},
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 1.0
+        assert meta["trace_passed"] is True

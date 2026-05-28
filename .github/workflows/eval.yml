@@ -39,7 +39,21 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      - run: uv sync --all-groups
+      # Provision a real GMAT install so the GMAT-backed prompts
+      # (gmat_run_mission / gmat_sweep / gmat_execute_script) actually
+      # execute. Exports GMAT_ROOT, which gmat_run.locate_gmat() reads.
+      # Cached across runs; same action-mode pattern gmat-run / gmat-sweep
+      # use in their own CI. Prompts tagged requires_gmat: true would
+      # otherwise be skipped (the eval falls back to skip-not-fail when the
+      # install is absent), so this step is what turns them on.
+      - uses: astro-tools/setup-gmat@v0
+        with:
+          version: R2026a
+          cache: true
+
+      # --extra gmat pulls in gmat-run / gmat-sweep (optional-dependencies,
+      # not a dependency-group, so --all-groups alone does not install them).
+      - run: uv sync --all-groups --extra gmat
 
       - name: Probe GitHub Models auth
         # Run a one-token call against the eval model before the full
@@ -87,6 +101,14 @@ jobs:
           # see the probe step above for the rationale.
           GITHUB_API_KEY: ${{ secrets.MODELS_PAT || secrets.GITHUB_TOKEN }}
           GITHUB_BASE_URL: https://models.github.ai/inference
+          # Credentialed happy-path prompts read these via the spawned
+          # `astrodynamics-mcp stdio` subprocess (it inherits this env). When
+          # the secrets are unset the vars are empty and those prompts skip
+          # (requires_credential) rather than failing — provision the secrets
+          # to turn them on.
+          ASTRODYNAMICS_MCP_SPACETRACK_USERNAME: ${{ secrets.ASTRODYNAMICS_MCP_SPACETRACK_USERNAME }}
+          ASTRODYNAMICS_MCP_SPACETRACK_PASSWORD: ${{ secrets.ASTRODYNAMICS_MCP_SPACETRACK_PASSWORD }}
+          ASTRODYNAMICS_MCP_DISCOSWEB_TOKEN: ${{ secrets.ASTRODYNAMICS_MCP_DISCOSWEB_TOKEN }}
         run: |
           # Flags explained:
           # * -M strict_tools=false : pydantic unions in our schemas use
@@ -106,6 +128,18 @@ jobs:
           #     from in-flight samples being cancelled when an error
           #     threshold trips. Inspect AI's default ('fail on any
           #     error') is too aggressive for a survey gate.
+          # * --timeout 60          : per-request model API timeout. The
+          #     Inspect default is NO timeout, so a stalled request blocks
+          #     forever.
+          # * --max-retries 2       : cap retries on 429 / transient errors.
+          #     GH Models Free-tier throttling (daily cap plus a 5-30 min
+          #     secondary anti-abuse limit) returns 429; Inspect's default
+          #     backoff retries for ~30 min before giving up, which hangs
+          #     the whole job until the workflow timeout kills it. Two
+          #     retries surfaces the rate limit as errored samples within
+          #     minutes instead.
+          # * --time-limit 300      : per-sample wall-clock backstop so no
+          #     single sample (e.g. a cold GMAT bootstrap) can stall the run.
           if [ -n "${{ inputs.tier }}" ]; then
             uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval_subset \
               -T tier="${{ inputs.tier }}" \
@@ -114,6 +148,9 @@ jobs:
               --max-samples 3 \
               --max-connections 4 \
               --no-fail-on-error \
+              --max-retries 2 \
+              --timeout 60 \
+              --time-limit 300 \
               --temperature 0 \
               --log-dir logs
           else
@@ -123,6 +160,9 @@ jobs:
               --max-samples 3 \
               --max-connections 4 \
               --no-fail-on-error \
+              --max-retries 2 \
+              --timeout 60 \
+              --time-limit 300 \
               --temperature 0 \
               --log-dir logs
           fi

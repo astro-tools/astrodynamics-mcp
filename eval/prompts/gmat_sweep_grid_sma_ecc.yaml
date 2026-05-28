@@ -1,0 +1,48 @@
+prompt: |
+  Run a full-factorial parameter sweep over this GMAT script, varying the
+  semi-major axis Sat.SMA across [7000, 7100] km and the eccentricity
+  Sat.ECC across [0.001, 0.01] — every combination (four runs total).
+  Script:
+
+    Create Spacecraft Sat;
+    GMAT Sat.SMA = 7000;
+    GMAT Sat.ECC = 0.001;
+    GMAT Sat.INC = 28.5;
+
+    Create ForceModel FM;
+    GMAT FM.PointMasses = {Earth};
+
+    Create Propagator Prop;
+    GMAT Prop.FM = FM;
+
+    Create ReportFile rpt;
+    GMAT rpt.Filename = 'orbit_report.txt';
+    GMAT rpt.Add = {Sat.A1ModJulian, Sat.Earth.SMA, Sat.Earth.ECC};
+
+    BeginMissionSequence;
+    Propagate Prop(Sat) {Sat.ElapsedSecs = 3600};
+tier: single_tool
+tools_required: [gmat_sweep]
+requires_gmat: true
+permitted_traces:
+  - - tool: gmat_sweep
+      arg_constraints:
+        mode: {equals: "grid"}
+        grid:
+          has_fields: [Sat.SMA, Sat.ECC]
+functional_answer:
+  - path: "$.run_id"
+    present: true
+  - path: "$.mode"
+    equals: "grid"
+  - path: "$.status_counts.failed.value"
+    in_range: [0, 0]
+  - path: "$.columns"
+    length: {min: 1}
+notes: |
+  GMAT single_tool: full-factorial grid sweep. The trace asserts the model
+  reached for mode='grid' with both swept axes. The functional check
+  confirms the sweep produced fused output columns with zero failed runs;
+  it does not pin run_count, which counts fused report rows (one per
+  propagation step across every grid point), not the number of grid
+  points. requires_gmat.

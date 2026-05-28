@@ -42,8 +42,13 @@ eval/
 ├── scoring.py            ← Inspect AI Scorer combining the two checks
 ├── tasks.py              ← Inspect AI Task wiring stdio server + react() agent
 └── prompts/
-    └── *.yaml            ← one prompt per file (30 prompts: 20 single-tool + 8 sequential + 2 planning)
+    └── *.yaml            ← one prompt per file (40 prompts spanning single-tool, sequential, and planning tiers)
 ```
+
+The suite covers the core read-only tools plus the GMAT tools
+(`gmat_run_mission`, `gmat_sweep`, `gmat_execute_script`,
+`gmat_read_run_artefact`), the DISCOSweb `satellite_metadata`
+cross-reference, and the Space-Track passthrough.
 
 ## Running locally
 
@@ -53,6 +58,11 @@ server under test. Install the package and the dev group first:
 ```bash
 uv sync --all-groups
 ```
+
+To run the GMAT-backed prompts you also need the `gmat` extra and a
+locatable GMAT install (`uv sync --all-groups --extra gmat`, plus
+`GMAT_ROOT` or a default-path install — see the main GMAT docs). Without
+it those prompts are *skipped*, not failed (see "Skip discipline" below).
 
 Then run the suite against GitHub Models with the configuration the CI
 gate uses (see "Model and provider" below):
@@ -77,6 +87,8 @@ Each `eval/prompts/<slug>.yaml` defines one prompt. Schema (validated by
 prompt: "<the natural-language user message>"
 tier: single_tool | sequential | planning
 tools_required: [<tool names that must be available>]
+requires_credential: [<source>, ...]     # optional; skip-gate, see below
+requires_gmat: true | false               # optional; skip-gate, see below
 permitted_traces:
   - - tool: <tool_name>
       arg_constraints:
@@ -92,6 +104,30 @@ functional_answer:
   ...
 notes: "<optional human-only note: known model quirks, related prompts, etc.>"
 ```
+
+A trace step matches a tool call only when the call did *not* error, so a
+tool that failed silently before a retry is skipped over in favour of the
+later successful call.
+
+### Skip discipline (`requires_credential` / `requires_gmat`)
+
+Some prompts only run where their prerequisites exist:
+
+- `requires_credential: [spacetrack]` / `[discosweb]` — the credentialed
+  happy-path prompts. The runner skips them when the matching
+  `ASTRODYNAMICS_MCP_<SOURCE>_<FIELD>` env vars are absent.
+- `requires_gmat: true` — the GMAT-backed prompts. Skipped when no GMAT
+  install is locatable.
+
+Skipped prompts are filtered out of the dataset — they neither run nor
+count for or against the gate. `eval/_ci_report.py` re-derives the
+skipped set from the same environment and lists it under "Skipped
+prompts" so the omission is visible rather than silent.
+
+GMAT prompts run in CI because `.github/workflows/eval.yml` provisions a
+real install via `astro-tools/setup-gmat@v0` and syncs the `gmat` extra.
+The credentialed happy-path prompts run only when the corresponding
+repo secrets are provisioned; until then they skip cleanly.
 
 The constraint vocabulary is defined in `eval/_constraints.py`
 (`equals`, `one_of`, `case_insensitive_equals`, `case_insensitive_contains`,
@@ -189,11 +225,16 @@ policy. Always size against the published table, not against headers.
 
 ### Counting requests
 
-The "~150 requests per run" figure is an estimate from the suite's
-30 prompts × variable tool-call turns per prompt; it has not been
-measured against a clean successful run. Before the next change to
-suite size, concurrency, or model selection, count actual requests
-from the Inspect AI log:
+The "~150 requests per run" figure is a pre-expansion estimate from the
+original 30 prompts × variable tool-call turns per prompt; it has not
+been measured against a clean successful run. The suite is now 40
+prompts, and a GMAT-provisioned full-suite run executes most of them
+(only the credentialed happy-path prompts skip without secrets), so a
+full `workflow_dispatch` run is now closer to — and may exceed — the
+GH-Models Free Low-tier ~150-request daily cap. The full suite is
+manual-dispatch-only, so this is a once-a-day budgeting concern rather
+than a per-PR one, but **count actual requests** before re-enabling any
+automatic trigger or changing model selection:
 
 ```bash
 inspect log dump logs/<latest>.eval | jq '[.samples[].messages[] | select(.role == "assistant")] | length'
@@ -222,9 +263,12 @@ CI policy:
 
 `.github/workflows/eval.yml` runs the suite against
 `openai-api/github/openai/gpt-4.1-mini` and uploads the Inspect log as a
-workflow artefact. The full 30-prompt suite is the default; the
-`workflow_dispatch` trigger accepts an optional `tier` filter that
-delegates to `astrodynamics_mcp_eval_subset` for tier-scoped runs.
+workflow artefact. The full 40-prompt suite is the default (minus any
+skipped credentialed/GMAT prompts); the `workflow_dispatch` trigger
+accepts an optional `tier` filter that delegates to
+`astrodynamics_mcp_eval_subset` for tier-scoped runs. The workflow
+provisions a real GMAT install (`astro-tools/setup-gmat@v0` + the `gmat`
+extra) so the GMAT-backed prompts execute rather than skip.
 
 **Trigger:** the workflow is `workflow_dispatch`-only — fire it
 manually from the Actions tab. Automatic triggers (push to main, cron)

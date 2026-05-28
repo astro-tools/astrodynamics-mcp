@@ -25,6 +25,17 @@ from typing import Any
 
 from inspect_ai.log import list_eval_logs, read_eval_log
 
+# Run as a script (``python eval/_ci_report.py``), only ``eval/`` lands on
+# sys.path — not the repo root — so ``from eval._prompts import ...`` below
+# raises ModuleNotFoundError. The CI workflow invokes it exactly that way.
+# Pytest covers this via ``pythonpath = ["."]``; the CLI path needs the
+# same escape hatch tasks.py uses.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from eval._prompts import load_prompts, unmet_requirements  # noqa: E402
+
 _MAX_FAILURES_LISTED = 15
 
 
@@ -58,6 +69,14 @@ class FailingPrompt:
 
 
 @dataclass(frozen=True)
+class SkippedPrompt:
+    """A prompt that did not run because its env prerequisites were absent."""
+
+    sample_id: str
+    unmet: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class EvalSummary:
     """Aggregate of one eval run, ready to render."""
 
@@ -66,6 +85,7 @@ class EvalSummary:
     n_samples: int
     n_passed: int
     failing: tuple[FailingPrompt, ...]
+    skipped: tuple[SkippedPrompt, ...] = ()
 
 
 def collect_failures(log: Any) -> tuple[float, int, int, tuple[FailingPrompt, ...]]:
@@ -165,6 +185,12 @@ def render_markdown(summary: EvalSummary, threshold: float) -> str:
     ]
     if n_errored > 0:
         lines.append(f"- **Errored samples:** {n_errored} (counted as failures)")
+    if summary.skipped:
+        lines.append(
+            f"- **Skipped:** {len(summary.skipped)} "
+            "(credentialed / GMAT prompts whose prerequisites are absent — "
+            "not counted for or against the gate)"
+        )
     lines.append("")
 
     if summary.failing:
@@ -183,12 +209,35 @@ def render_markdown(summary: EvalSummary, threshold: float) -> str:
             lines.append(f"- … and {omitted} more (see workflow artefact for full log)")
         lines.append("")
     else:
-        lines.append("Every prompt passed both the trace and functional checks.")
+        lines.append("Every prompt that ran passed both the trace and functional checks.")
+        lines.append("")
+
+    if summary.skipped:
+        lines.append(f"### Skipped prompts ({len(summary.skipped)})")
+        lines.append("")
+        for sp in summary.skipped:
+            lines.append(f"- `{sp.sample_id}` — unmet: {', '.join(sp.unmet)}")
         lines.append("")
 
     lines.append("Full Inspect log uploaded as the `inspect-eval-logs` workflow artefact.")
     lines.append("")
     return "\n".join(lines)
+
+
+def _collect_skipped() -> tuple[SkippedPrompt, ...]:
+    """Re-derive the skipped set from the prompt catalogue against this env.
+
+    The runner filters unsatisfiable prompts out of the dataset, so they
+    never reach the log. This re-runs the same requirement check in the
+    report process (same CI environment, so the same prompts skip) to list
+    them rather than leaving them silently absent from the count.
+    """
+    skipped: list[SkippedPrompt] = []
+    for prompt in load_prompts():
+        unmet = unmet_requirements(prompt)
+        if unmet:
+            skipped.append(SkippedPrompt(sample_id=prompt.id, unmet=tuple(unmet)))
+    return tuple(skipped)
 
 
 def _build_summary_from_log_dir(log_dir: Path) -> EvalSummary:
@@ -203,6 +252,7 @@ def _build_summary_from_log_dir(log_dir: Path) -> EvalSummary:
         n_samples=n_samples,
         n_passed=n_passed,
         failing=failing,
+        skipped=_collect_skipped(),
     )
 
 

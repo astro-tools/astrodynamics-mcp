@@ -1,0 +1,45 @@
+prompt: |
+  Run a full-factorial sweep over this GMAT script varying Sat.SMA across
+  [7000, 7100] km, then read back the sweep's run manifest (the
+  manifest.jsonl artefact) using the run id the sweep returns. Script:
+
+    Create Spacecraft Sat;
+    GMAT Sat.SMA = 7000;
+    GMAT Sat.ECC = 0.001;
+    GMAT Sat.INC = 28.5;
+
+    Create ForceModel FM;
+    GMAT FM.PointMasses = {Earth};
+
+    Create Propagator Prop;
+    GMAT Prop.FM = FM;
+
+    Create ReportFile rpt;
+    GMAT rpt.Filename = 'orbit_report.txt';
+    GMAT rpt.Add = {Sat.A1ModJulian, Sat.Earth.SMA};
+
+    BeginMissionSequence;
+    Propagate Prop(Sat) {Sat.ElapsedSecs = 3600};
+tier: sequential
+tools_required: [gmat_sweep, gmat_read_run_artefact]
+requires_gmat: true
+permitted_traces:
+  - - tool: gmat_sweep
+      arg_constraints:
+        mode: {equals: "grid"}
+        grid:
+          has_fields: [Sat.SMA]
+    - tool: gmat_read_run_artefact
+      arg_constraints:
+        name: {case_insensitive_contains: "manifest"}
+functional_answer:
+  - path: "$.name"
+    present: true
+  - path: "$.content"
+    present: true
+notes: |
+  Cross-tool: gmat_sweep mints a run_id that must thread into
+  gmat_read_run_artefact. A hallucinated run_id raises
+  invalid_input.unknown_run_id, and since a trace step never matches an
+  errored call, that fails the trace — the model has to carry the real id
+  forward. requires_gmat.

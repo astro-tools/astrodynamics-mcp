@@ -1,0 +1,31 @@
+prompt: |
+  Before I run this GMAT script, check whether it's well-formed — does GMAT
+  parse it without errors? Script:
+
+    Create Spacecraft Sat;
+    GMAT Sat.SMA = 7000;
+    GMAT Sat.ECC = 0.001;
+
+    Create ForceModel FM;
+    GMAT FM.PointMasses = {Earth};
+
+    Create Propagator Prop;
+    GMAT Prop.FM = FM;
+
+    BeginMissionSequence;
+    Propagate Prop(Sat) {Sat.ElapsedSecs = 3600};
+tier: single_tool
+tools_required: [gmat_validate_script]
+requires_gmat: true
+permitted_traces:
+  - - tool: gmat_validate_script
+functional_answer:
+  - path: "$.ok"
+    equals: true
+  - path: "$.errors"
+    length: {max: 0}
+notes: |
+  GMAT single_tool: structural validation of a well-formed script. "Check
+  it parses before I run it" is the gmat_validate_script niche — no
+  propagation, just GMAT's parse verdict. The script is a valid two-body
+  setup, so ok=true with no errors. requires_gmat.

@@ -1,0 +1,40 @@
+prompt: |
+  I want to actually fly this GMAT mission, but I don't want to waste a run
+  on a broken script — make sure it's well-formed first, and only if it
+  parses cleanly, run it and tell me the run id and how long the run took.
+  Script:
+
+    Create Spacecraft Sat;
+    GMAT Sat.SMA = 7000;
+    GMAT Sat.ECC = 0.001;
+    GMAT Sat.INC = 28.5;
+
+    Create ForceModel FM;
+    GMAT FM.PointMasses = {Earth};
+
+    Create Propagator Prop;
+    GMAT Prop.FM = FM;
+
+    Create ReportFile rpt;
+    GMAT rpt.Filename = 'orbit_report.txt';
+    GMAT rpt.Add = {Sat.A1ModJulian, Sat.Earth.SMA};
+
+    BeginMissionSequence;
+    Propagate Prop(Sat) {Sat.ElapsedSecs = 3600};
+tier: planning
+tools_required: [gmat_validate_script, gmat_run_mission]
+requires_gmat: true
+permitted_traces:
+  - - tool: gmat_validate_script
+    - tool: gmat_run_mission
+functional_answer:
+  - path: "$.run_id"
+    present: true
+  - path: "$.wall_clock.unit"
+    equals: "s"
+notes: |
+  GMAT planning tier: the user states a goal ("fly it, but check it first")
+  and the LLM must decompose it into validate -> run, in order. The
+  functional check lands on the final gmat_run_mission response. Both tools
+  are exposed so the model has to sequence them rather than reach straight
+  for the runner. requires_gmat.

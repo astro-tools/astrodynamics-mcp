@@ -1,0 +1,42 @@
+prompt: |
+  Fetch the current TLE for the ISS (NORAD 25544), propagate it one hour
+  forward from 2024-01-01T00:00:00Z with SGP4, then cross-check the orbit by
+  running this GMAT mission and giving me its run id. Script:
+
+    Create Spacecraft Sat;
+    GMAT Sat.SMA = 6790;
+    GMAT Sat.ECC = 0.0005;
+    GMAT Sat.INC = 51.6;
+
+    Create ForceModel FM;
+    GMAT FM.PointMasses = {Earth};
+
+    Create Propagator Prop;
+    GMAT Prop.FM = FM;
+
+    Create ReportFile rpt;
+    GMAT rpt.Filename = 'iss_check.txt';
+    GMAT rpt.Add = {Sat.A1ModJulian, Sat.Earth.SMA};
+
+    BeginMissionSequence;
+    Propagate Prop(Sat) {Sat.ElapsedSecs = 3600};
+tier: sequential
+tools_required: [tle_lookup, sgp4_propagate, gmat_run_mission]
+requires_gmat: true
+permitted_traces:
+  - - tool: tle_lookup
+      arg_constraints:
+        query: {equals: "25544"}
+    - tool: sgp4_propagate
+    - tool: gmat_run_mission
+functional_answer:
+  - path: "$.run_id"
+    present: true
+  - path: "$.wall_clock.unit"
+    equals: "s"
+notes: |
+  Cross-validation chain: SGP4 (analytic TLE propagation) vs the GMAT
+  numerical propagator for the same ISS orbit. The inline GMAT script makes
+  the third step deterministic so the trace measures tool-selection and
+  ordering, not the model's ability to author GMAT from scratch. The
+  functional check lands on the final gmat_run_mission response. requires_gmat.

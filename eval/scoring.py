@@ -43,6 +43,21 @@ def extract_trace(messages: list[Any]) -> list[ToolCall]:
     return trace
 
 
+def extract_errored_call_ids(messages: list[Any]) -> set[str]:
+    """Return the ``tool_call_id``s whose tool response carried an error.
+
+    Inspect AI surfaces a failed tool call as a ``ChatMessageTool`` with a
+    non-``None`` ``error``. The trace matcher uses this so a step expecting a
+    usable response does not match a call that errored (a tool that failed
+    silently before a retry is skipped over in favour of the later success).
+    """
+    return {
+        msg.tool_call_id
+        for msg in messages
+        if isinstance(msg, ChatMessageTool) and msg.error is not None and msg.tool_call_id
+    }
+
+
 def extract_final_tool_response(messages: list[Any]) -> tuple[Any | None, str | None]:
     """Return ``(parsed_json, error_reason)`` for the last ``ChatMessageTool``.
 
@@ -67,33 +82,49 @@ def extract_final_tool_response(messages: list[Any]) -> tuple[Any | None, str | 
 
 
 def _match_trace(
-    actual: list[ToolCall], permitted: list[Mapping[str, Any]]
+    actual: list[ToolCall],
+    permitted: list[Mapping[str, Any]],
+    errored_ids: set[str],
 ) -> tuple[bool, list[str]]:
     """Match *permitted* (a single trace's steps) against *actual* as a subsequence.
 
-    Greedy left-to-right: for each permitted step, advance the cursor
-    through *actual* until a matching call is found. Returns
-    ``(passed, failure_reasons)``; the reasons describe the first step
-    that could not be matched (subsequent steps are not evaluated since
-    they have no anchor).
+    Greedy left-to-right: for each permitted step, advance the cursor through
+    *actual* until a matching call is found. A call matches a step when the
+    tool name and ``arg_constraints`` agree **and** the call did not error —
+    a step expecting a usable response never matches an errored call, so a
+    tool that failed silently before a retry is skipped over in favour of the
+    later success.
+
+    Returns ``(passed, failure_reasons)``; the reasons describe the first
+    step that could not be matched.
     """
     cursor = 0
     for step_index, step in enumerate(permitted):
         expected_tool = step["tool"]
         constraints = step.get("arg_constraints") or {}
         first_arg_failure: list[str] | None = None
+        first_error_failure: str | None = None
         match_index: int | None = None
         for i in range(cursor, len(actual)):
             call = actual[i]
             if call.function != expected_tool:
                 continue
             passed, reasons = match_args(call.arguments, constraints)
-            if passed:
+            if not passed:
+                if first_arg_failure is None:
+                    first_arg_failure = reasons
+                continue
+            if call.id not in errored_ids:
                 match_index = i
                 break
-            if first_arg_failure is None:
-                first_arg_failure = reasons
+            if first_error_failure is None:
+                first_error_failure = (
+                    "call matched args but the tool errored; "
+                    "step expects a successful (non-error) call"
+                )
         if match_index is None:
+            if first_error_failure is not None:
+                return False, [f"step {step_index} ({expected_tool!r}): {first_error_failure}"]
             if first_arg_failure is not None:
                 return False, [
                     f"step {step_index} ({expected_tool!r}): all candidate calls failed "
@@ -109,14 +140,16 @@ def _match_trace(
 
 
 def _trace_check(
-    actual: list[ToolCall], permitted_traces: list[list[Mapping[str, Any]]]
+    actual: list[ToolCall],
+    permitted_traces: list[list[Mapping[str, Any]]],
+    errored_ids: set[str],
 ) -> tuple[bool, list[str]]:
     """At least one permitted trace must match; return overall pass + per-trace reasons."""
     if not permitted_traces:
         return False, ["no permitted_traces declared for this prompt"]
     all_reasons: list[str] = []
     for i, trace in enumerate(permitted_traces):
-        passed, reasons = _match_trace(actual, trace)
+        passed, reasons = _match_trace(actual, trace, errored_ids)
         if passed:
             return True, []
         all_reasons.append(f"trace[{i}] failed: {'; '.join(reasons)}")
@@ -139,7 +172,8 @@ def hybrid_scorer() -> Scorer:
         functional_answer = state.metadata.get("functional_answer") or []
 
         trace = extract_trace(state.messages)
-        trace_passed, trace_reasons = _trace_check(trace, permitted_traces)
+        errored_ids = extract_errored_call_ids(state.messages)
+        trace_passed, trace_reasons = _trace_check(trace, permitted_traces, errored_ids)
 
         response, parse_error = extract_final_tool_response(state.messages)
         if parse_error is not None:
