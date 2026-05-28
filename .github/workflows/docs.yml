@@ -25,7 +25,10 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - run: uv sync --all-groups
+      # --extra gmat installs gmat-run so the GMAT tool slots register and
+      # land in the auto-generated tool reference. gmat-run imports without
+      # a GMAT binary, so no setup-gmat step is needed for the catalogue.
+      - run: uv sync --all-groups --extra gmat
       - run: uv run mkdocs build --strict
 
   deploy:
@@ -49,7 +52,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - run: uv sync --all-groups
+      - run: uv sync --all-groups --extra gmat
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
