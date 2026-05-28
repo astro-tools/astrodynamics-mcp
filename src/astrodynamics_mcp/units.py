@@ -78,17 +78,26 @@ def _validate_unit(unit: str) -> None:
 
 
 def _validate_number(value: object, *, where: str) -> float:
-    """Coerce *value* to ``float`` or raise ``InvalidInputError``.
+    """Coerce *value* to a finite ``float`` or raise ``InvalidInputError``.
 
-    Accepts ``int`` and ``float`` (including ``NaN`` and infinities — tool
-    outputs use them to signal failed or degenerate computations). Rejects
-    ``bool`` (Python's ``isinstance(True, int)`` is true but a quantity value
-    must be numeric), strings, ``None``, and anything else.
+    Rejects ``bool`` (Python's ``isinstance(True, int)`` is true but a quantity
+    value must be numeric), strings, ``None``, and anything else. Also rejects
+    ``NaN`` and infinities: JSON has no representation for them (``json.dumps``
+    emits the non-standard ``NaN`` / ``Infinity`` tokens, which strict MCP
+    clients reject), so a non-finite value must never cross the wire. A tool
+    whose computation degenerates should detect that and raise the appropriate
+    typed error rather than wrapping a non-finite result in a ``Quantity``;
+    this guard is the boundary backstop.
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise InvalidInputError(
             f"{where} must be a number (int or float), got {type(value).__name__}",
             code="invalid_input.value_not_a_number",
+        )
+    if not math.isfinite(value):
+        raise InvalidInputError(
+            f"{where} must be a finite number, got {value}",
+            code="invalid_input.non_finite_value",
         )
     return float(value)
 
