@@ -129,10 +129,14 @@ class DataSourceError(AstrodynamicsMCPError):
 
 
 class CredentialRequiredError(AstrodynamicsMCPError):
-    """Forward-compatible placeholder for v0.2 credentialed tools.
+    """A tool needed an upstream credential the caller did not supply.
 
-    Not raised at v0.1 — defined so the hierarchy is stable and downstream
-    consumers can write `except CredentialRequiredError` ahead of time.
+    Raised by :func:`astrodynamics_mcp.credentials.require_credential` when
+    the caller has not configured a complete credential for the requested
+    source. The dotted suffix names the source — e.g.
+    ``credential_required.spacetrack`` — and the ``data`` dict carries the
+    list of fields that were not satisfied, so the LLM consumer can
+    surface a precise remediation without parsing prose.
     """
 
     CODE_PREFIX: ClassVar[str] = "credential_required"

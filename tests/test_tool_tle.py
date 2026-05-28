@@ -70,6 +70,34 @@ def _patched_async_client(handler: Any) -> Any:
     )
 
 
+def _patched_spacetrack_client(handler: Any) -> Any:
+    """Patch the spacetrack adapter's singleton builder to use a MockTransport client.
+
+    The spacetrack adapter uses a module-level singleton client (so the
+    session cookie persists across calls in production). Tests bypass that
+    by replacing the builder so each test gets its own isolated client.
+    ``_BASE_URL`` must be set on the test client so the adapter's relative
+    URLs resolve correctly.
+    """
+    from astrodynamics_mcp.data.spacetrack import _BASE_URL
+
+    return patch(
+        "astrodynamics_mcp.data.spacetrack._build_singleton_client",
+        return_value=httpx.AsyncClient(
+            base_url=_BASE_URL,
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+
+
+@pytest.fixture
+def reset_spacetrack_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reset the spacetrack singleton client between tests that exercise it."""
+    import astrodynamics_mcp.data.spacetrack as spacetrack_module
+
+    monkeypatch.setattr(spacetrack_module, "_singleton_client", None)
+
+
 class TestHappyPaths:
     async def test_norad_id_lookup_returns_one_result(self, tmp_cache: Cache) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -274,3 +302,96 @@ class TestSchemaInvariants:
         as_json = response.model_dump_json()
         rebuilt = TleLookupResponse.model_validate_json(as_json)
         assert rebuilt == response
+
+
+_SPACETRACK_LOGIN_COOKIE = "chocolatechip=session-token; Path=/"
+
+
+def _spacetrack_handler(payload: Any) -> Any:
+    """Build a handler that satisfies Space-Track login then returns *payload*."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/ajaxauth/login":
+            return httpx.Response(200, headers={"set-cookie": _SPACETRACK_LOGIN_COOKIE})
+        return httpx.Response(200, json=payload)
+
+    return handler
+
+
+class TestSpaceTrackDispatch:
+    """``source='space-track'`` goes through the spacetrack adapter and credential gate."""
+
+    async def test_creds_in_env_returns_response(
+        self,
+        tmp_cache: Cache,
+        monkeypatch: pytest.MonkeyPatch,
+        reset_spacetrack_singleton: None,
+    ) -> None:
+        monkeypatch.setenv("ASTRODYNAMICS_MCP_SPACETRACK_USERNAME", "alice@example.org")
+        monkeypatch.setenv("ASTRODYNAMICS_MCP_SPACETRACK_PASSWORD", "hunter2")
+
+        with _patched_spacetrack_client(_spacetrack_handler([_SAMPLE_OMM_ISS])):
+            response = await tle_lookup(query="25544", source="space-track")
+
+        assert isinstance(response, TleLookupResponse)
+        assert len(response.results) == 1
+        result = response.results[0]
+        assert result.norad_id == "25544"
+        assert result.name == "ISS (ZARYA)"
+        assert result.stale is False
+
+    async def test_missing_creds_raises_credential_required_envelope(
+        self,
+        tmp_cache: Cache,
+        monkeypatch: pytest.MonkeyPatch,
+        reset_spacetrack_singleton: None,
+    ) -> None:
+        """No creds → typed envelope, and the HTTP layer is never touched."""
+        monkeypatch.delenv("ASTRODYNAMICS_MCP_SPACETRACK_USERNAME", raising=False)
+        monkeypatch.delenv("ASTRODYNAMICS_MCP_SPACETRACK_PASSWORD", raising=False)
+
+        handler_called = {"hit": False}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            handler_called["hit"] = True
+            return httpx.Response(200, json=[_SAMPLE_OMM_ISS])
+
+        with _patched_spacetrack_client(handler), pytest.raises(ToolError) as excinfo:
+            await tle_lookup(query="25544", source="space-track")
+
+        envelope = json.loads(str(excinfo.value))
+        assert envelope["code"] == "credential_required.spacetrack"
+        assert envelope["data"]["source"] == "spacetrack"
+        assert set(envelope["data"]["missing_fields"]) == {"username", "password"}
+        # The credential gate fires before any network/login attempt.
+        assert handler_called["hit"] is False
+
+    async def test_partial_creds_treated_as_missing(
+        self,
+        tmp_cache: Cache,
+        monkeypatch: pytest.MonkeyPatch,
+        reset_spacetrack_singleton: None,
+    ) -> None:
+        """Only one of username/password set → still raises, names the missing field."""
+        monkeypatch.setenv("ASTRODYNAMICS_MCP_SPACETRACK_USERNAME", "alice@example.org")
+        monkeypatch.delenv("ASTRODYNAMICS_MCP_SPACETRACK_PASSWORD", raising=False)
+
+        with (
+            _patched_spacetrack_client(_spacetrack_handler([_SAMPLE_OMM_ISS])),
+            pytest.raises(ToolError) as excinfo,
+        ):
+            await tle_lookup(query="25544", source="space-track")
+
+        envelope = json.loads(str(excinfo.value))
+        assert envelope["code"] == "credential_required.spacetrack"
+        assert envelope["data"]["missing_fields"] == ["password"]
+
+    async def test_default_source_is_celestrak(self, tmp_cache: Cache) -> None:
+        """Sanity: omitting source still goes through the CelesTrak path, unchanged."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=[_SAMPLE_OMM_ISS])
+
+        with _patched_async_client(handler):
+            response = await tle_lookup(query="25544")  # no source arg
+        assert response.results[0].norad_id == "25544"

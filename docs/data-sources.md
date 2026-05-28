@@ -1,13 +1,14 @@
 # Data sources
 
-The current tool surface reaches three external no-auth data sources. Each
-sits behind an adapter that caches responses on disk so repeated tool
-calls don't hammer the upstream, and each handles network failure by
-falling back to a cached value flagged `stale=true` rather than
-silently returning nothing.
+The tool surface reaches several external data sources. Each sits behind
+an adapter that caches responses on disk so repeated tool calls don't
+hammer the upstream, and each handles network failure by falling back to
+a cached value flagged `stale=true` rather than silently returning
+nothing.
 
-For credentialled sources (Space-Track, DISCOSweb) the credential
-passthrough is documented separately — see [Credentials](credentials.md).
+For credentialled sources the credential passthrough itself is documented
+separately — see [Credentials](credentials.md). DISCOSweb lands in a
+later release.
 
 ## CelesTrak — `tle_lookup`
 
@@ -35,6 +36,54 @@ When the upstream is unreachable:
 The User-Agent header carries the package version and a URL pointing back
 to this project so CelesTrak's analytics can distinguish well-behaved
 traffic from anonymous scraping.
+
+## Space-Track — `tle_lookup` (with credentials)
+
+[Space-Track](https://www.space-track.org) is 18 SDS / USSPACECOM's
+authoritative catalogue. `tle_lookup(source='space-track')` queries the
+`/basicspacedata/query/class/gp/` endpoint over a cookie-authenticated
+session. Reach for it when CelesTrak is missing a recently-launched
+object, when you need deeper historical GP records than CelesTrak's
+working window, or as a fallback when CelesTrak is unreachable.
+
+Authentication is username + password POSTed to `/ajaxauth/login`. The
+returned session cookie is reused across tool calls for the lifetime of
+the server process so we do not re-authenticate per query — Space-Track's
+sessions silently expire after roughly two hours of inactivity, at which
+point the adapter detects the 401, transparently re-logs in once, and
+retries the original query. A missing credential surfaces *before* any
+network call as `credential_required.spacetrack` — see
+[Credentials](credentials.md) for how to provide one.
+
+Query dispatch matches the CelesTrak adapter's shape: a numeric query
+becomes a `NORAD_CAT_ID` lookup, anything else becomes an `OBJECT_NAME`
+substring search. Space-Track has no group/category concept, so the
+CelesTrak group keywords (`stations`, `weather`, …) have no meaning here
+— passing one falls through to a name search and typically returns
+nothing useful.
+
+Responses cache on disk under the same XDG layer as CelesTrak with a
+6h TTL. Space-Track's
+[API Rules of Behaviour](https://www.space-track.org/documentation#/api)
+explicitly require this — "make a single query for the data and save it
+locally; do not query for the same data repeatedly." Cookies are never
+written to disk; the cache stores only the GP-class response payload,
+keyed by query shape.
+
+When the upstream is unreachable:
+
+- A cached value within or beyond its TTL is returned with `stale=True`
+  and the original `fetched_at`.
+- No cached value → `DataSourceError` with code
+  `data_source.spacetrack_unreachable`. A refused credential (Space-Track
+  returns 200 + `{"Login":"Failed"}` rather than a 401) surfaces as
+  `data_source.spacetrack_auth_failed` so the LLM consumer can
+  distinguish "credential rejected" from "network unreachable."
+
+Space-Track enforces per-account rate limits — roughly 30 requests per
+minute and 300 per hour as of writing. Abusive use can get an account
+suspended; the on-disk cache plus session-cookie reuse are how the
+adapter stays within that envelope.
 
 ## JPL Horizons — `porkchop`, `bplane_target`
 
