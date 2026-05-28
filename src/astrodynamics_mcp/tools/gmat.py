@@ -20,12 +20,14 @@ import re
 import tempfile
 import time
 from contextlib import suppress
+from importlib import resources
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
+from astrodynamics_mcp import server as _server_module
 from astrodynamics_mcp.errors import InvalidInputError, UpstreamError
 from astrodynamics_mcp.runs import default_registry
 from astrodynamics_mcp.server import register_tool
@@ -2285,5 +2287,111 @@ def _build_response(
     )
 
 
+# ---------------------------------------------------------------------------
+# GMAT script-skeleton MCP resources
+# ---------------------------------------------------------------------------
+#
+# Vetted starter scripts ship as MCP resources keyed by stable
+# ``gmat-skeleton://<slug>`` URIs. They live as `.script` files under the
+# sibling ``astrodynamics_mcp.skeletons`` package, are read at request time
+# (no embedded blobs), and gate on the same ``[gmat]`` import guard as the
+# tool slots above — useless without a way to actually run them.
+
+_SKELETON_URI_SCHEME = "gmat-skeleton"
+_SKELETON_PACKAGE = "astrodynamics_mcp.skeletons"
+_SKELETON_MIME_TYPE = "text/plain"
+
+# (slug, filename) pairs driving registration. Slug is the URI path; filename
+# is the package-relative `.script` file. Order is stable so `resources/list`
+# returns the catalogue in a predictable order.
+_SKELETONS: tuple[tuple[str, str], ...] = (
+    ("minimal-leo", "minimal_leo.script"),
+    ("multibody-gravity", "multibody_gravity.script"),
+    ("force-models-comparison", "force_models_comparison.script"),
+    ("hohmann-transfer", "hohmann_transfer.script"),
+    ("geo-transfer", "geo_transfer.script"),
+    ("lunar-transfer", "lunar_transfer.script"),
+    ("lunar-station-keeping", "lunar_station_keeping.script"),
+    ("mars-b-plane-targeting", "mars_b_plane_targeting.script"),
+    ("leo-station-keeping", "leo_station_keeping.script"),
+    ("finite-burn", "finite_burn.script"),
+    ("target-finite-burn-apogee-raise", "target_finite_burn_apogee_raise.script"),
+    ("electric-propulsion", "electric_propulsion.script"),
+    ("yukon-optimization", "yukon_optimization.script"),
+    ("l2-design", "l2_design.script"),
+    ("station-contact-location", "station_contact_location.script"),
+    ("eclipse-location", "eclipse_location.script"),
+    ("attitude-nadir-pointing", "attitude_nadir_pointing.script"),
+    ("attitude-spinner", "attitude_spinner.script"),
+    ("constellation", "constellation.script"),
+    ("control-flow", "control_flow.script"),
+)
+
+
+_DESCRIPTION_LINE_RE = re.compile(r"^\s*%\s*Description:\s*(?P<text>.+?)\s*$")
+
+
+def _extract_description(text: str) -> str:
+    """Scrape the ``% Description: <line>`` annotation from a skeleton's head.
+
+    Scans the script's leading non-blank lines and returns the first match.
+    Raises :class:`ValueError` when no description is present so a malformed
+    skeleton fails at registration time rather than shipping silently. The
+    scan stops at the first non-comment, non-blank line — the description
+    must live in the header banner, not deep in the mission sequence.
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        m = _DESCRIPTION_LINE_RE.match(line)
+        if m:
+            return m.group("text")
+        if not stripped.startswith("%"):
+            break
+    raise ValueError("skeleton missing '% Description: <text>' header line")
+
+
+def _make_skeleton_reader(path: Path) -> Any:
+    """Build the resource-handler closure that reads ``path`` at request time."""
+
+    def read_skeleton() -> str:
+        return path.read_text(encoding="utf-8")
+
+    return read_skeleton
+
+
+def _register_gmat_resources() -> None:
+    """Attach every entry in :data:`_SKELETONS` as an MCP resource.
+
+    Mirrors :func:`_register_gmat_tools`: factored out of module top-level
+    so unit tests can drive registration against a fresh
+    :class:`~mcp.server.fastmcp.FastMCP` instance, and reads ``mcp`` off
+    the :mod:`astrodynamics_mcp.server` module at call time so a
+    monkeypatched singleton resolves correctly.
+    """
+    skeleton_root = resources.files(_SKELETON_PACKAGE)
+    for slug, filename in _SKELETONS:
+        # ``importlib.resources.files`` returns a ``Traversable``; the
+        # ``Path`` cast is safe for the on-disk source checkout and the
+        # installed wheel alike (both resolve to regular files; no
+        # zipfile-only namespace packages here).
+        path = Path(str(skeleton_root.joinpath(filename)))
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"skeleton {slug!r} expected at {path}, but the file is missing"
+            )
+        text = path.read_text(encoding="utf-8")
+        description = _extract_description(text)
+        uri = f"{_SKELETON_URI_SCHEME}://{slug}"
+        _server_module.mcp.resource(
+            uri,
+            name=slug,
+            description=description,
+            mime_type=_SKELETON_MIME_TYPE,
+        )(_make_skeleton_reader(path))
+
+
 if _GMAT_RUN_AVAILABLE:
     _register_gmat_tools()
+    _register_gmat_resources()

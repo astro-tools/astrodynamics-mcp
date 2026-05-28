@@ -1,0 +1,80 @@
+% Description: Circular lunar orbit station keeping -- DC-targeted dv1/dv2 burns inside a For loop maintain RMAG ~= 1850 km whenever altitude drops below 1825 km.
+
+Create Spacecraft LunaSat
+LunaSat.DateFormat       = UTCGregorian
+LunaSat.Epoch            = '01 Jan 2026 12:00:00.000'
+LunaSat.CoordinateSystem = MoonInertial
+LunaSat.DisplayStateType = Keplerian
+LunaSat.SMA              = 1851
+LunaSat.ECC              = 0.001
+LunaSat.INC              = 15.333
+LunaSat.RAAN             = 201.083
+LunaSat.AOP              = 167.264
+LunaSat.TA               = 38.031
+LunaSat.DryMass          = 850
+LunaSat.Cd               = 2.2
+LunaSat.Cr               = 1.8
+
+Create ForceModel MoonProp_ForceModel
+MoonProp_ForceModel.CentralBody                     = Luna
+MoonProp_ForceModel.PrimaryBodies                   = {Luna}
+MoonProp_ForceModel.PointMasses                     = {Earth, Jupiter, Sun}
+MoonProp_ForceModel.Drag                            = None
+MoonProp_ForceModel.SRP                             = On
+MoonProp_ForceModel.ErrorControl                    = RSSStep
+MoonProp_ForceModel.GravityField.Luna.Degree        = 80
+MoonProp_ForceModel.GravityField.Luna.Order         = 80
+MoonProp_ForceModel.GravityField.Luna.PotentialFile = 'LP165P.cof'
+MoonProp_ForceModel.SRP.Flux                        = 1367
+MoonProp_ForceModel.SRP.SRPModel                    = Spherical
+
+Create Propagator MoonProp
+MoonProp.FM                       = MoonProp_ForceModel
+MoonProp.Type                     = PrinceDormand78
+MoonProp.InitialStepSize          = 60
+MoonProp.Accuracy                 = 1e-11
+MoonProp.MinStep                  = 0.001
+MoonProp.MaxStep                  = 2700
+MoonProp.MaxStepAttempts          = 50
+MoonProp.StopIfAccuracyIsViolated = true
+
+Create ImpulsiveBurn dv1
+dv1.CoordinateSystem = Local
+dv1.Origin           = Luna
+dv1.Axes             = VNB
+
+Create ImpulsiveBurn dv2
+dv2.CoordinateSystem = Local
+dv2.Origin           = Luna
+dv2.Axes             = VNB
+
+Create CoordinateSystem MoonInertial
+MoonInertial.Origin = Luna
+MoonInertial.Axes   = BodyInertial
+
+Create DifferentialCorrector DefaultDC
+
+Create Variable I
+
+Create ReportFile RF
+RF.Filename = 'lunar_station_keeping.txt'
+RF.Add = {LunaSat.UTCGregorian, LunaSat.Luna.RMAG, LunaSat.Luna.SMA, LunaSat.Luna.ECC}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+For 'For I = 1:3' I = 1:1:3
+   Propagate 'Prop to RMAG = 1825' MoonProp(LunaSat) {LunaSat.Luna.RMAG = 1825}
+   Target 'Raise Periapsis' DefaultDC {SolveMode = Solve, ExitMode = DiscardAndContinue}
+      Propagate 'Prop to Periapsis' MoonProp(LunaSat) {LunaSat.Luna.Periapsis}
+      Vary 'Vary dv1.V' DefaultDC(dv1.Element1 = 0.02, {Perturbation = 0.0001, Lower = -1, Upper = 1, MaxStep = 0.01})
+      Vary 'Vary dv2.V' DefaultDC(dv2.Element1 = 0.02, {Perturbation = 0.0001, Lower = -1, Upper = 1, MaxStep = 0.01})
+      Maneuver 'Apply dv1' dv1(LunaSat)
+      Propagate 'Prop to Apoapsis' MoonProp(LunaSat) {LunaSat.Luna.Apoapsis}
+      Achieve 'Achieve RMAG = 1850' DefaultDC(LunaSat.Luna.RMAG = 1850, {Tolerance = 0.1})
+      Maneuver 'Apply dv2' dv2(LunaSat)
+      Achieve 'Achieve ECC = 0' DefaultDC(LunaSat.Luna.ECC = 0, {Tolerance = .0001})
+   EndTarget
+EndFor
+
+Propagate 'Prop to RadPer = 1825' MoonProp(LunaSat) {LunaSat.Luna.RadPer = 1825}

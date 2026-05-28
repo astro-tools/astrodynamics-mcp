@@ -1,0 +1,147 @@
+% Description: Earth -> Mars heliocentric transfer with DC-targeted B-plane (BdotT/BdotR) at Mars arrival and a Mars-orbit insertion (MOI) burn; three force models (NearEarth, DeepSpace, NearMars) staged across the trajectory.
+
+Create Spacecraft MAVEN
+MAVEN.DateFormat       = UTCGregorian
+MAVEN.Epoch            = '18 Nov 2026 20:26:24.315'
+MAVEN.CoordinateSystem = EarthMJ2000Eq
+MAVEN.DisplayStateType = Cartesian
+MAVEN.X                = 3728.345810006184
+MAVEN.Y                = 4697.943961035268
+MAVEN.Z                = -2784.040094879185
+MAVEN.VX               = -9.502477543864449
+MAVEN.VY               = 5.935188001372066
+MAVEN.VZ               = -2.696272103530009
+MAVEN.DryMass          = 904
+MAVEN.Cd               = 2.2
+MAVEN.Cr               = 1
+MAVEN.DragArea         = 20
+MAVEN.SRPArea          = 20
+MAVEN.Tanks            = {MainTank}
+
+Create ChemicalTank MainTank
+MainTank.AllowNegativeFuelMass = false
+MainTank.FuelMass              = 1718
+MainTank.Pressure              = 5000
+MainTank.Temperature           = 20
+MainTank.RefTemperature        = 20
+MainTank.Volume                = 2
+MainTank.FuelDensity           = 1000
+MainTank.PressureModel         = PressureRegulated
+
+Create ForceModel NearEarth_ForceModel
+NearEarth_ForceModel.CentralBody                  = Earth
+NearEarth_ForceModel.PrimaryBodies                = {Earth}
+NearEarth_ForceModel.PointMasses                  = {Luna, Sun}
+NearEarth_ForceModel.Drag                         = None
+NearEarth_ForceModel.SRP                          = On
+NearEarth_ForceModel.ErrorControl                 = RSSStep
+NearEarth_ForceModel.GravityField.Earth.Degree    = 8
+NearEarth_ForceModel.GravityField.Earth.Order     = 8
+NearEarth_ForceModel.GravityField.Earth.PotentialFile = 'JGM2.cof'
+NearEarth_ForceModel.SRP.Flux                     = 1358
+NearEarth_ForceModel.SRP.SRPModel                 = Spherical
+
+Create ForceModel DeepSpace_ForceModel
+DeepSpace_ForceModel.CentralBody            = Sun
+DeepSpace_ForceModel.PointMasses            = {Earth, Luna, Mars, Sun, Venus, Jupiter, Saturn, Uranus, Neptune}
+DeepSpace_ForceModel.Drag                   = None
+DeepSpace_ForceModel.SRP                    = On
+DeepSpace_ForceModel.ErrorControl           = RSSStep
+DeepSpace_ForceModel.SRP.Flux               = 1358
+DeepSpace_ForceModel.SRP.SRPModel           = Spherical
+
+Create ForceModel NearMars_ForceModel
+NearMars_ForceModel.CentralBody                     = Mars
+NearMars_ForceModel.PrimaryBodies                   = {Mars}
+NearMars_ForceModel.PointMasses                     = {Sun}
+NearMars_ForceModel.Drag                            = None
+NearMars_ForceModel.SRP                             = On
+NearMars_ForceModel.ErrorControl                    = RSSStep
+NearMars_ForceModel.GravityField.Mars.Degree        = 8
+NearMars_ForceModel.GravityField.Mars.Order         = 8
+NearMars_ForceModel.GravityField.Mars.PotentialFile = 'Mars50c.cof'
+NearMars_ForceModel.SRP.Flux                        = 1358
+NearMars_ForceModel.SRP.SRPModel                    = Spherical
+
+Create Propagator NearEarth
+NearEarth.FM              = NearEarth_ForceModel
+NearEarth.Type            = RungeKutta89
+NearEarth.InitialStepSize = 600
+NearEarth.Accuracy        = 1e-13
+NearEarth.MaxStep         = 600
+NearEarth.MaxStepAttempts = 50
+NearEarth.StopIfAccuracyIsViolated = true
+
+Create Propagator DeepSpace
+DeepSpace.FM              = DeepSpace_ForceModel
+DeepSpace.Type            = PrinceDormand78
+DeepSpace.InitialStepSize = 600
+DeepSpace.Accuracy        = 1e-12
+DeepSpace.MaxStep         = 864000
+DeepSpace.MaxStepAttempts = 50
+DeepSpace.StopIfAccuracyIsViolated = true
+
+Create Propagator NearMars
+NearMars.FM              = NearMars_ForceModel
+NearMars.Type            = PrinceDormand78
+NearMars.InitialStepSize = 600
+NearMars.Accuracy        = 1e-12
+NearMars.MaxStep         = 86400
+NearMars.MaxStepAttempts = 50
+NearMars.StopIfAccuracyIsViolated = true
+
+Create ImpulsiveBurn TCM1
+TCM1.CoordinateSystem = Local
+TCM1.Origin           = Earth
+TCM1.Axes             = VNB
+TCM1.Isp              = 300
+TCM1.GravitationalAccel = 9.81
+
+Create ImpulsiveBurn MOI
+MOI.CoordinateSystem = Local
+MOI.Origin           = Mars
+MOI.Axes             = VNB
+MOI.Isp              = 300
+MOI.GravitationalAccel = 9.81
+
+Create CoordinateSystem MarsFK5
+MarsFK5.Origin = Mars
+MarsFK5.Axes   = MJ2000Eq
+
+Create CoordinateSystem MarsInertial
+MarsInertial.Origin = Mars
+MarsInertial.Axes   = BodyInertial
+
+Create DifferentialCorrector DC
+DC.MaximumIterations = 25
+DC.DerivativeMethod  = ForwardDifference
+DC.Algorithm         = NewtonRaphson
+
+Create ReportFile RF
+RF.Filename = 'mars_b_plane_targeting.txt'
+RF.Add = {MAVEN.UTCGregorian, MAVEN.Sun.RMAG, MAVEN.Mars.RMAG, MAVEN.MarsInertial.BdotT, MAVEN.MarsInertial.BdotR}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Target DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
+   Vary 'Vary TCM1.V' DC(TCM1.Element1 = 1e-005, {Perturbation = .00001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = .002})
+   Vary 'Vary TCM1.N' DC(TCM1.Element2 = 1e-005, {Perturbation = .00001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = .002})
+   Vary 'Vary TCM1.B' DC(TCM1.Element3 = 1e-005, {Perturbation = .00001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = .002})
+   Propagate 'Prop 3 Days' NearEarth(MAVEN) {MAVEN.ElapsedDays = 3, StopTolerance = 1e-005}
+   Propagate 'Prop to TCM1' DeepSpace(MAVEN) {MAVEN.ElapsedDays = 12, StopTolerance = 1e-005}
+   Maneuver 'Apply TCM1' TCM1(MAVEN)
+   Propagate 'Prop 280 Days' DeepSpace(MAVEN) {MAVEN.ElapsedDays = 280}
+   Propagate 'Prop to Mars Periapsis' NearMars(MAVEN) {MAVEN.Mars.Periapsis, MAVEN.ElapsedDays = 20}
+   Achieve 'Achieve BdotT' DC(MAVEN.MarsInertial.BdotT = 2700, {Tolerance = .1})
+   Achieve 'Achieve BdotR' DC(MAVEN.MarsInertial.BdotR = -7000, {Tolerance = .1})
+EndTarget
+
+Target DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
+   Vary 'Vary MOI.V' DC(MOI.Element1 = -2, {Perturbation = .00001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = .1})
+   Maneuver 'Apply MOI' MOI(MAVEN)
+   Propagate 'Prop to Mars Apoapsis' NearMars(MAVEN) {MAVEN.Mars.Apoapsis}
+   Achieve 'Achieve RMAG' DC(MAVEN.Mars.RMAG = 12000, {Tolerance = .1})
+EndTarget
+
+Propagate 'Prop 1 Day' NearMars(MAVEN) {MAVEN.ElapsedDays = 1}

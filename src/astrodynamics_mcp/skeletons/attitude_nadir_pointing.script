@@ -1,0 +1,41 @@
+% Description: Nadir-pointing attitude via a CoordinateSystemFixed attitude mode with an LVLH (R / N) coordinate system defined off the Spacecraft.
+
+Create Spacecraft DMSP
+DMSP.DateFormat                   = UTCGregorian
+DMSP.Epoch                        = '01 Jul 2026 11:59:28.000'
+DMSP.CoordinateSystem             = EarthMJ2000Eq
+DMSP.DisplayStateType             = Keplerian
+DMSP.SMA                          = 9000.938817629016
+DMSP.ECC                          = 0.02454974900598064
+DMSP.INC                          = 100.850080056581
+DMSP.RAAN                         = 306.6148021947984
+DMSP.AOP                          = 314.1905515359929
+DMSP.TA                           = 99.88774933204795
+DMSP.Attitude                     = CoordinateSystemFixed
+DMSP.AttitudeDisplayStateType     = 'EulerAngles'
+DMSP.AttitudeRateDisplayStateType = 'AngularVelocity'
+DMSP.AttitudeCoordinateSystem     = LVLH
+DMSP.EulerAngleSequence           = '321'
+
+Create ForceModel DefaultProp_ForceModel
+
+Create Propagator DefaultProp
+DefaultProp.FM      = DefaultProp_ForceModel
+DefaultProp.MaxStep = 60
+
+Create CoordinateSystem LVLH
+LVLH.Origin    = DMSP
+LVLH.Axes      = ObjectReferenced
+LVLH.YAxis     = -N
+LVLH.ZAxis     = -R
+LVLH.Primary   = Earth
+LVLH.Secondary = DMSP
+
+Create ReportFile RF
+RF.Filename = 'attitude_nadir_pointing.txt'
+RF.Add = {DMSP.UTCGregorian, DMSP.EulerAngle1, DMSP.EulerAngle2, DMSP.EulerAngle3, DMSP.LVLH.X}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Propagate 'Prop 1000 s' DefaultProp(DMSP) {DMSP.ElapsedSecs = 1000.0}

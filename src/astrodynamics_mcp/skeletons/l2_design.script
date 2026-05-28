@@ -1,0 +1,95 @@
+% Description: Sun-Earth-Moon L2 orbit station keeping -- DC-targeted small dV in the L2-centered rotating frame keeps the spacecraft near the libration point across multiple plane crossings.
+
+Create LibrationPoint EarthMoonL2
+EarthMoonL2.Primary   = Earth
+EarthMoonL2.Secondary = Luna
+EarthMoonL2.Point     = L2
+
+Create Spacecraft Sat
+Sat.DateFormat       = UTCGregorian
+Sat.Epoch            = '01 Jan 2026 12:00:00.000'
+Sat.CoordinateSystem = EarthMJ2000Eq
+Sat.DisplayStateType = Cartesian
+Sat.X                = 406326.226613191
+Sat.Y                = 177458.3876159782
+Sat.Z                = 145838.5807900441
+Sat.VX               = -0.5172746738228751
+Sat.VY               = 0.7746503665608931
+Sat.VZ               = 0.3314166026539857
+Sat.DryMass          = 850
+Sat.Cd               = 2.2
+Sat.Cr               = 1.8
+Sat.DragArea         = 15
+Sat.SRPArea          = 1
+
+Create ForceModel EarthMoonL2Prop_ForceModel
+EarthMoonL2Prop_ForceModel.CentralBody = Earth
+EarthMoonL2Prop_ForceModel.PointMasses = {Earth, Luna, Sun}
+EarthMoonL2Prop_ForceModel.Drag        = None
+EarthMoonL2Prop_ForceModel.SRP         = Off
+EarthMoonL2Prop_ForceModel.ErrorControl = RSSStep
+
+Create Propagator EarthMoonL2Prop
+EarthMoonL2Prop.FM                       = EarthMoonL2Prop_ForceModel
+EarthMoonL2Prop.Type                     = RungeKutta68
+EarthMoonL2Prop.InitialStepSize          = 130
+EarthMoonL2Prop.Accuracy                 = 1e-10
+EarthMoonL2Prop.MaxStep                  = 24000
+EarthMoonL2Prop.MaxStepAttempts          = 50
+EarthMoonL2Prop.StopIfAccuracyIsViolated = true
+
+Create ImpulsiveBurn dV
+dV.CoordinateSystem = Local
+dV.Origin           = Earth
+dV.Axes             = VNB
+dV.Element1         = -3e-005
+dV.Isp              = 300
+dV.GravitationalAccel = 9.81
+
+Create Variable I J
+
+Create CoordinateSystem CSEarthMoonRot
+CSEarthMoonRot.Origin    = Earth
+CSEarthMoonRot.Axes      = ObjectReferenced
+CSEarthMoonRot.XAxis     = R
+CSEarthMoonRot.ZAxis     = N
+CSEarthMoonRot.Primary   = Earth
+CSEarthMoonRot.Secondary = Luna
+
+Create CoordinateSystem L2Centered
+L2Centered.Origin    = EarthMoonL2
+L2Centered.Axes      = ObjectReferenced
+L2Centered.XAxis     = R
+L2Centered.ZAxis     = N
+L2Centered.Primary   = Earth
+L2Centered.Secondary = Luna
+
+Create DifferentialCorrector DC
+DC.MaximumIterations = 25
+DC.DerivativeMethod  = ForwardDifference
+
+Create ReportFile RF
+RF.Filename = 'l2_design.txt'
+RF.Add = {Sat.UTCGregorian, Sat.L2Centered.X, Sat.L2Centered.Y, Sat.L2Centered.Z, Sat.L2Centered.VX}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Propagate 'Prop to Y Crossing' EarthMoonL2Prop(Sat) {Sat.CSEarthMoonRot.Y = 0, StopTolerance = 1e-005}
+
+For 'J = 1:4' J = 1:1:4
+
+   Target 'Target Plane Crossing' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
+
+      Vary 'Vary dV.V' DC(dV.Element1 = -5e-005, {Perturbation = 1e-6, Lower = -0.04, Upper = 0.0297, MaxStep = 0.0005})
+      Maneuver 'Apply dV' dV(Sat)
+
+      For 'I = 1' I = 1:1:1
+         Propagate 'Prop to Y Crossing' EarthMoonL2Prop(Sat) {Sat.L2Centered.Y = 0, StopTolerance = 1e-005}
+      EndFor
+
+      Achieve 'Achieve Vx' DC(Sat.L2Centered.VX = 0.00125, {Tolerance = 0.00002})
+
+   EndTarget
+
+EndFor

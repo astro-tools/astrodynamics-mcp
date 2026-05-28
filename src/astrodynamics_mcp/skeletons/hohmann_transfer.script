@@ -1,0 +1,53 @@
+% Description: DC-targeted Hohmann transfer from a LEO parking orbit to GEO (TOI and GOI impulsive burns, VNB axes).
+
+Create Spacecraft DefaultSC
+DefaultSC.DateFormat = UTCGregorian
+DefaultSC.Epoch = '01 Jan 2026 12:00:00.000'
+DefaultSC.CoordinateSystem = EarthMJ2000Eq
+DefaultSC.DisplayStateType = Keplerian
+DefaultSC.SMA = 7000
+DefaultSC.ECC = 0.001
+DefaultSC.INC = 28.5
+DefaultSC.RAAN = 75
+DefaultSC.AOP = 90
+DefaultSC.TA = 0
+
+Create ForceModel DefaultProp_ForceModel
+DefaultProp_ForceModel.CentralBody = Earth
+DefaultProp_ForceModel.PrimaryBodies = {Earth}
+
+Create Propagator DefaultProp
+DefaultProp.FM = DefaultProp_ForceModel
+
+Create ImpulsiveBurn TOI
+TOI.CoordinateSystem = Local
+TOI.Origin           = Earth
+TOI.Axes             = VNB
+
+Create ImpulsiveBurn GOI
+GOI.CoordinateSystem = Local
+GOI.Origin           = Earth
+GOI.Axes             = VNB
+
+Create DifferentialCorrector DC
+
+Create ReportFile RF
+RF.Filename = 'hohmann_transfer.txt'
+RF.Add = {DefaultSC.UTCGregorian, DefaultSC.X, DefaultSC.Y, DefaultSC.Z, DefaultSC.SMA, DefaultSC.ECC}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Propagate 'Prop to Perigee' DefaultProp(DefaultSC) {DefaultSC.Periapsis};
+
+Target 'Raise and Circularize' DC {SolveMode = Solve, ExitMode = DiscardAndContinue};
+   Vary 'Vary TOI.V' DC(TOI.Element1 = 0.5, {Perturbation = 0.0001, Lower = 0, Upper = 3.14159, MaxStep = 0.2});
+   Maneuver 'Apply TOI' TOI(DefaultSC);
+   Propagate 'Prop to Apogee' DefaultProp(DefaultSC) {DefaultSC.Apoapsis};
+   Achieve 'Achieve RMAG' DC(DefaultSC.Earth.RMAG = 42165, {Tolerance = 0.1});
+   Vary 'Vary GOI.V' DC(GOI.Element1 = 0.5, {Perturbation = 0.0001, Lower = 0, Upper = 3.14159, MaxStep = 0.2});
+   Maneuver 'Apply GOI' GOI(DefaultSC);
+   Achieve 'Achieve ECC' DC(DefaultSC.ECC = 0, {Tolerance = 0.1});
+EndTarget;
+
+Propagate 'Prop 1 Day' DefaultProp(DefaultSC) {DefaultSC.ElapsedSecs = 86400};

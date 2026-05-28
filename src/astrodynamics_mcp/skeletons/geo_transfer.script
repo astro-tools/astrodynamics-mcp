@@ -1,0 +1,105 @@
+% Description: Three-burn GEO insertion from a highly-elliptical inclined orbit: apogee raise (TOI), inclination + perigee correction (MCC), apogee lowering (MOI) -- all DC-targeted.
+
+Create Spacecraft geoSat
+geoSat.DateFormat                   = UTCGregorian
+geoSat.Epoch                        = '01 Jan 2026 00:00:00.000'
+geoSat.CoordinateSystem             = EarthMJ2000Eq
+geoSat.DisplayStateType             = Keplerian
+geoSat.SMA                          = 6578
+geoSat.ECC                          = 0.001
+geoSat.INC                          = 28.5
+geoSat.RAAN                         = 67
+geoSat.AOP                          = 355
+geoSat.TA                           = 250
+geoSat.DryMass                      = 850
+geoSat.Cd                           = 2.2
+geoSat.Cr                           = 1.8
+geoSat.DragArea                     = 15
+geoSat.SRPArea                      = 1
+
+Create ForceModel AllForces
+AllForces.CentralBody                      = Earth
+AllForces.PrimaryBodies                    = {Earth}
+AllForces.SRP                              = On
+AllForces.ErrorControl                     = RSSStep
+AllForces.GravityField.Earth.Degree        = 20
+AllForces.GravityField.Earth.Order         = 20
+AllForces.GravityField.Earth.PotentialFile = 'JGM2.cof'
+AllForces.SRP.Flux                         = 1367
+AllForces.Drag.AtmosphereModel             = MSISE90
+AllForces.Drag.F107                        = 150
+AllForces.Drag.F107A                       = 150
+AllForces.Drag.MagneticIndex               = 3
+
+Create Propagator DefaultProp
+DefaultProp.FM                       = AllForces
+DefaultProp.Type                     = PrinceDormand78
+DefaultProp.InitialStepSize          = 60
+DefaultProp.Accuracy                 = 1e-11
+DefaultProp.MinStep                  = 0.001
+DefaultProp.MaxStep                  = 86400
+DefaultProp.MaxStepAttempts          = 50
+DefaultProp.StopIfAccuracyIsViolated = true
+
+Create ImpulsiveBurn TOI
+TOI.CoordinateSystem   = Local
+TOI.Origin             = Earth
+TOI.Axes               = VNB
+TOI.Isp                = 300
+TOI.GravitationalAccel = 9.81
+
+Create ImpulsiveBurn MCC
+MCC.CoordinateSystem   = Local
+MCC.Origin             = Earth
+MCC.Axes               = VNB
+MCC.Isp                = 300
+MCC.GravitationalAccel = 9.81
+
+Create ImpulsiveBurn MOI
+MOI.CoordinateSystem   = Local
+MOI.Origin             = Earth
+MOI.Axes               = VNB
+MOI.Isp                = 300
+MOI.GravitationalAccel = 9.81
+
+Create DifferentialCorrector DC
+DC.ShowProgress      = true
+DC.ReportStyle       = Normal
+DC.MaximumIterations = 25
+DC.DerivativeMethod  = ForwardDifference
+
+Create ReportFile RF
+RF.Filename = 'geo_transfer.txt'
+RF.Add = {geoSat.UTCGregorian, geoSat.Earth.SMA, geoSat.Earth.ECC, geoSat.EarthMJ2000Eq.INC, geoSat.Earth.RMAG}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Propagate 'Prop to Z Crossing' DefaultProp(geoSat) {geoSat.Z = 0, StopTolerance = 1e-005}
+
+Target 'Raise Apogee' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
+   Vary 'Vary TOI.V' DC(TOI.Element1 = 1, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.5})
+   Maneuver 'Apply TOI' TOI(geoSat)
+   Propagate 'Prop To Apogee' DefaultProp(geoSat) {geoSat.Apoapsis}
+   Achieve 'Achieve RMAG' DC(geoSat.RMAG = 85000, {Tolerance = 0.1})
+EndTarget
+
+Propagate 'Prop to Perigee' DefaultProp(geoSat) {geoSat.Earth.Periapsis}
+Propagate 'Prop to Plane Crossing' DefaultProp(geoSat) {geoSat.Z = 0, StopTolerance = 1e-5}
+
+Target 'Change Plane/Perigee' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
+   Vary 'Vary MCC.V' DC(MCC.Element1 = 0.1, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.5})
+   Vary 'Vary MCC.N' DC(MCC.Element2 = 0.1, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.5})
+   Maneuver 'Apply MCC' MCC(geoSat)
+   Propagate 'Prop to Perigee' DefaultProp(geoSat) {geoSat.Periapsis}
+   Achieve 'Apply INC' DC(geoSat.EarthMJ2000Eq.INC = 2, {Tolerance = 0.001})
+   Achieve 'Achieve RMAG' DC(geoSat.RMAG = 42195, {Tolerance = 0.001})
+EndTarget
+
+Target 'Lower Apogee' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
+   Vary 'Vary MOI.V' DC(MOI.Element1 = -0.1, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.1})
+   Maneuver 'Apply MOI' MOI(geoSat)
+   Achieve 'Achieve SMA' DC(geoSat.Earth.SMA = 42166.90, {Tolerance = 0.001})
+EndTarget
+
+Propagate 'Prop 10 days' DefaultProp(geoSat) {geoSat.ElapsedDays = 10}

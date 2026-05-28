@@ -1,0 +1,80 @@
+% Description: LEO altitude-box station keeping -- DC-targeted apogee-raise burns triggered when altitude drops below threshold.
+
+Create Spacecraft LEOsat
+LEOsat.DateFormat       = UTCGregorian
+LEOsat.Epoch            = '01 Jan 2026 12:00:00.000'
+LEOsat.CoordinateSystem = EarthMJ2000Eq
+LEOsat.DisplayStateType = Cartesian
+LEOsat.X                = -4083.9
+LEOsat.Y                = 4691.8
+LEOsat.Z                = -2576.7
+LEOsat.VX               = -4.252
+LEOsat.VY               = -5.509
+LEOsat.VZ               = -3.284
+LEOsat.DryMass          = 850
+LEOsat.Cd               = 2.2
+LEOsat.Cr               = 1.8
+LEOsat.DragArea         = 15
+LEOsat.SRPArea          = 1
+
+Create ForceModel LEOprop_ForceModel
+LEOprop_ForceModel.CentralBody                      = Earth
+LEOprop_ForceModel.PrimaryBodies                    = {Earth}
+LEOprop_ForceModel.PointMasses                      = {Luna, Sun}
+LEOprop_ForceModel.SRP                              = On
+LEOprop_ForceModel.ErrorControl                     = RSSStep
+LEOprop_ForceModel.GravityField.Earth.Degree        = 4
+LEOprop_ForceModel.GravityField.Earth.Order         = 4
+LEOprop_ForceModel.GravityField.Earth.PotentialFile = 'JGM2.cof'
+LEOprop_ForceModel.GravityField.Earth.TideModel     = 'None'
+LEOprop_ForceModel.Drag.AtmosphereModel             = JacchiaRoberts
+LEOprop_ForceModel.Drag.HistoricWeatherSource       = 'ConstantFluxAndGeoMag'
+LEOprop_ForceModel.Drag.PredictedWeatherSource      = 'ConstantFluxAndGeoMag'
+LEOprop_ForceModel.Drag.F107                        = 150
+LEOprop_ForceModel.Drag.F107A                       = 150
+LEOprop_ForceModel.Drag.MagneticIndex               = 3
+
+Create Propagator LEOprop
+LEOprop.FM                       = LEOprop_ForceModel
+LEOprop.Type                     = RungeKutta89
+LEOprop.InitialStepSize          = 60
+LEOprop.Accuracy                 = 1e-11
+LEOprop.MinStep                  = 0.001
+LEOprop.MaxStep                  = 2700
+LEOprop.MaxStepAttempts          = 50
+LEOprop.StopIfAccuracyIsViolated = true
+
+Create ImpulsiveBurn TCM1
+TCM1.CoordinateSystem = Local
+TCM1.Origin           = Earth
+TCM1.Axes             = VNB
+
+Create ImpulsiveBurn TCM2
+TCM2.CoordinateSystem = Local
+TCM2.Origin           = Earth
+TCM2.Axes             = VNB
+
+Create DifferentialCorrector DC
+
+Create ReportFile RF
+RF.Filename = 'leo_station_keeping.txt'
+RF.Add = {LEOsat.UTCGregorian, LEOsat.Earth.Altitude, LEOsat.Earth.SMA, LEOsat.Earth.ECC}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+While 'While ElapsedDays < 10' LEOsat.ElapsedDays < 10.0
+   Propagate 'Prop One Step' LEOprop(LEOsat);
+   If 'If Alt < Threshold' LEOsat.Earth.Altitude < 342
+      Propagate 'Prop To Periapsis' LEOprop(LEOsat) {LEOsat.Periapsis};
+      Target 'Raise Orbit' DC {SolveMode = Solve, ExitMode = DiscardAndContinue};
+         Vary 'Vary TCM1.V' DC(TCM1.Element1 = 0.002, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.05});
+         Maneuver 'Apply TCM1' TCM1(LEOsat);
+         Propagate 'Prop to Apoapsis' LEOprop(LEOsat) {LEOsat.Earth.Apoapsis};
+         Achieve 'Achieve RMAG' DC(LEOsat.Earth.RMAG = 6737, {Tolerance = 0.1});
+         Vary 'Vary TCM2.V' DC(TCM2.Element1 = 1e-005, {Perturbation = 0.00005, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.05});
+         Maneuver 'Apply TCM2' TCM2(LEOsat);
+         Achieve 'Achieve ECC' DC(LEOsat.Earth.ECC = 0.00005, {Tolerance = 0.0001});
+      EndTarget;
+   EndIf;
+EndWhile;

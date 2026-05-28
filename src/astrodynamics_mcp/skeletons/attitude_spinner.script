@@ -1,0 +1,46 @@
+% Description: Spinner attitude -- Sat.Attitude = Spinner with an initial body-X angular velocity of 180 deg/s; propagation reports the time-varying Euler angles.
+
+Create Spacecraft Sat
+Sat.DateFormat                   = UTCGregorian
+Sat.Epoch                        = '09 Aug 2026 09:53:50.937'
+Sat.CoordinateSystem             = EarthMJ2000Eq
+Sat.DisplayStateType             = Keplerian
+Sat.SMA                          = 10924.38026705
+Sat.ECC                          = 0.001627899999999591
+Sat.INC                          = 38.03820000000003
+Sat.RAAN                         = 250.4634999999999
+Sat.AOP                          = 225
+Sat.TA                           = 63.36085033997288
+Sat.Attitude                     = Spinner
+Sat.AttitudeDisplayStateType     = 'EulerAngles'
+Sat.AttitudeRateDisplayStateType = 'AngularVelocity'
+Sat.EulerAngleSequence           = '123'
+Sat.EulerAngle1                  = 0
+Sat.EulerAngle2                  = 0
+Sat.EulerAngle3                  = 0
+Sat.AngularVelocityX             = 180
+Sat.AngularVelocityY             = 0
+Sat.AngularVelocityZ             = 0
+
+Create ForceModel DefaultProp_ForceModel
+
+Create Propagator DefaultProp
+DefaultProp.FM      = DefaultProp_ForceModel
+DefaultProp.MaxStep = 60
+
+Create CoordinateSystem LVLH
+LVLH.Origin    = Sat
+LVLH.Axes      = ObjectReferenced
+LVLH.YAxis     = -N
+LVLH.ZAxis     = -R
+LVLH.Primary   = Earth
+LVLH.Secondary = Sat
+
+Create ReportFile RF
+RF.Filename = 'attitude_spinner.txt'
+RF.Add = {Sat.UTCGregorian, Sat.EulerAngle1, Sat.EulerAngle2, Sat.EulerAngle3, Sat.AngularVelocityX}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Propagate 'Prop 1200 s' DefaultProp(Sat) {Sat.ElapsedSecs = 1200.0}

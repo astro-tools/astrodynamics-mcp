@@ -1,0 +1,93 @@
+% Description: DC-targeted finite burn -- Vary BurnDuration around the FiniteBurn bracket, propagate to apogee, and Achieve RMAG = 12000 km.
+
+Create Spacecraft DefaultSC
+DefaultSC.DateFormat       = UTCGregorian
+DefaultSC.Epoch            = '01 Jan 2026 12:00:00.000'
+DefaultSC.CoordinateSystem = EarthMJ2000Eq
+DefaultSC.DisplayStateType = Cartesian
+DefaultSC.X                = 7100
+DefaultSC.Y                = 0
+DefaultSC.Z                = 1300
+DefaultSC.VX               = 0
+DefaultSC.VY               = 7.35
+DefaultSC.VZ               = 1
+DefaultSC.DryMass          = 850
+DefaultSC.Cd               = 2.2
+DefaultSC.Cr               = 1.8
+DefaultSC.DragArea         = 15
+DefaultSC.SRPArea          = 1
+DefaultSC.Tanks            = {ChemicalTank1}
+DefaultSC.Thrusters        = {ChemicalThruster1}
+
+Create ChemicalTank ChemicalTank1
+ChemicalTank1.AllowNegativeFuelMass = false
+ChemicalTank1.FuelMass              = 756
+ChemicalTank1.Pressure              = 1500
+ChemicalTank1.Temperature           = 20
+ChemicalTank1.RefTemperature        = 20
+ChemicalTank1.Volume                = 0.75
+ChemicalTank1.FuelDensity           = 1260
+ChemicalTank1.PressureModel         = PressureRegulated
+
+Create ChemicalThruster ChemicalThruster1
+ChemicalThruster1.CoordinateSystem   = Local
+ChemicalThruster1.Origin             = Earth
+ChemicalThruster1.Axes               = VNB
+ChemicalThruster1.ThrustDirection1   = 1
+ChemicalThruster1.ThrustDirection2   = 0
+ChemicalThruster1.ThrustDirection3   = 0
+ChemicalThruster1.DutyCycle          = 1
+ChemicalThruster1.ThrustScaleFactor  = 1
+ChemicalThruster1.DecrementMass      = true
+ChemicalThruster1.Tank               = {ChemicalTank1}
+ChemicalThruster1.MixRatio           = [1]
+ChemicalThruster1.GravitationalAccel = 9.81
+ChemicalThruster1.C1                 = 1000
+ChemicalThruster1.K1                 = 300
+
+Create ForceModel DefaultProp_ForceModel
+DefaultProp_ForceModel.CentralBody                      = Earth
+DefaultProp_ForceModel.PrimaryBodies                    = {Earth}
+DefaultProp_ForceModel.Drag                             = None
+DefaultProp_ForceModel.SRP                              = Off
+DefaultProp_ForceModel.GravityField.Earth.Degree        = 4
+DefaultProp_ForceModel.GravityField.Earth.Order         = 4
+DefaultProp_ForceModel.GravityField.Earth.PotentialFile = 'JGM2.cof'
+
+Create Propagator DefaultProp
+DefaultProp.FM                       = DefaultProp_ForceModel
+DefaultProp.Type                     = RungeKutta89
+DefaultProp.InitialStepSize          = 60
+DefaultProp.Accuracy                 = 1e-11
+DefaultProp.MaxStep                  = 2700
+DefaultProp.StopIfAccuracyIsViolated = true
+
+Create FiniteBurn FiniteBurn1
+FiniteBurn1.Thrusters              = {ChemicalThruster1}
+FiniteBurn1.ThrottleLogicAlgorithm = 'MaxNumberOfThrusters'
+
+Create DifferentialCorrector DC1
+DC1.MaximumIterations = 25
+DC1.DerivativeMethod  = ForwardDifference
+DC1.Algorithm         = NewtonRaphson
+
+Create Variable BurnDuration
+BurnDuration = 0
+
+Create ReportFile RF
+RF.Filename = 'target_finite_burn_apogee_raise.txt'
+RF.Add = {DefaultSC.UTCGregorian, DefaultSC.Earth.SMA, DefaultSC.Earth.ECC, DefaultSC.Earth.RMAG}
+RF.WriteHeaders = True
+
+BeginMissionSequence
+
+Propagate 'Prop To Perigee' DefaultProp(DefaultSC) {DefaultSC.Earth.Periapsis}
+
+Target 'Raise Apogee' DC1 {SolveMode = Solve, ExitMode = SaveAndContinue}
+   Vary 'Vary Burn Duration' DC1(BurnDuration = 200, {Perturbation = 0.0001, Lower = 0, Upper = 10000, MaxStep = 100})
+   BeginFiniteBurn 'Turn Thruster On' FiniteBurn1(DefaultSC)
+   Propagate 'Prop BurnDuration' DefaultProp(DefaultSC) {DefaultSC.ElapsedSecs = BurnDuration}
+   EndFiniteBurn 'Turn Thruster Off' FiniteBurn1(DefaultSC)
+   Propagate 'Prop To Apogee' DefaultProp(DefaultSC) {DefaultSC.Earth.Apoapsis}
+   Achieve 'Achieve Apogee Radius = 12000' DC1(DefaultSC.Earth.RMAG = 12000, {Tolerance = 0.1})
+EndTarget
