@@ -1,9 +1,10 @@
 """GMAT tool slots — registered only when the ``gmat-run`` driver is importable.
 
-The four tools (``gmat_run_mission``, ``gmat_sweep``, ``gmat_execute_script``,
-``gmat_validate_script``) cover the GMAT mission-analysis surface. This
-module owns the conditional-registration mechanism, the shared description
-discipline, and the real bodies for every slot.
+The five tools (``gmat_run_mission``, ``gmat_sweep``, ``gmat_execute_script``,
+``gmat_validate_script``, ``gmat_read_run_artefact``) cover the GMAT
+mission-analysis surface. This module owns the conditional-registration
+mechanism, the shared description discipline, and the real bodies for every
+slot.
 
 The guard is intentionally a single ``try: import gmat_run``: ``gmat-sweep``
 declares ``gmat-run`` as a dependency, so resolving the ``[gmat]`` extra
@@ -207,9 +208,10 @@ class ReportFileShape(BaseModel):
     path: str = Field(
         ...,
         description=(
-            "Absolute path the report landed at. Lives under a temp directory created "
-            "for this run — the path is informational; the inline rows below carry "
-            "the data the LLM can actually read."
+            "Absolute path the report landed at. Lives under a registry-owned temp "
+            "directory whose lifetime extends until the run is LRU-evicted, so a "
+            "follow-up gmat_read_run_artefact call can re-read the file by name; "
+            "the inline rows below carry the parsed data either way."
         ),
     )
     columns: list[str] = Field(
@@ -279,9 +281,11 @@ class OutputPointer(BaseModel):
     path: str = Field(
         ...,
         description=(
-            "Absolute path the file landed at. Lives under a temp directory created "
-            "for this run; treat as informational, since the directory is cleaned up "
-            "after the tool returns."
+            "Absolute path the file landed at. Lives under a registry-owned temp "
+            "directory until the run is LRU-evicted (configurable via "
+            "ASTRODYNAMICS_MCP_RUN_REGISTRY_LIMIT). Read the file directly off "
+            "disk, or pass the resource name to gmat_read_run_artefact for "
+            "shape-disciplined text inlining."
         ),
     )
 
@@ -377,10 +381,10 @@ class RawReportContent(BaseModel):
     path: str = Field(
         ...,
         description=(
-            "Absolute path the report landed at. Lives under a temp directory "
-            "created for this run — informational only; the file is cleaned up "
-            "when the tool returns, so the raw text below is what the caller "
-            "can actually read."
+            "Absolute path the artefact landed at. Lives under a registry-owned "
+            "temp directory until the run is LRU-evicted, so a follow-up "
+            "gmat_read_run_artefact call can re-fetch the bytes; the raw text "
+            "below carries the inlined snapshot for the common case."
         ),
     )
     content: str = Field(
@@ -425,9 +429,9 @@ class RawReportContent(BaseModel):
     truncated: bool = Field(
         ...,
         description=(
-            "True when the report had more than 60 lines under output='summary' "
+            "True when the artefact had more than 60 lines under output='summary' "
             "and the response carries head + tail rather than the full text. "
-            "False under output='full' or when the report fit fully inline."
+            "False under output='full' or when the artefact fit fully inline."
         ),
     )
 
@@ -491,8 +495,10 @@ class GmatExecuteScriptResponse(BaseModel):
         default_factory=list,
         description=(
             "One :class:`RawReportContent` per ReportFile the run wrote, in "
-            "the order GMAT declared them. Empty when ok=False, since the "
-            "run did not reach the point of writing reports."
+            "the order GMAT declared them. Empty when ok=False -- the tool "
+            "short-circuits before parsing reports on engine failure, so if "
+            "the run wrote partial reports before erroring you can still pull "
+            "them via gmat_read_run_artefact using the returned run_id."
         ),
     )
     artefacts: list[OutputPointer] = Field(
@@ -828,27 +834,34 @@ _RUN_MISSION_DESCRIPTION = (
 )
 
 _SWEEP_DESCRIPTION = (
-    "Run a parameter sweep, Monte Carlo, or Latin hypercube over a GMAT mission "
-    "script via the gmat-sweep backend. `mode` selects which family runs and which "
-    "payload fields are read. e.g. gmat_sweep(script='/abs/path/to/hohmann.script', "
-    "mode='grid', grid={'Sat.SMA': [7000, 7100, 7200], 'Sat.INC': [28.5, 51.6]}) "
-    "runs a 6-point full factorial; gmat_sweep(script=..., mode='monte_carlo', "
-    "perturb={'Sat.SMA': ['normal', 7000, 5.0]}, n=20, seed=42) runs 20 normally-"
-    "dispersed runs; mode='latin_hypercube' takes the same perturb / n / seed and "
-    "uses a stratified design. `script` is the same shape as gmat_run_mission: an "
-    "absolute .script path or full inline script text. Perturb values are JSON "
-    "lists of the form [distribution_name, *params] — ['normal', mu, sigma], "
-    "['uniform', lo, hi], or ['lognormal', mu, sigma]; do not pass plain numbers "
-    "or scipy distributions. For Monte Carlo / Latin hypercube, `seed` is required "
-    "for reproducibility — omitting it falls back to OS entropy and two calls with "
-    "the same arguments will give different draws. `max_workers` defaults to 1 to "
-    "keep the cost ceiling tight; raise it explicitly to parallelise across cores. "
-    "Output shaping: the default output='summary' returns per-column mean / std / "
-    "min / max plus the head + tail five rows of the result frame so the response "
-    "fits small-model input caps. 'full' adds every row in `rows`. `manifest_path` "
-    "and `output_dir` point at the on-disk sweep artefacts for a follow-up re-load. "
-    "Engine failures surface as upstream.gmat_sweep_failed; config / payload "
-    "violations surface as invalid_input.gmat_sweep_*."
+    "Run a parameter sweep, explicit-sample replay, Monte Carlo, or Latin "
+    "hypercube over a GMAT mission script via the gmat-sweep backend. `mode` "
+    "selects which family runs and which payload fields are read. e.g. "
+    "gmat_sweep(script='/abs/path/to/hohmann.script', mode='grid', "
+    "grid={'Sat.SMA': [7000, 7100, 7200], 'Sat.INC': [28.5, 51.6]}) runs a "
+    "6-point full factorial; gmat_sweep(script=..., mode='samples', "
+    "samples=[{'Sat.SMA': 7000, 'Sat.INC': 28.5}, {'Sat.SMA': 7100, "
+    "'Sat.INC': 51.6}]) runs one mission per explicit row; gmat_sweep(script=..., "
+    "mode='monte_carlo', perturb={'Sat.SMA': ['normal', 7000, 5.0]}, n=20, "
+    "seed=42) runs 20 normally-dispersed runs; mode='latin_hypercube' takes "
+    "the same perturb / n / seed and uses a stratified design. `script` is "
+    "the same shape as gmat_run_mission: an absolute .script path or full "
+    "inline script text. Samples are JSON lists of dotted-path -> value dicts "
+    "with a stable column order taken from the first row (every row must "
+    "share the same keys). Perturb values are JSON lists of the form "
+    "[distribution_name, *params] -- ['normal', mu, sigma], ['uniform', lo, "
+    "hi], or ['lognormal', mu, sigma]; do not pass plain numbers or scipy "
+    "distributions. For Monte Carlo / Latin hypercube, `seed` is required "
+    "for reproducibility -- omitting it falls back to OS entropy and two "
+    "calls with the same arguments will give different draws. `max_workers` "
+    "defaults to 1 to keep the cost ceiling tight; raise it explicitly to "
+    "parallelise across cores. Output shaping: the default output='summary' "
+    "returns per-column mean / std / min / max plus the head + tail five rows "
+    "of the result frame so the response fits small-model input caps. 'full' "
+    "adds every row in `rows`. `manifest_path` and `output_dir` point at the "
+    "on-disk sweep artefacts for a follow-up re-load. Engine failures surface "
+    "as upstream.gmat_sweep_failed; config / payload violations surface as "
+    "invalid_input.gmat_sweep_*."
 )
 
 _EXECUTE_SCRIPT_DESCRIPTION = (
@@ -893,8 +906,10 @@ _VALIDATE_SCRIPT_DESCRIPTION = (
     "/ 'Create' markers); do not pass a Python Mission object. Common-mistake "
     "notes: validate confirms the script parses, not that the mission runs "
     "end-to-end — solver convergence and runtime errors still need "
-    "gmat_run_mission. GMAT is case-sensitive: 'Spacecraft sat' and 'Spacecraft "
-    "Sat' are different objects. Missing statement terminators (semicolons) are "
+    "gmat_run_mission. GMAT resource names are case-sensitive: 'Spacecraft sat' "
+    "and 'Spacecraft Sat' declare different objects (keyword fields are more "
+    "forgiving but should match the script grammar). Missing statement "
+    "terminators (semicolons) are "
     "a known false-negative — GMAT's interpreter accepts them silently, so "
     "ok=True does not guarantee a syntactically pristine script, only that the "
     "interpreter could build the object graph. Output fields carry no physical "
@@ -926,11 +941,14 @@ _READ_RUN_ARTEFACT_DESCRIPTION = (
     "with the available set in `data`. After a server restart the index is "
     "best-effort: if the run's temp directory still exists the read "
     "succeeds, otherwise the tool returns invalid_input.artefact_evicted. "
-    "Text outputs only — GMAT's text formats (ReportFile, OEM / CCSDS-OEM / "
-    "CCSDS-AEM / STK ephemerides, ContactLocator, solver .data, GMAT.log, "
-    "sweep manifest.jsonl) all flow through; binary outputs (SPK and "
-    "GMAT Code-500 ephemerides, sweep .parquet) are rejected with "
-    "invalid_input.binary_artefact rather than returned as decoded gibberish."
+    "Text outputs only -- the tool reads the first 8 KB of each artefact "
+    "and rejects anything containing a NULL byte as invalid_input.binary_artefact "
+    "rather than returning decoded gibberish. The text/binary line therefore "
+    "tracks the standard grep -I / git diff --binary heuristic: GMAT's ASCII "
+    "formats (ReportFile, OEM / CCSDS-OEM / CCSDS-AEM / STK ephemerides, "
+    "ContactLocator, solver .data, GMAT.log, sweep manifest.jsonl) all flow "
+    "through; binary outputs (SPK and GMAT Code-500 ephemerides, sweep "
+    ".parquet, .mat files) are rejected."
 )
 
 
@@ -1699,7 +1717,7 @@ def _build_sweep_response(
 
 
 def _register_gmat_tools() -> None:
-    """Attach the four GMAT tools to ``astrodynamics_mcp.server.mcp``.
+    """Attach the five GMAT tools to ``astrodynamics_mcp.server.mcp``.
 
     Factored out of module top-level so unit tests can drive registration
     against a fresh :class:`~mcp.server.fastmcp.FastMCP` instance (via the
@@ -1930,13 +1948,9 @@ def _register_gmat_tools() -> None:
         # ``_validate_sweep_payload`` above ensured the mode-keyed fields
         # are populated, so the narrowing assertions hold here.
         samples_df = (
-            _samples_to_dataframe(samples)
-            if mode == "samples" and samples is not None
-            else None
+            _samples_to_dataframe(samples) if mode == "samples" and samples is not None else None
         )
-        coerced_perturb = (
-            _coerce_perturb(perturb) if perturb is not None else None
-        )
+        coerced_perturb = _coerce_perturb(perturb) if perturb is not None else None
 
         registry = default_registry()
         run_id = registry.mint()
@@ -2341,6 +2355,11 @@ def _build_response(
     """
     summary_view = _build_mission_summary_view(mission)
 
+    # select_outputs filters response-surface categories only (ReportFile /
+    # EphemerisFile / ContactLocator). Solver outputs land in the registry
+    # for gmat_read_run_artefact regardless and aren't valid here -- a name
+    # collision raises invalid_input.unknown_output_selection with the
+    # accepted set spelled out for the caller.
     all_output_names = [
         *result.report_paths.keys(),
         *result.ephemeris_paths.keys(),
@@ -2350,7 +2369,8 @@ def _build_response(
     if unknown:
         raise InvalidInputError(
             f"select_outputs contains unknown resource names: {unknown}; "
-            f"available outputs are {sorted(all_output_names)}",
+            f"available response-surface outputs are {sorted(all_output_names)} "
+            "(solver outputs are reachable via gmat_read_run_artefact, not select_outputs)",
             code="invalid_input.unknown_output_selection",
             data={"unknown": unknown, "available": sorted(all_output_names)},
         )
@@ -2465,9 +2485,7 @@ def _register_gmat_resources() -> None:
     the :mod:`astrodynamics_mcp.server` module at call time so a
     monkeypatched singleton resolves correctly.
     """
-    assert len({slug for slug, _ in _SKELETONS}) == len(_SKELETONS), (
-        "duplicate slug in _SKELETONS"
-    )
+    assert len({slug for slug, _ in _SKELETONS}) == len(_SKELETONS), "duplicate slug in _SKELETONS"
     skeleton_root = resources.files(_SKELETON_PACKAGE)
     for slug, filename in _SKELETONS:
         # ``importlib.resources.files`` returns a ``Traversable``; the
