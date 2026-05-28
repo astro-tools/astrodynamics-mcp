@@ -12,7 +12,10 @@ DefaultProp.FM = DefaultProp_ForceModel
 Create EclipseLocator EclipseLocator1
 EclipseLocator1.Spacecraft           = GEOSat
 EclipseLocator1.Filename             = 'EclipseLocator1.txt'
-EclipseLocator1.OccultingBodies      = {Earth, Luna, Mercury, Venus}
+% Only Earth and Luna can geometrically occult the Sun for an
+% Earth-orbiting spacecraft; Mercury and Venus are interior bodies
+% and produce no shadow on Earth-bound trajectories.
+EclipseLocator1.OccultingBodies      = {Earth, Luna}
 EclipseLocator1.InputEpochFormat     = 'UTCGregorian'
 EclipseLocator1.InitialEpoch         = '22 Aug 2026 00:00:00.000'
 EclipseLocator1.StepSize             = 120

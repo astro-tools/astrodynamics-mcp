@@ -104,8 +104,8 @@ Target 'Target B-Plane' DC1 {SolveMode = Solve, ExitMode = DiscardAndContinue}
    Maneuver 'Apply TOI' TOI(Sat)
    Propagate 'Prop to Moon SOI' EarthFull(Sat) {Sat.Earth.RMAG = 325000, StopTolerance = 1e-005}
    Propagate 'Prop to Periselene' MoonFull(Sat) {Sat.Luna.Periapsis, StopTolerance = 1e-005}
-   Achieve 'Achieve BdotR' DC1(Sat.MoonMJ2000Eq.BdotT = 15000.4401777, {Tolerance = 3})
-   Achieve 'Achieve BdotT' DC1(Sat.MoonMJ2000Eq.BdotR = 4000.59308992, {Tolerance = 3})
+   Achieve 'Achieve BdotT' DC1(Sat.MoonMJ2000Eq.BdotT = 15000.4401777, {Tolerance = 3})
+   Achieve 'Achieve BdotR' DC1(Sat.MoonMJ2000Eq.BdotR = 4000.59308992, {Tolerance = 3})
 EndTarget
 
 Target 'Target Lunar Insertion' DC1 {SolveMode = Solve, ExitMode = DiscardAndContinue}

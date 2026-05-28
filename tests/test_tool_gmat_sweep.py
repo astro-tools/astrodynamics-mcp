@@ -24,7 +24,6 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
 from astrodynamics_mcp.server_lint import check_tool_descriptions
-from astrodynamics_mcp.tools import gmat as gmat_tools
 from astrodynamics_mcp.tools.gmat import (
     GmatSweepResponse,
     _build_sweep_response,
@@ -208,11 +207,9 @@ def _install_fake_gmat_sweep(monkeypatch: pytest.MonkeyPatch, calls: _FakeSweepC
 
 def _fresh_mcp(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
     """Stand up a per-test FastMCP and re-register the GMAT slots against it."""
-    fresh = FastMCP("gmat-sweep-test")
-    monkeypatch.setattr("astrodynamics_mcp.server.mcp", fresh)
-    monkeypatch.setattr(gmat_tools, "_GMAT_RUN_AVAILABLE", True)
-    gmat_tools._register_gmat_tools()
-    return fresh
+    from tests._gmat_helpers import make_fresh_mcp
+
+    return make_fresh_mcp("gmat-sweep-test", monkeypatch)
 
 
 def _trivial_result(rows: int = 3, with_status: bool = False) -> _FakeFrame:

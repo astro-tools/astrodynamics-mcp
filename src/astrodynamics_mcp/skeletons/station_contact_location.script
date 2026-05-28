@@ -1,16 +1,16 @@
 % Description: Ground-station contact-window report -- GroundStation + ContactLocator over a 5-day propagation; writes a per-event contact report.
 
-Create Spacecraft GEOSat
-GEOSat.DateFormat       = UTCGregorian
-GEOSat.Epoch            = '01 Jan 2026 11:59:28.000'
-GEOSat.CoordinateSystem = EarthMJ2000Eq
-GEOSat.DisplayStateType = Keplerian
-GEOSat.SMA              = 7191.938817629017
-GEOSat.ECC              = 0.02454974900598101
-GEOSat.INC              = 56.7
-GEOSat.RAAN             = 306.6148
-GEOSat.AOP              = 314.1906
-GEOSat.TA               = 99.8877
+Create Spacecraft LEOSat
+LEOSat.DateFormat       = UTCGregorian
+LEOSat.Epoch            = '01 Jan 2026 11:59:28.000'
+LEOSat.CoordinateSystem = EarthMJ2000Eq
+LEOSat.DisplayStateType = Keplerian
+LEOSat.SMA              = 7191.938817629017
+LEOSat.ECC              = 0.02454974900598101
+LEOSat.INC              = 56.7
+LEOSat.RAAN             = 306.6148
+LEOSat.AOP              = 314.1906
+LEOSat.TA               = 99.8877
 
 Create GroundStation myStation
 myStation.StateType = Spherical
@@ -24,7 +24,7 @@ Create Propagator DefaultProp
 DefaultProp.FM = DefaultProp_ForceModel
 
 Create ContactLocator ContactLocator1
-ContactLocator1.Target               = GEOSat
+ContactLocator1.Target               = LEOSat
 ContactLocator1.Filename             = 'ContactLocator1.txt'
 ContactLocator1.InputEpochFormat     = 'UTCGregorian'
 ContactLocator1.InitialEpoch         = '01 Jan 2026 11:59:28.000'
@@ -40,9 +40,9 @@ ContactLocator1.LightTimeDirection   = Transmit
 
 Create ReportFile RF
 RF.Filename = 'station_contact_location.txt'
-RF.Add = {GEOSat.UTCGregorian, GEOSat.Earth.SMA, GEOSat.Earth.RMAG}
+RF.Add = {LEOSat.UTCGregorian, LEOSat.Earth.SMA, LEOSat.Earth.RMAG}
 RF.WriteHeaders = True
 
 BeginMissionSequence
 
-Propagate DefaultProp(GEOSat) {GEOSat.ElapsedDays = 5}
+Propagate DefaultProp(LEOSat) {LEOSat.ElapsedDays = 5}

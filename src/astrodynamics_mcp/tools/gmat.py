@@ -1,9 +1,10 @@
 """GMAT tool slots — registered only when the ``gmat-run`` driver is importable.
 
-The four tools (``gmat_run_mission``, ``gmat_sweep``, ``gmat_execute_script``,
-``gmat_validate_script``) cover the GMAT mission-analysis surface. This
-module owns the conditional-registration mechanism, the shared description
-discipline, and the real bodies for every slot.
+The five tools (``gmat_run_mission``, ``gmat_sweep``, ``gmat_execute_script``,
+``gmat_validate_script``, ``gmat_read_run_artefact``) cover the GMAT
+mission-analysis surface. This module owns the conditional-registration
+mechanism, the shared description discipline, and the real bodies for every
+slot.
 
 The guard is intentionally a single ``try: import gmat_run``: ``gmat-sweep``
 declares ``gmat-run`` as a dependency, so resolving the ``[gmat]`` extra
@@ -14,15 +15,17 @@ Streamable HTTP, leaving the trust boundary to the operator.
 
 from __future__ import annotations
 
+import asyncio
 import math
-import os
 import re
+import shutil
 import tempfile
 import time
-from contextlib import suppress
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager, suppress
 from importlib import resources
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeVar
 
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
@@ -39,6 +42,15 @@ try:
     _GMAT_RUN_AVAILABLE = True
 except ImportError:
     _GMAT_RUN_AVAILABLE = False
+
+
+# Serialises access to the process-wide GMAT singleton. gmat-run bootstraps
+# gmatpy into a single global state; concurrent gmat_validate_script calls
+# would race on UseLogFile / Clear / LoadScript and trample each other's
+# log files. Only gmat_validate_script needs to take the lock — the other
+# tools route through gmat-run's Mission wrapper, which owns its own
+# log-redirect dance.
+_GMAT_GLOBAL_LOCK = asyncio.Lock()
 
 
 # Threshold below which a ReportFile is returned fully inline. Above it the
@@ -196,9 +208,10 @@ class ReportFileShape(BaseModel):
     path: str = Field(
         ...,
         description=(
-            "Absolute path the report landed at. Lives under a temp directory created "
-            "for this run — the path is informational; the inline rows below carry "
-            "the data the LLM can actually read."
+            "Absolute path the report landed at. Lives under a registry-owned temp "
+            "directory whose lifetime extends until the run is LRU-evicted, so a "
+            "follow-up gmat_read_run_artefact call can re-read the file by name; "
+            "the inline rows below carry the parsed data either way."
         ),
     )
     columns: list[str] = Field(
@@ -268,9 +281,11 @@ class OutputPointer(BaseModel):
     path: str = Field(
         ...,
         description=(
-            "Absolute path the file landed at. Lives under a temp directory created "
-            "for this run; treat as informational, since the directory is cleaned up "
-            "after the tool returns."
+            "Absolute path the file landed at. Lives under a registry-owned temp "
+            "directory until the run is LRU-evicted (configurable via "
+            "ASTRODYNAMICS_MCP_RUN_REGISTRY_LIMIT). Read the file directly off "
+            "disk, or pass the resource name to gmat_read_run_artefact for "
+            "shape-disciplined text inlining."
         ),
     )
 
@@ -366,10 +381,10 @@ class RawReportContent(BaseModel):
     path: str = Field(
         ...,
         description=(
-            "Absolute path the report landed at. Lives under a temp directory "
-            "created for this run — informational only; the file is cleaned up "
-            "when the tool returns, so the raw text below is what the caller "
-            "can actually read."
+            "Absolute path the artefact landed at. Lives under a registry-owned "
+            "temp directory until the run is LRU-evicted, so a follow-up "
+            "gmat_read_run_artefact call can re-fetch the bytes; the raw text "
+            "below carries the inlined snapshot for the common case."
         ),
     )
     content: str = Field(
@@ -414,9 +429,9 @@ class RawReportContent(BaseModel):
     truncated: bool = Field(
         ...,
         description=(
-            "True when the report had more than 60 lines under output='summary' "
+            "True when the artefact had more than 60 lines under output='summary' "
             "and the response carries head + tail rather than the full text. "
-            "False under output='full' or when the report fit fully inline."
+            "False under output='full' or when the artefact fit fully inline."
         ),
     )
 
@@ -480,8 +495,10 @@ class GmatExecuteScriptResponse(BaseModel):
         default_factory=list,
         description=(
             "One :class:`RawReportContent` per ReportFile the run wrote, in "
-            "the order GMAT declared them. Empty when ok=False, since the "
-            "run did not reach the point of writing reports."
+            "the order GMAT declared them. Empty when ok=False -- the tool "
+            "short-circuits before parsing reports on engine failure, so if "
+            "the run wrote partial reports before erroring you can still pull "
+            "them via gmat_read_run_artefact using the returned run_id."
         ),
     )
     artefacts: list[OutputPointer] = Field(
@@ -817,27 +834,34 @@ _RUN_MISSION_DESCRIPTION = (
 )
 
 _SWEEP_DESCRIPTION = (
-    "Run a parameter sweep, Monte Carlo, or Latin hypercube over a GMAT mission "
-    "script via the gmat-sweep backend. `mode` selects which family runs and which "
-    "payload fields are read. e.g. gmat_sweep(script='/abs/path/to/hohmann.script', "
-    "mode='grid', grid={'Sat.SMA': [7000, 7100, 7200], 'Sat.INC': [28.5, 51.6]}) "
-    "runs a 6-point full factorial; gmat_sweep(script=..., mode='monte_carlo', "
-    "perturb={'Sat.SMA': ['normal', 7000, 5.0]}, n=20, seed=42) runs 20 normally-"
-    "dispersed runs; mode='latin_hypercube' takes the same perturb / n / seed and "
-    "uses a stratified design. `script` is the same shape as gmat_run_mission: an "
-    "absolute .script path or full inline script text. Perturb values are JSON "
-    "lists of the form [distribution_name, *params] — ['normal', mu, sigma], "
-    "['uniform', lo, hi], or ['lognormal', mu, sigma]; do not pass plain numbers "
-    "or scipy distributions. For Monte Carlo / Latin hypercube, `seed` is required "
-    "for reproducibility — omitting it falls back to OS entropy and two calls with "
-    "the same arguments will give different draws. `max_workers` defaults to 1 to "
-    "keep the cost ceiling tight; raise it explicitly to parallelise across cores. "
-    "Output shaping: the default output='summary' returns per-column mean / std / "
-    "min / max plus the head + tail five rows of the result frame so the response "
-    "fits small-model input caps. 'full' adds every row in `rows`. `manifest_path` "
-    "and `output_dir` point at the on-disk sweep artefacts for a follow-up re-load. "
-    "Engine failures surface as upstream.gmat_sweep_failed; config / payload "
-    "violations surface as invalid_input.gmat_sweep_*."
+    "Run a parameter sweep, explicit-sample replay, Monte Carlo, or Latin "
+    "hypercube over a GMAT mission script via the gmat-sweep backend. `mode` "
+    "selects which family runs and which payload fields are read. e.g. "
+    "gmat_sweep(script='/abs/path/to/hohmann.script', mode='grid', "
+    "grid={'Sat.SMA': [7000, 7100, 7200], 'Sat.INC': [28.5, 51.6]}) runs a "
+    "6-point full factorial; gmat_sweep(script=..., mode='samples', "
+    "samples=[{'Sat.SMA': 7000, 'Sat.INC': 28.5}, {'Sat.SMA': 7100, "
+    "'Sat.INC': 51.6}]) runs one mission per explicit row; gmat_sweep(script=..., "
+    "mode='monte_carlo', perturb={'Sat.SMA': ['normal', 7000, 5.0]}, n=20, "
+    "seed=42) runs 20 normally-dispersed runs; mode='latin_hypercube' takes "
+    "the same perturb / n / seed and uses a stratified design. `script` is "
+    "the same shape as gmat_run_mission: an absolute .script path or full "
+    "inline script text. Samples are JSON lists of dotted-path -> value dicts "
+    "with a stable column order taken from the first row (every row must "
+    "share the same keys). Perturb values are JSON lists of the form "
+    "[distribution_name, *params] -- ['normal', mu, sigma], ['uniform', lo, "
+    "hi], or ['lognormal', mu, sigma]; do not pass plain numbers or scipy "
+    "distributions. For Monte Carlo / Latin hypercube, `seed` is required "
+    "for reproducibility -- omitting it falls back to OS entropy and two "
+    "calls with the same arguments will give different draws. `max_workers` "
+    "defaults to 1 to keep the cost ceiling tight; raise it explicitly to "
+    "parallelise across cores. Output shaping: the default output='summary' "
+    "returns per-column mean / std / min / max plus the head + tail five rows "
+    "of the result frame so the response fits small-model input caps. 'full' "
+    "adds every row in `rows`. `manifest_path` and `output_dir` point at the "
+    "on-disk sweep artefacts for a follow-up re-load. Engine failures surface "
+    "as upstream.gmat_sweep_failed; config / payload violations surface as "
+    "invalid_input.gmat_sweep_*."
 )
 
 _EXECUTE_SCRIPT_DESCRIPTION = (
@@ -882,8 +906,10 @@ _VALIDATE_SCRIPT_DESCRIPTION = (
     "/ 'Create' markers); do not pass a Python Mission object. Common-mistake "
     "notes: validate confirms the script parses, not that the mission runs "
     "end-to-end — solver convergence and runtime errors still need "
-    "gmat_run_mission. GMAT is case-sensitive: 'Spacecraft sat' and 'Spacecraft "
-    "Sat' are different objects. Missing statement terminators (semicolons) are "
+    "gmat_run_mission. GMAT resource names are case-sensitive: 'Spacecraft sat' "
+    "and 'Spacecraft Sat' declare different objects (keyword fields are more "
+    "forgiving but should match the script grammar). Missing statement "
+    "terminators (semicolons) are "
     "a known false-negative — GMAT's interpreter accepts them silently, so "
     "ok=True does not guarantee a syntactically pristine script, only that the "
     "interpreter could build the object graph. Output fields carry no physical "
@@ -915,11 +941,14 @@ _READ_RUN_ARTEFACT_DESCRIPTION = (
     "with the available set in `data`. After a server restart the index is "
     "best-effort: if the run's temp directory still exists the read "
     "succeeds, otherwise the tool returns invalid_input.artefact_evicted. "
-    "Text outputs only — GMAT's text formats (ReportFile, OEM / CCSDS-OEM / "
-    "CCSDS-AEM / STK ephemerides, ContactLocator, solver .data, GMAT.log, "
-    "sweep manifest.jsonl) all flow through; binary outputs (SPK and "
-    "GMAT Code-500 ephemerides, sweep .parquet) are rejected with "
-    "invalid_input.binary_artefact rather than returned as decoded gibberish."
+    "Text outputs only -- the tool reads the first 8 KB of each artefact "
+    "and rejects anything containing a NULL byte as invalid_input.binary_artefact "
+    "rather than returning decoded gibberish. The text/binary line therefore "
+    "tracks the standard grep -I / git diff --binary heuristic: GMAT's ASCII "
+    "formats (ReportFile, OEM / CCSDS-OEM / CCSDS-AEM / STK ephemerides, "
+    "ContactLocator, solver .data, GMAT.log, sweep manifest.jsonl) all flow "
+    "through; binary outputs (SPK and GMAT Code-500 ephemerides, sweep "
+    ".parquet, .mat files) are rejected."
 )
 
 
@@ -976,6 +1005,99 @@ def _resolve_script_input(script: str) -> tuple[Path, Path | None]:
             code="invalid_input.script_path_not_found",
         )
     return path, None
+
+
+@contextmanager
+def _resolved_script(script: str) -> Iterator[Path]:
+    """Resolve ``script`` to an on-disk path and clean up any inline-text temp file.
+
+    Wraps :func:`_resolve_script_input` + the per-tool ``try/finally
+    cleanup_path.unlink(missing_ok=True)`` dance. The yielded path is
+    valid for the lifetime of the ``with`` block; once the block exits
+    (success or failure), any temp file created from inline text is
+    unlinked, while a caller-supplied path is left alone.
+    """
+    script_path, cleanup_path = _resolve_script_input(script)
+    try:
+        yield script_path
+    finally:
+        if cleanup_path is not None:
+            cleanup_path.unlink(missing_ok=True)
+
+
+@contextmanager
+def _owned_workspace(prefix: str) -> Iterator[tuple[Path, Callable[[], None]]]:
+    """Own a ``tempfile.mkdtemp`` workspace until ownership is explicitly handed off.
+
+    Yields ``(workspace_path, mark_handed_off)``. The producer calls
+    ``mark_handed_off()`` after :meth:`RunRegistry.register` accepts the
+    workspace; from that point the registry owns reclamation. If the
+    ``with`` block exits (success or failure) **without** the hand-off
+    callback firing, :func:`shutil.rmtree` reaps the directory so a
+    failure between ``mkdtemp`` and ``registry.register`` does not leak.
+    """
+    workspace = Path(tempfile.mkdtemp(prefix=prefix))
+    handed_off = False
+
+    def mark_handed_off() -> None:
+        nonlocal handed_off
+        handed_off = True
+
+    try:
+        yield workspace, mark_handed_off
+    finally:
+        if not handed_off:
+            shutil.rmtree(workspace, ignore_errors=True)
+
+
+def _load_mission(script_path: Path) -> Any:
+    """Call :meth:`gmat_run.Mission.load` and wrap typed errors.
+
+    Shared between :func:`gmat_run_mission` and :func:`gmat_execute_script`;
+    both need the identical ``GmatLoadError`` → ``upstream.gmat_run_load_failed``
+    and ``GmatError`` → ``upstream.gmat_run_bootstrap_failed`` mapping.
+    """
+    from gmat_run import Mission
+    from gmat_run.errors import GmatError, GmatLoadError
+
+    try:
+        return Mission.load(script_path)
+    except GmatLoadError as exc:
+        raise UpstreamError(
+            f"GMAT could not load script: {exc}",
+            code="upstream.gmat_run_load_failed",
+            original_exception=exc,
+        ) from exc
+    except GmatError as exc:
+        raise UpstreamError(
+            f"GMAT discovery / bootstrap failed: {exc}",
+            code="upstream.gmat_run_bootstrap_failed",
+            original_exception=exc,
+        ) from exc
+
+
+_T = TypeVar("_T")
+
+
+def _truncate(
+    items: Sequence[_T],
+    *,
+    threshold: int,
+    head_tail: int,
+    output: Literal["summary", "full"],
+) -> tuple[list[_T], list[_T], list[_T], bool]:
+    """Apply the inline-vs-truncate decision shared by every shaper.
+
+    Returns ``(full, head, tail, truncated)``: in ``output='full'`` mode
+    or when ``len(items) <= threshold`` the response carries every item
+    in ``full`` and ``truncated`` is ``False``; otherwise ``full`` is
+    empty, ``head`` / ``tail`` carry the first / last ``head_tail``
+    items, and ``truncated`` is ``True``.
+    """
+    total = len(items)
+    if output == "full" or total <= threshold:
+        return list(items), [], [], False
+    return [], list(items[:head_tail]), list(items[-head_tail:]), True
 
 
 def _render_mission_summary(summary: Any) -> MissionSummaryView:
@@ -1121,24 +1243,26 @@ def _shape_report(
 
     In ``output="summary"`` mode the response trims rows past the inline
     threshold to head + tail; in ``output="full"`` mode every row is
-    inlined regardless of size.
+    inlined regardless of size. The truncated branch materialises only
+    the head + tail slices via ``frame.head()`` / ``frame.tail()`` so a
+    100k-row sweep doesn't pay full-frame numpy materialisation cost
+    just to emit ten rows.
     """
     columns = [str(c) for c in frame.columns]
     row_count = len(frame.index)
-    values = frame.to_numpy(dtype=object)
     inline_full = output == "full" or row_count <= _REPORT_INLINE_ROW_THRESHOLD
     if inline_full:
+        values = frame.to_numpy(dtype=object)
         rows = [_row_to_dict(columns, values[i]) for i in range(row_count)]
         head: list[dict[str, str | float]] = []
         tail: list[dict[str, str | float]] = []
         truncated = False
     else:
         rows = []
-        head = [_row_to_dict(columns, values[i]) for i in range(_REPORT_HEAD_TAIL_ROWS)]
-        tail = [
-            _row_to_dict(columns, values[i])
-            for i in range(row_count - _REPORT_HEAD_TAIL_ROWS, row_count)
-        ]
+        head_values = frame.head(_REPORT_HEAD_TAIL_ROWS).to_numpy(dtype=object)
+        tail_values = frame.tail(_REPORT_HEAD_TAIL_ROWS).to_numpy(dtype=object)
+        head = [_row_to_dict(columns, head_values[i]) for i in range(_REPORT_HEAD_TAIL_ROWS)]
+        tail = [_row_to_dict(columns, tail_values[i]) for i in range(_REPORT_HEAD_TAIL_ROWS)]
         truncated = True
     return ReportFileShape(
         name=name,
@@ -1157,27 +1281,57 @@ def _shape_raw_report(
 ) -> RawReportContent:
     """Read a ReportFile from disk into a :class:`RawReportContent`.
 
-    Reads bytes once for the byte_count, decodes UTF-8 (with ``replace``
-    so a stray binary byte doesn't abort the tool), and splits on
-    universal newlines. The file is closed before this function returns;
-    the caller's responsibility is to read it while the temp directory is
-    still alive.
+    Stream the file line-by-line with bounded memory: keep the first
+    ``_RAW_REPORT_HEAD_TAIL_LINES`` lines in ``head_buf``, the last
+    ``_RAW_REPORT_HEAD_TAIL_LINES`` lines in a deque, and accumulate the
+    full text only while we're still under the inline threshold (or when
+    ``output="full"`` asks for everything). A 200 MB ``GMAT.log`` therefore
+    pays O(threshold) memory in summary mode instead of slurping the
+    whole file via ``read_bytes()``. The byte count comes from
+    ``stat().st_size`` so the helper never materialises bytes it
+    doesn't need.
     """
-    raw_bytes = path.read_bytes()
-    byte_count = len(raw_bytes)
-    text = raw_bytes.decode("utf-8", errors="replace")
-    lines = text.splitlines()
-    line_count = len(lines)
-    inline_full = output == "full" or line_count <= _RAW_REPORT_INLINE_LINE_THRESHOLD
+    from collections import deque
+
+    byte_count = path.stat().st_size
+    head_buf: list[str] = []
+    tail_buf: deque[str] = deque(maxlen=_RAW_REPORT_HEAD_TAIL_LINES)
+    full_lines: list[str] = []
+    truncating = output != "full"
+    line_count = 0
+    trailing_newline = False
+
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        for raw_line in fh:
+            trailing_newline = raw_line.endswith("\n")
+            stripped = raw_line.rstrip("\n")
+            line_count += 1
+            if len(head_buf) < _RAW_REPORT_HEAD_TAIL_LINES:
+                head_buf.append(stripped)
+            tail_buf.append(stripped)
+            if not truncating or line_count <= _RAW_REPORT_INLINE_LINE_THRESHOLD:
+                full_lines.append(stripped)
+            elif full_lines:
+                # Crossed the inline threshold under summary mode -- the
+                # response will carry head + tail instead, so we no
+                # longer need the accumulated full-text buffer.
+                full_lines = []
+
+    inline_full = not truncating or line_count <= _RAW_REPORT_INLINE_LINE_THRESHOLD
     if inline_full:
-        content = text
+        # Preserve the file's trailing newline when present so consumers
+        # that diff content against the original bytes see the same byte
+        # sequence the producer wrote.
+        content = "\n".join(full_lines)
+        if trailing_newline and full_lines:
+            content += "\n"
         head = ""
         tail = ""
         truncated = False
     else:
         content = ""
-        head = "\n".join(lines[:_RAW_REPORT_HEAD_TAIL_LINES])
-        tail = "\n".join(lines[-_RAW_REPORT_HEAD_TAIL_LINES:])
+        head = "\n".join(head_buf)
+        tail = "\n".join(tail_buf)
         truncated = True
     return RawReportContent(
         name=name,
@@ -1245,20 +1399,30 @@ def _collect_artefact_map(result: Any) -> dict[str, Path]:
     return collected
 
 
-def _select_keys(all_keys: list[str], selection: list[str] | None) -> tuple[list[str], list[str]]:
-    """Return ``(kept, unknown)`` after applying ``selection`` to ``all_keys``.
+def _unknown_names(all_keys: list[str], selection: list[str] | None) -> list[str]:
+    """Return the entries in ``selection`` that are not present in ``all_keys``.
 
-    ``None`` means "everything"; the unknown list is empty. With a
-    selection, ``kept`` preserves the caller's order so a deliberate
-    ordering is honoured, and ``unknown`` carries names that didn't match
-    any output for a typed error downstream.
+    ``None`` selection means "no validation needed" -- returns an empty list.
     """
     if selection is None:
-        return list(all_keys), []
+        return []
     known = set(all_keys)
-    kept = [name for name in selection if name in known]
-    unknown = [name for name in selection if name not in known]
-    return kept, unknown
+    return [name for name in selection if name not in known]
+
+
+def _filter_names(all_keys: list[str], selection: list[str] | None) -> list[str]:
+    """Filter ``all_keys`` through ``selection``, preserving the caller's order.
+
+    ``None`` selection means "all keys, in their original order"; an
+    explicit selection keeps only the names that exist in ``all_keys``,
+    in the order they appear in the selection. Unknown names in
+    ``selection`` are silently dropped here -- :func:`_unknown_names`
+    is the validation pass.
+    """
+    if selection is None:
+        return list(all_keys)
+    known = set(all_keys)
+    return [name for name in selection if name in known]
 
 
 def _apply_overrides(mission: Any, overrides: dict[str, Any]) -> None:
@@ -1277,6 +1441,17 @@ def _apply_overrides(mission: Any, overrides: dict[str, Any]) -> None:
         try:
             mission[dotted] = value
         except GmatFieldError as exc:
+            raise InvalidInputError(
+                f"override write to {dotted!r} failed: {exc}",
+                code="invalid_input.gmat_override_failed",
+                data={"path": dotted, "original_exception_message": str(exc)},
+            ) from exc
+        except (TypeError, AttributeError) as exc:
+            # gmat-run's assignment surface raises TypeError / AttributeError
+            # for some bad-shape inputs (e.g. wrong python type for a real
+            # field, mistyped subscript) that don't go through
+            # GmatFieldError. Surface them with the same typed code rather
+            # than leaking a raw transport-level 500.
             raise InvalidInputError(
                 f"override write to {dotted!r} failed: {exc}",
                 code="invalid_input.gmat_override_failed",
@@ -1340,7 +1515,6 @@ def _samples_to_dataframe(samples: list[dict[str, Any]]) -> Any:
             f"samples must be a non-empty list of dotted-path → value dicts, got {samples!r}",
             code="invalid_input.gmat_sweep_samples_empty",
         )
-    import pandas as pd
 
     first = samples[0]
     if not isinstance(first, dict) or not first:
@@ -1364,6 +1538,13 @@ def _samples_to_dataframe(samples: list[dict[str, Any]]) -> Any:
                 code="invalid_input.gmat_sweep_samples_row_drift",
             )
         rows.append([row[c] for c in columns])
+
+    # Import pandas only after every validation has passed so a bare
+    # environment without gmat-sweep (which transitively pulls pandas)
+    # still surfaces typed invalid_input.gmat_sweep_samples_* errors
+    # instead of leaking a ModuleNotFoundError on the import line.
+    import pandas as pd
+
     return pd.DataFrame(rows, columns=columns)
 
 
@@ -1584,7 +1765,7 @@ def _build_sweep_response(
 
 
 def _register_gmat_tools() -> None:
-    """Attach the four GMAT tools to ``astrodynamics_mcp.server.mcp``.
+    """Attach the five GMAT tools to ``astrodynamics_mcp.server.mcp``.
 
     Factored out of module top-level so unit tests can drive registration
     against a fresh :class:`~mcp.server.fastmcp.FastMCP` instance (via the
@@ -1652,33 +1833,15 @@ def _register_gmat_tools() -> None:
             ),
         ] = "summary",
     ) -> GmatRunMissionResponse:
-        from gmat_run import Mission
-        from gmat_run.errors import GmatError, GmatLoadError, GmatRunError
+        from gmat_run.errors import GmatRunError
 
         registry = default_registry()
         run_id = registry.mint()
-        # Bring our own workspace so the dir's lifetime is ours, not tied
-        # to Results._workspace (which the gmat-run runtime cleans up on
-        # GC). The registry owns reclamation now: it ``rmtree``s the dir
-        # on eviction, and never before then.
-        workspace = Path(tempfile.mkdtemp(prefix="astrodynamics-mcp-run-"))
-        script_path, cleanup_path = _resolve_script_input(script)
-        try:
-            try:
-                mission = Mission.load(script_path)
-            except GmatLoadError as exc:
-                raise UpstreamError(
-                    f"GMAT could not load script: {exc}",
-                    code="upstream.gmat_run_load_failed",
-                    original_exception=exc,
-                ) from exc
-            except GmatError as exc:
-                raise UpstreamError(
-                    f"GMAT discovery / bootstrap failed: {exc}",
-                    code="upstream.gmat_run_bootstrap_failed",
-                    original_exception=exc,
-                ) from exc
-
+        with (
+            _resolved_script(script) as script_path,
+            _owned_workspace("astrodynamics-mcp-run-") as (workspace, mark_handed_off),
+        ):
+            mission = _load_mission(script_path)
             _apply_overrides(mission, overrides or {})
 
             t0 = time.perf_counter()
@@ -1697,6 +1860,7 @@ def _register_gmat_tools() -> None:
                 output_dir=workspace,
                 artefacts=_collect_artefact_map(result),
             )
+            mark_handed_off()
 
             return _build_response(
                 run_id=run_id,
@@ -1706,9 +1870,6 @@ def _register_gmat_tools() -> None:
                 select_outputs=select_outputs,
                 output=output,
             )
-        finally:
-            if cleanup_path is not None:
-                cleanup_path.unlink(missing_ok=True)
 
     @register_tool(
         name="gmat_sweep",
@@ -1828,18 +1989,23 @@ def _register_gmat_tools() -> None:
         _validate_sweep_payload(
             mode=mode, grid=grid, samples=samples, perturb=perturb, n=n, seed=seed
         )
+        # Coerce / validate payload up front, *before* mkdtemp, so any
+        # InvalidInputError these helpers raise (samples row-drift,
+        # perturb shape, etc.) keeps its typed code instead of being
+        # reclassified by the catch-all `except Exception` below.
+        # ``_validate_sweep_payload`` above ensured the mode-keyed fields
+        # are populated, so the narrowing assertions hold here.
+        samples_df = (
+            _samples_to_dataframe(samples) if mode == "samples" and samples is not None else None
+        )
+        coerced_perturb = _coerce_perturb(perturb) if perturb is not None else None
 
         registry = default_registry()
         run_id = registry.mint()
-        script_path, cleanup_path = _resolve_script_input(script)
-        try:
-            # The sweep's output_dir must outlive this call so `manifest_path`
-            # and `output_dir` remain valid pointers in the response *and* so
-            # ``gmat_read_run_artefact`` can re-read the manifest after the
-            # response serialises out. Owning the dir here (instead of letting
-            # gmat-sweep manage it with ``out=None``) hands its lifetime to
-            # the registry, which ``rmtree``s the dir only on eviction.
-            sweep_out_dir = Path(tempfile.mkdtemp(prefix="astrodynamics-mcp-sweep-"))
+        with (
+            _resolved_script(script) as script_path,
+            _owned_workspace("astrodynamics-mcp-sweep-") as (sweep_out_dir, mark_handed_off),
+        ):
             backend = LocalJoblibPool(max_workers=max_workers)
             t0 = time.perf_counter()
             try:
@@ -1853,8 +2019,7 @@ def _register_gmat_tools() -> None:
                         progress=False,
                     )
                 elif mode == "samples":
-                    assert samples is not None
-                    samples_df = _samples_to_dataframe(samples)
+                    assert samples_df is not None
                     frame = sweep(
                         script_path,
                         samples=samples_df,
@@ -1863,22 +2028,22 @@ def _register_gmat_tools() -> None:
                         progress=False,
                     )
                 elif mode == "monte_carlo":
-                    assert perturb is not None and n is not None
+                    assert coerced_perturb is not None and n is not None
                     frame = monte_carlo(
                         script_path,
                         n=n,
-                        perturb=_coerce_perturb(perturb),
+                        perturb=coerced_perturb,
                         seed=seed,
                         backend=backend,
                         out=sweep_out_dir,
                         progress=False,
                     )
                 else:  # latin_hypercube
-                    assert perturb is not None and n is not None
+                    assert coerced_perturb is not None and n is not None
                     frame = latin_hypercube(
                         script_path,
                         n=n,
-                        perturb=_coerce_perturb(perturb),
+                        perturb=coerced_perturb,
                         seed=seed,
                         backend=backend,
                         out=sweep_out_dir,
@@ -1904,6 +2069,7 @@ def _register_gmat_tools() -> None:
                 output_dir=sweep_out_dir,
                 artefacts={"manifest.jsonl": manifest_path} if manifest_path.is_file() else {},
             )
+            mark_handed_off()
 
             return _build_sweep_response(
                 run_id=run_id,
@@ -1915,9 +2081,6 @@ def _register_gmat_tools() -> None:
                 output_dir=sweep_out_dir,
                 output=output,
             )
-        finally:
-            if cleanup_path is not None:
-                cleanup_path.unlink(missing_ok=True)
 
     @register_tool(
         name="gmat_execute_script",
@@ -1953,28 +2116,15 @@ def _register_gmat_tools() -> None:
             ),
         ] = "summary",
     ) -> GmatExecuteScriptResponse:
-        from gmat_run import Mission
-        from gmat_run.errors import GmatError, GmatLoadError, GmatRunError
+        from gmat_run.errors import GmatRunError
 
         registry = default_registry()
         run_id = registry.mint()
-        workspace = Path(tempfile.mkdtemp(prefix="astrodynamics-mcp-run-"))
-        script_path, cleanup_path = _resolve_script_input(script)
-        try:
-            try:
-                mission = Mission.load(script_path)
-            except GmatLoadError as exc:
-                raise UpstreamError(
-                    f"GMAT could not load script: {exc}",
-                    code="upstream.gmat_run_load_failed",
-                    original_exception=exc,
-                ) from exc
-            except GmatError as exc:
-                raise UpstreamError(
-                    f"GMAT discovery / bootstrap failed: {exc}",
-                    code="upstream.gmat_run_bootstrap_failed",
-                    original_exception=exc,
-                ) from exc
+        with (
+            _resolved_script(script) as script_path,
+            _owned_workspace("astrodynamics-mcp-run-") as (workspace, mark_handed_off),
+        ):
+            mission = _load_mission(script_path)
 
             t0 = time.perf_counter()
             try:
@@ -1985,6 +2135,7 @@ def _register_gmat_tools() -> None:
                 # can pull the GMAT log via gmat_read_run_artefact if GMAT
                 # managed to write one before bailing out.
                 registry.register(run_id, output_dir=workspace, artefacts={})
+                mark_handed_off()
                 return GmatExecuteScriptResponse(
                     run_id=run_id,
                     ok=False,
@@ -2000,6 +2151,7 @@ def _register_gmat_tools() -> None:
                 output_dir=workspace,
                 artefacts=_collect_artefact_map(result),
             )
+            mark_handed_off()
 
             reports = [
                 _shape_raw_report(name, Path(result.report_paths[name]), output=output)
@@ -2013,9 +2165,6 @@ def _register_gmat_tools() -> None:
                 reports=reports,
                 artefacts=_walk_artefacts(result),
             )
-        finally:
-            if cleanup_path is not None:
-                cleanup_path.unlink(missing_ok=True)
 
     @register_tool(
         name="gmat_validate_script",
@@ -2048,8 +2197,7 @@ def _register_gmat_tools() -> None:
         from gmat_run.runtime import bootstrap
         from gmat_run.summary import build_mission_summary
 
-        script_path, cleanup_path = _resolve_script_input(script)
-        try:
+        with _resolved_script(script) as script_path:
             try:
                 install = locate_gmat()
                 gmat = bootstrap(install)
@@ -2060,33 +2208,45 @@ def _register_gmat_tools() -> None:
                     original_exception=exc,
                 ) from exc
 
-            with tempfile.TemporaryDirectory(prefix="astrodynamics-mcp-validate-") as tmp:
-                log_path = Path(tmp) / "validate.log"
-                # Fresh sandbox so a prior load in the same process can't
-                # leak resources into the summary inventory below. Some
-                # plugins refuse Clear under specific states — suppress
-                # rather than abort.
-                with suppress(Exception):
-                    gmat.Clear()
-                gmat.UseLogFile(str(log_path))
-                init_error: str | None = None
-                load_ok = False
-                try:
-                    load_ok = bool(gmat.LoadScript(str(script_path)))
-                    if load_ok:
-                        api_exception = _get_api_exception(gmat)
-                        try:
-                            _initialize_spacecraft(gmat)
-                        except api_exception as exc:
-                            init_error = f"{type(exc).__name__}: {exc}"
-                finally:
-                    # Repoint the log handle off the temp path before the
-                    # TemporaryDirectory unlinks itself — GMAT's
-                    # MessageInterface holds the file open otherwise (same
-                    # Windows-handle issue Mission.run handles after a run).
+            # The install's startup file points GMAT at <root>/output/GmatLog.txt;
+            # we restore that target in the finally clause rather than os.devnull
+            # so a subsequent gmat_run_mission inherits the conventional default
+            # instead of silently swallowing diagnostics.
+            default_log_path = install.bin_dir.parent / "output" / "GmatLog.txt"
+
+            # Lock around the process-wide GMAT singleton — Clear / UseLogFile /
+            # LoadScript would race with a concurrent validate or run call.
+            async with _GMAT_GLOBAL_LOCK:
+                with tempfile.TemporaryDirectory(prefix="astrodynamics-mcp-validate-") as tmp:
+                    log_path = Path(tmp) / "validate.log"
+                    # Fresh sandbox so a prior load in the same process can't
+                    # leak resources into the summary inventory below. Some
+                    # plugins refuse Clear under specific states — suppress
+                    # rather than abort.
                     with suppress(Exception):
-                        gmat.UseLogFile(os.devnull)
-                raw_log = log_path.read_text(encoding="utf-8", errors="replace")
+                        gmat.Clear()
+                    gmat.UseLogFile(str(log_path))
+                    init_error: str | None = None
+                    load_ok = False
+                    try:
+                        load_ok = bool(gmat.LoadScript(str(script_path)))
+                        if load_ok:
+                            api_exception = _get_api_exception(gmat)
+                            try:
+                                _initialize_spacecraft(gmat)
+                            except api_exception as exc:
+                                init_error = f"{type(exc).__name__}: {exc}"
+                    finally:
+                        # Repoint the log handle off the temp path before the
+                        # TemporaryDirectory unlinks itself — GMAT's
+                        # MessageInterface holds the file open otherwise (same
+                        # Windows-handle issue Mission.run handles after a run).
+                        # Restore to the install's default rather than devnull
+                        # so a follow-up Mission.run still has a sensible
+                        # default target.
+                        with suppress(Exception):
+                            gmat.UseLogFile(str(default_log_path))
+                    raw_log = log_path.read_text(encoding="utf-8", errors="replace")
 
             ok = load_ok and init_error is None
             errors, warnings = _parse_gmat_log(raw_log)
@@ -2102,9 +2262,6 @@ def _register_gmat_tools() -> None:
                 summary=summary_view,
                 raw_log=raw_log,
             )
-        finally:
-            if cleanup_path is not None:
-                cleanup_path.unlink(missing_ok=True)
 
     @register_tool(
         name="gmat_read_run_artefact",
@@ -2246,23 +2403,29 @@ def _build_response(
     """
     summary_view = _build_mission_summary_view(mission)
 
+    # select_outputs filters response-surface categories only (ReportFile /
+    # EphemerisFile / ContactLocator). Solver outputs land in the registry
+    # for gmat_read_run_artefact regardless and aren't valid here -- a name
+    # collision raises invalid_input.unknown_output_selection with the
+    # accepted set spelled out for the caller.
     all_output_names = [
         *result.report_paths.keys(),
         *result.ephemeris_paths.keys(),
         *result.contact_paths.keys(),
     ]
-    _, unknown = _select_keys(all_output_names, select_outputs)
+    unknown = _unknown_names(all_output_names, select_outputs)
     if unknown:
         raise InvalidInputError(
             f"select_outputs contains unknown resource names: {unknown}; "
-            f"available outputs are {sorted(all_output_names)}",
+            f"available response-surface outputs are {sorted(all_output_names)} "
+            "(solver outputs are reachable via gmat_read_run_artefact, not select_outputs)",
             code="invalid_input.unknown_output_selection",
             data={"unknown": unknown, "available": sorted(all_output_names)},
         )
 
-    report_names, _ = _select_keys(list(result.report_paths.keys()), select_outputs)
-    ephemeris_names, _ = _select_keys(list(result.ephemeris_paths.keys()), select_outputs)
-    contact_names, _ = _select_keys(list(result.contact_paths.keys()), select_outputs)
+    report_names = _filter_names(list(result.report_paths.keys()), select_outputs)
+    ephemeris_names = _filter_names(list(result.ephemeris_paths.keys()), select_outputs)
+    contact_names = _filter_names(list(result.contact_paths.keys()), select_outputs)
 
     reports: list[ReportFileShape] = []
     for name in report_names:
@@ -2370,6 +2533,7 @@ def _register_gmat_resources() -> None:
     the :mod:`astrodynamics_mcp.server` module at call time so a
     monkeypatched singleton resolves correctly.
     """
+    assert len({slug for slug, _ in _SKELETONS}) == len(_SKELETONS), "duplicate slug in _SKELETONS"
     skeleton_root = resources.files(_SKELETON_PACKAGE)
     for slug, filename in _SKELETONS:
         # ``importlib.resources.files`` returns a ``Traversable``; the
@@ -2382,7 +2546,12 @@ def _register_gmat_resources() -> None:
                 f"skeleton {slug!r} expected at {path}, but the file is missing"
             )
         text = path.read_text(encoding="utf-8")
-        description = _extract_description(text)
+        try:
+            description = _extract_description(text)
+        except ValueError as exc:
+            # Re-raise with the slug + path so the failure points at the
+            # offending file rather than the generic helper.
+            raise ValueError(f"skeleton {slug!r} at {path}: {exc}") from exc
         uri = f"{_SKELETON_URI_SCHEME}://{slug}"
         _server_module.mcp.resource(
             uri,

@@ -124,6 +124,18 @@ RF.WriteHeaders = True
 
 BeginMissionSequence
 
+% First Target block: tune the trajectory-correction maneuver (TCM1) so
+% the spacecraft arrives at Mars on a specific B-plane geometry.
+%   BdotT =  2700 km  -- impact parameter projected onto the T-axis
+%                       (in the orbit plane, perpendicular to the
+%                       incoming asymptote). Sets the periapsis direction.
+%   BdotR = -7000 km  -- impact parameter projected onto the R-axis
+%                       (out of the orbit plane). Sets the inclination
+%                       of the hyperbolic approach.
+% Together these target a posigrade-equatorial-ish capture geometry at
+% Mars with a periapsis below the MOI burn radius (~12000 km, set in the
+% second Target block). Tune both numbers to retarget the capture orbit
+% inclination / longitude of node.
 Target DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
    Vary 'Vary TCM1.V' DC(TCM1.Element1 = 1e-005, {Perturbation = .00001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = .002})
    Vary 'Vary TCM1.N' DC(TCM1.Element2 = 1e-005, {Perturbation = .00001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = .002})

@@ -1,4 +1,4 @@
-% Description: Sun-Earth-Moon L2 orbit station keeping -- DC-targeted small dV in the L2-centered rotating frame keeps the spacecraft near the libration point across multiple plane crossings.
+% Description: Earth-Moon L2 orbit station keeping -- DC-targeted small dV in the L2-centered rotating frame keeps the spacecraft near the libration point across multiple plane crossings.
 
 Create LibrationPoint EarthMoonL2
 EarthMoonL2.Primary   = Earth

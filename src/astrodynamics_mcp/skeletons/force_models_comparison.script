@@ -1,4 +1,4 @@
-% Description: Side-by-side propagation under seven force models (point mass, third bodies, 12x12 gravity, MSISE-90 / Jacchia-Roberts / MSISE-00 / exponential drag, SRP, and a full combined model) -- one Propagate per Propagator.
+% Description: Sequential propagation through a chain of nine force-model variants on a single spacecraft (point mass, third bodies, 12x12 gravity, Jacchia-Roberts / MSISE-90 / MSISE-00 / exponential drag, SRP, and a full combined model) -- each Propagate continues from the previous arc's end state, so the script demonstrates force-model construction, not isolated comparison. To compare models from the same initial state, Clone the spacecraft per branch and reset its epoch between propagations.
 
 Create Spacecraft Sat
 Sat.DateFormat       = UTCGregorian

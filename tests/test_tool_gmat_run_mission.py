@@ -22,7 +22,6 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
 from astrodynamics_mcp.server_lint import check_tool_descriptions
-from astrodynamics_mcp.tools import gmat as gmat_tools
 from astrodynamics_mcp.tools.gmat import (
     GmatRunMissionResponse,
     _build_response,
@@ -186,10 +185,10 @@ def _install_fake_gmat_run(
 class _FakeDataFrame:
     """Minimal pandas-DataFrame stand-in for the report-shaping path.
 
-    The tool body reads ``.columns``, ``.index`` (only ``len`` is used), and
-    ``.to_numpy(dtype=object)`` — pre-computing a 2D ``list[list[Any]]`` is
-    enough to exercise every shaping branch without pulling pandas into the
-    test env.
+    The tool body reads ``.columns``, ``.index`` (only ``len`` is used),
+    ``.to_numpy(dtype=object)``, and (in the truncated branch) ``.head(n)``
+    / ``.tail(n)`` — pre-computing a 2D ``list[list[Any]]`` is enough to
+    exercise every shaping branch without pulling pandas into the test env.
     """
 
     def __init__(self, columns: list[str], rows: list[list[Any]]) -> None:
@@ -200,6 +199,12 @@ class _FakeDataFrame:
     def to_numpy(self, *, dtype: Any = None) -> Any:
         del dtype
         return self._rows
+
+    def head(self, n: int) -> _FakeDataFrame:
+        return _FakeDataFrame(self.columns, self._rows[:n])
+
+    def tail(self, n: int) -> _FakeDataFrame:
+        return _FakeDataFrame(self.columns, self._rows[-n:])
 
 
 def _trivial_summary() -> _FakeMissionSummary:
@@ -236,11 +241,9 @@ def _large_report(rows: int = 100) -> _FakeDataFrame:
 
 def _fresh_mcp(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
     """Stand up a per-test FastMCP and re-register the GMAT slots against it."""
-    fresh = FastMCP("gmat-run-mission-test")
-    monkeypatch.setattr("astrodynamics_mcp.server.mcp", fresh)
-    monkeypatch.setattr(gmat_tools, "_GMAT_RUN_AVAILABLE", True)
-    gmat_tools._register_gmat_tools()
-    return fresh
+    from tests._gmat_helpers import make_fresh_mcp
+
+    return make_fresh_mcp("gmat-run-mission-test", monkeypatch)
 
 
 # ---------------------------------------------------------------------------

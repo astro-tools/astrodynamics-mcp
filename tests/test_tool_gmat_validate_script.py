@@ -32,7 +32,6 @@ from typing import Any
 import pytest
 from mcp.server.fastmcp import FastMCP
 
-from astrodynamics_mcp.tools import gmat as gmat_tools
 from astrodynamics_mcp.tools.gmat import (
     GmatValidateScriptResponse,
     ParseDiagnostic,
@@ -238,8 +237,15 @@ class _FakeGmat:
 
 
 def _fake_install() -> SimpleNamespace:
-    """Minimal stand-in for ``gmat_run.install.GmatInstall``."""
-    return SimpleNamespace(root=Path("/fake/gmat"))
+    """Minimal stand-in for ``gmat_run.install.GmatInstall``.
+
+    Carries ``root`` plus ``bin_dir`` / ``api_dir`` because the validate
+    tool body resolves the install's default log path via
+    ``install.bin_dir.parent / "output" / "GmatLog.txt"`` when restoring
+    the GMAT log handle after the parse.
+    """
+    root = Path("/fake/gmat")
+    return SimpleNamespace(root=root, bin_dir=root / "bin", api_dir=root / "api")
 
 
 def _fake_summary(script_path: Path) -> SimpleNamespace:
@@ -294,11 +300,9 @@ def _install_fake_gmat_run(
 
 
 def _fresh_mcp(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
-    fresh = FastMCP("gmat-validate-script-test")
-    monkeypatch.setattr("astrodynamics_mcp.server.mcp", fresh)
-    monkeypatch.setattr(gmat_tools, "_GMAT_RUN_AVAILABLE", True)
-    gmat_tools._register_gmat_tools()
-    return fresh
+    from tests._gmat_helpers import make_fresh_mcp
+
+    return make_fresh_mcp("gmat-validate-script-test", monkeypatch)
 
 
 async def _call(mcp: FastMCP, **args: Any) -> GmatValidateScriptResponse:
@@ -325,7 +329,6 @@ class TestToolBody:
         assert result.summary.script_name == "ok.script"
         assert any(g.category == "Spacecraft" for g in result.summary.resource_groups)
         assert result.raw_log == _LOG_VALID
-        assert fake.clear_called is True
 
     async def test_load_failure_returns_ok_false_with_error(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

@@ -1,4 +1,4 @@
-% Description: Yukon non-linear optimisation -- Vary two variables, Minimize a quadratic cost, and apply a NonlinearConstraint inside an Optimize block (no spacecraft / propagation, purely algebraic).
+% Description: Yukon non-linear optimisation demonstrator -- unconstrained quadratic cost (X1-2)^2 + (X2-2)^2 minimised at (2, 2) with a single linear slack constraint X1+X2 <= 8. No spacecraft, purely algebraic; useful as the smallest reproducible Yukon configuration for sanity-checking the optimizer's wiring.
 
 Create Yukon Yukon1
 Yukon1.ShowProgress          = true

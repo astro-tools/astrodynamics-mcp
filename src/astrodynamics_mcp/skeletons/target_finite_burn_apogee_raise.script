@@ -1,23 +1,23 @@
 % Description: DC-targeted finite burn -- Vary BurnDuration around the FiniteBurn bracket, propagate to apogee, and Achieve RMAG = 12000 km.
 
-Create Spacecraft DefaultSC
-DefaultSC.DateFormat       = UTCGregorian
-DefaultSC.Epoch            = '01 Jan 2026 12:00:00.000'
-DefaultSC.CoordinateSystem = EarthMJ2000Eq
-DefaultSC.DisplayStateType = Cartesian
-DefaultSC.X                = 7100
-DefaultSC.Y                = 0
-DefaultSC.Z                = 1300
-DefaultSC.VX               = 0
-DefaultSC.VY               = 7.35
-DefaultSC.VZ               = 1
-DefaultSC.DryMass          = 850
-DefaultSC.Cd               = 2.2
-DefaultSC.Cr               = 1.8
-DefaultSC.DragArea         = 15
-DefaultSC.SRPArea          = 1
-DefaultSC.Tanks            = {ChemicalTank1}
-DefaultSC.Thrusters        = {ChemicalThruster1}
+Create Spacecraft Sat
+Sat.DateFormat       = UTCGregorian
+Sat.Epoch            = '01 Jan 2026 12:00:00.000'
+Sat.CoordinateSystem = EarthMJ2000Eq
+Sat.DisplayStateType = Cartesian
+Sat.X                = 7100
+Sat.Y                = 0
+Sat.Z                = 1300
+Sat.VX               = 0
+Sat.VY               = 7.35
+Sat.VZ               = 1
+Sat.DryMass          = 850
+Sat.Cd               = 2.2
+Sat.Cr               = 1.8
+Sat.DragArea         = 15
+Sat.SRPArea          = 1
+Sat.Tanks            = {ChemicalTank1}
+Sat.Thrusters        = {ChemicalThruster1}
 
 Create ChemicalTank ChemicalTank1
 ChemicalTank1.AllowNegativeFuelMass = false
@@ -76,18 +76,18 @@ BurnDuration = 0
 
 Create ReportFile RF
 RF.Filename = 'target_finite_burn_apogee_raise.txt'
-RF.Add = {DefaultSC.UTCGregorian, DefaultSC.Earth.SMA, DefaultSC.Earth.ECC, DefaultSC.Earth.RMAG}
+RF.Add = {Sat.UTCGregorian, Sat.Earth.SMA, Sat.Earth.ECC, Sat.Earth.RMAG}
 RF.WriteHeaders = True
 
 BeginMissionSequence
 
-Propagate 'Prop To Perigee' DefaultProp(DefaultSC) {DefaultSC.Earth.Periapsis}
+Propagate 'Prop To Perigee' DefaultProp(Sat) {Sat.Earth.Periapsis}
 
 Target 'Raise Apogee' DC1 {SolveMode = Solve, ExitMode = SaveAndContinue}
    Vary 'Vary Burn Duration' DC1(BurnDuration = 200, {Perturbation = 0.0001, Lower = 0, Upper = 10000, MaxStep = 100})
-   BeginFiniteBurn 'Turn Thruster On' FiniteBurn1(DefaultSC)
-   Propagate 'Prop BurnDuration' DefaultProp(DefaultSC) {DefaultSC.ElapsedSecs = BurnDuration}
-   EndFiniteBurn 'Turn Thruster Off' FiniteBurn1(DefaultSC)
-   Propagate 'Prop To Apogee' DefaultProp(DefaultSC) {DefaultSC.Earth.Apoapsis}
-   Achieve 'Achieve Apogee Radius = 12000' DC1(DefaultSC.Earth.RMAG = 12000, {Tolerance = 0.1})
+   BeginFiniteBurn 'Turn Thruster On' FiniteBurn1(Sat)
+   Propagate 'Prop BurnDuration' DefaultProp(Sat) {Sat.ElapsedSecs = BurnDuration}
+   EndFiniteBurn 'Turn Thruster Off' FiniteBurn1(Sat)
+   Propagate 'Prop To Apogee' DefaultProp(Sat) {Sat.Earth.Apoapsis}
+   Achieve 'Achieve Apogee Radius = 12000' DC1(Sat.Earth.RMAG = 12000, {Tolerance = 0.1})
 EndTarget

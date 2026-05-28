@@ -1,21 +1,21 @@
 % Description: Three-burn GEO insertion from a highly-elliptical inclined orbit: apogee raise (TOI), inclination + perigee correction (MCC), apogee lowering (MOI) -- all DC-targeted.
 
-Create Spacecraft geoSat
-geoSat.DateFormat                   = UTCGregorian
-geoSat.Epoch                        = '01 Jan 2026 00:00:00.000'
-geoSat.CoordinateSystem             = EarthMJ2000Eq
-geoSat.DisplayStateType             = Keplerian
-geoSat.SMA                          = 6578
-geoSat.ECC                          = 0.001
-geoSat.INC                          = 28.5
-geoSat.RAAN                         = 67
-geoSat.AOP                          = 355
-geoSat.TA                           = 250
-geoSat.DryMass                      = 850
-geoSat.Cd                           = 2.2
-geoSat.Cr                           = 1.8
-geoSat.DragArea                     = 15
-geoSat.SRPArea                      = 1
+Create Spacecraft Sat
+Sat.DateFormat                   = UTCGregorian
+Sat.Epoch                        = '01 Jan 2026 00:00:00.000'
+Sat.CoordinateSystem             = EarthMJ2000Eq
+Sat.DisplayStateType             = Keplerian
+Sat.SMA                          = 6578
+Sat.ECC                          = 0.001
+Sat.INC                          = 28.5
+Sat.RAAN                         = 67
+Sat.AOP                          = 355
+Sat.TA                           = 250
+Sat.DryMass                      = 850
+Sat.Cd                           = 2.2
+Sat.Cr                           = 1.8
+Sat.DragArea                     = 15
+Sat.SRPArea                      = 1
 
 Create ForceModel AllForces
 AllForces.CentralBody                      = Earth
@@ -70,36 +70,39 @@ DC.DerivativeMethod  = ForwardDifference
 
 Create ReportFile RF
 RF.Filename = 'geo_transfer.txt'
-RF.Add = {geoSat.UTCGregorian, geoSat.Earth.SMA, geoSat.Earth.ECC, geoSat.EarthMJ2000Eq.INC, geoSat.Earth.RMAG}
+RF.Add = {Sat.UTCGregorian, Sat.Earth.SMA, Sat.Earth.ECC, Sat.EarthMJ2000Eq.INC, Sat.Earth.RMAG}
 RF.WriteHeaders = True
 
 BeginMissionSequence
 
-Propagate 'Prop to Z Crossing' DefaultProp(geoSat) {geoSat.Z = 0, StopTolerance = 1e-005}
+Propagate 'Prop to Z Crossing' DefaultProp(Sat) {Sat.Z = 0, StopTolerance = 1e-005}
 
 Target 'Raise Apogee' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
    Vary 'Vary TOI.V' DC(TOI.Element1 = 1, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.5})
-   Maneuver 'Apply TOI' TOI(geoSat)
-   Propagate 'Prop To Apogee' DefaultProp(geoSat) {geoSat.Apoapsis}
-   Achieve 'Achieve RMAG' DC(geoSat.RMAG = 85000, {Tolerance = 0.1})
+   Maneuver 'Apply TOI' TOI(Sat)
+   Propagate 'Prop To Apogee' DefaultProp(Sat) {Sat.Apoapsis}
+   Achieve 'Achieve RMAG' DC(Sat.RMAG = 85000, {Tolerance = 0.1})
 EndTarget
 
-Propagate 'Prop to Perigee' DefaultProp(geoSat) {geoSat.Earth.Periapsis}
-Propagate 'Prop to Plane Crossing' DefaultProp(geoSat) {geoSat.Z = 0, StopTolerance = 1e-5}
+Propagate 'Prop to Perigee' DefaultProp(Sat) {Sat.Earth.Periapsis}
+Propagate 'Prop to Plane Crossing' DefaultProp(Sat) {Sat.Z = 0, StopTolerance = 1e-5}
 
 Target 'Change Plane/Perigee' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
    Vary 'Vary MCC.V' DC(MCC.Element1 = 0.1, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.5})
    Vary 'Vary MCC.N' DC(MCC.Element2 = 0.1, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.5})
-   Maneuver 'Apply MCC' MCC(geoSat)
-   Propagate 'Prop to Perigee' DefaultProp(geoSat) {geoSat.Periapsis}
-   Achieve 'Apply INC' DC(geoSat.EarthMJ2000Eq.INC = 2, {Tolerance = 0.001})
-   Achieve 'Achieve RMAG' DC(geoSat.RMAG = 42195, {Tolerance = 0.001})
+   Maneuver 'Apply MCC' MCC(Sat)
+   Propagate 'Prop to Perigee' DefaultProp(Sat) {Sat.Periapsis}
+   Achieve 'Apply INC' DC(Sat.EarthMJ2000Eq.INC = 2, {Tolerance = 0.001})
+   % Perigee radius matches the GEO SMA so the final apoapsis-lowering
+   % burn (next block) circularises the orbit instead of leaving a
+   % perigee/apogee mismatch.
+   Achieve 'Achieve RMAG' DC(Sat.RMAG = 42164.17, {Tolerance = 0.001})
 EndTarget
 
 Target 'Lower Apogee' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
    Vary 'Vary MOI.V' DC(MOI.Element1 = -0.1, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.1})
-   Maneuver 'Apply MOI' MOI(geoSat)
-   Achieve 'Achieve SMA' DC(geoSat.Earth.SMA = 42166.90, {Tolerance = 0.001})
+   Maneuver 'Apply MOI' MOI(Sat)
+   Achieve 'Achieve SMA' DC(Sat.Earth.SMA = 42164.17, {Tolerance = 0.001})
 EndTarget
 
-Propagate 'Prop 10 days' DefaultProp(geoSat) {geoSat.ElapsedDays = 10}
+Propagate 'Prop 10 days' DefaultProp(Sat) {Sat.ElapsedDays = 10}

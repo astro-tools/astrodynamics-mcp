@@ -18,7 +18,6 @@ from typing import Any
 import pytest
 from mcp.server.fastmcp import FastMCP
 
-from astrodynamics_mcp.tools import gmat as gmat_tools
 from astrodynamics_mcp.tools.gmat import (
     GmatExecuteScriptResponse,
     _shape_raw_report,
@@ -121,11 +120,9 @@ def _install_fake_gmat_run(
 
 
 def _fresh_mcp(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
-    fresh = FastMCP("gmat-execute-script-test")
-    monkeypatch.setattr("astrodynamics_mcp.server.mcp", fresh)
-    monkeypatch.setattr(gmat_tools, "_GMAT_RUN_AVAILABLE", True)
-    gmat_tools._register_gmat_tools()
-    return fresh
+    from tests._gmat_helpers import make_fresh_mcp
+
+    return make_fresh_mcp("gmat-execute-script-test", monkeypatch)
 
 
 def _write_report(path: Path, *, lines: int) -> None:
