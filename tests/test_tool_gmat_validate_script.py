@@ -238,8 +238,15 @@ class _FakeGmat:
 
 
 def _fake_install() -> SimpleNamespace:
-    """Minimal stand-in for ``gmat_run.install.GmatInstall``."""
-    return SimpleNamespace(root=Path("/fake/gmat"))
+    """Minimal stand-in for ``gmat_run.install.GmatInstall``.
+
+    Carries ``root`` plus ``bin_dir`` / ``api_dir`` because the validate
+    tool body resolves the install's default log path via
+    ``install.bin_dir.parent / "output" / "GmatLog.txt"`` when restoring
+    the GMAT log handle after the parse.
+    """
+    root = Path("/fake/gmat")
+    return SimpleNamespace(root=root, bin_dir=root / "bin", api_dir=root / "api")
 
 
 def _fake_summary(script_path: Path) -> SimpleNamespace:
