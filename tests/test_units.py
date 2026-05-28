@@ -28,12 +28,19 @@ class TestQuantityHelper:
         assert isinstance(result["value"], float)
 
     @pytest.mark.parametrize("special", [math.nan, math.inf, -math.inf])
-    def test_nan_and_infinity_are_allowed(self, special: float) -> None:
-        # Tools use NaN to flag failed / degenerate sub-computations; the
-        # discipline layer does not police that.
-        result = quantity(special, "km")
-        assert result["unit"] == "km"
-        assert math.isnan(result["value"]) if math.isnan(special) else result["value"] == special
+    def test_nan_and_infinity_rejected(self, special: float) -> None:
+        # JSON has no NaN/Infinity; a non-finite value must never cross the
+        # wire. The boundary guard rejects it as a typed error so a degenerate
+        # computation surfaces cleanly instead of emitting invalid JSON.
+        with pytest.raises(InvalidInputError) as excinfo:
+            quantity(special, "km")
+        assert excinfo.value.code == "invalid_input.non_finite_value"
+
+    @pytest.mark.parametrize("special", [math.nan, math.inf, -math.inf])
+    def test_nan_and_infinity_rejected_in_vector(self, special: float) -> None:
+        with pytest.raises(InvalidInputError) as excinfo:
+            quantity_vector([1.0, special, 3.0], "km")
+        assert excinfo.value.code == "invalid_input.non_finite_value"
 
     def test_unknown_unit_raises_typed_error(self) -> None:
         with pytest.raises(InvalidInputError) as excinfo:

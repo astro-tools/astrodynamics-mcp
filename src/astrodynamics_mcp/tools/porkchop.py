@@ -448,6 +448,11 @@ def _solve_cell(
         return None
     v_transfer_dep = np.asarray(result[0], dtype=float)
     v_transfer_arr = np.asarray(result[1], dtype=float)
+    # A marginal solve can converge to a non-finite velocity rather than
+    # raising; treat that cell as infeasible (skipped) so no NaN/inf reaches
+    # the wire — consistent with the tof <= 0 and no-solution skips above.
+    if not (np.all(np.isfinite(v_transfer_dep)) and np.all(np.isfinite(v_transfer_arr))):
+        return None
 
     v_inf_dep_vec = v_transfer_dep - v_dep_body
     v_inf_dep_mag = float(np.linalg.norm(v_inf_dep_vec))

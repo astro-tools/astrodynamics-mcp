@@ -67,7 +67,26 @@ _TEST_ARGS: dict[str, Any] = {
 }
 
 
-async def _call_via_http(port: int) -> dict[str, Any]:
+# A deterministic argument-validation failure: a bare-date epoch. This is the
+# path issue #102 broke — the typed code was lost before the wire. We assert
+# both transports surface the same structured envelope.
+_ERR_TOOL = "frame_transform"
+_ERR_ARGS: dict[str, Any] = {
+    "state": {
+        "r": [{"value": 7000.0, "unit": "km"}] * 3,
+        "v": [{"value": 1.0, "unit": "km/s"}] * 3,
+        "frame": "GCRS",
+        "epoch": "2026-01-01T00:00:00Z",
+    },
+    "to_frame": "ITRS",
+    "epoch": "2026-01-01",  # bare date — invalid
+}
+_ERR_CODE = "invalid_input.epoch_missing_time_component"
+
+
+async def _call_via_http(
+    port: int, tool: str = _TEST_TOOL, args: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Drive `tools/call` against `astrodynamics-mcp http` on *port*."""
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
@@ -78,11 +97,13 @@ async def _call_via_http(port: int) -> dict[str, Any]:
         ClientSession(read, write) as session,
     ):
         await session.initialize()
-        result = await session.call_tool(_TEST_TOOL, _TEST_ARGS)
+        result = await session.call_tool(tool, _TEST_ARGS if args is None else args)
         return result.model_dump()
 
 
-async def _call_via_stdio() -> dict[str, Any]:
+async def _call_via_stdio(
+    tool: str = _TEST_TOOL, args: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Drive `tools/call` against `astrodynamics-mcp stdio` over a pipe."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
@@ -96,7 +117,7 @@ async def _call_via_stdio() -> dict[str, Any]:
         ClientSession(read, write) as session,
     ):
         await session.initialize()
-        result = await session.call_tool(_TEST_TOOL, _TEST_ARGS)
+        result = await session.call_tool(tool, _TEST_ARGS if args is None else args)
         return result.model_dump()
 
 
@@ -159,6 +180,53 @@ class TestTransportEquivalence:
         structured = http_core.get("structuredContent")
         assert isinstance(structured, dict)
         assert "states" in structured
+
+    def test_stdio_and_http_agree_on_error_envelope(self) -> None:
+        """A validation error surfaces the same typed envelope over both transports.
+
+        Guards issue #102: the structured ``{code, ...}`` envelope must reach
+        the wire (in ``structuredContent``) with ``isError=True`` and identical
+        core payloads on stdio and HTTP — and carry the typed code, not a
+        generic ``Error executing tool`` string.
+        """
+        port = _free_port()
+        http_proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "astrodynamics_mcp.cli",
+                "http",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            _wait_for_bind("127.0.0.1", port)
+            http_payload = asyncio.run(_call_via_http(port, _ERR_TOOL, _ERR_ARGS))
+        finally:
+            http_proc.terminate()
+            try:
+                http_proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                http_proc.kill()
+                http_proc.wait(timeout=5)
+
+        stdio_payload = asyncio.run(_call_via_stdio(_ERR_TOOL, _ERR_ARGS))
+
+        http_core = _strip_session_fields(http_payload)
+        stdio_core = _strip_session_fields(stdio_payload)
+        assert http_core == stdio_core, (
+            "stdio and HTTP transports produced divergent error payloads — "
+            f"http={http_core!r}, stdio={stdio_core!r}"
+        )
+        assert http_core.get("isError") is True
+        structured = http_core.get("structuredContent")
+        assert isinstance(structured, dict)
+        assert structured["code"] == _ERR_CODE
 
     def test_tools_list_is_transport_independent(self) -> None:
         """tools/list returns the same registered tool surface over both transports."""

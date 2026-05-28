@@ -284,14 +284,22 @@ def _solve_one(
     prograde: bool,
     low_path: bool,
 ) -> tuple[np.ndarray, np.ndarray] | None:
-    """Call lamberthub once. Returns (v1, v2) or None on infeasible solution."""
+    """Call lamberthub once. Returns (v1, v2) or None on infeasible solution.
+
+    A non-finite velocity (a marginal / degenerate solve that converged to
+    NaN or inf rather than raising) is treated as "no solution" so it never
+    reaches the wire — the boundary guard in ``units`` would reject it anyway,
+    but surfacing it as ``None`` keeps the typed ``lambert_no_solution`` path.
+    """
     try:
         result = algorithm(mu, r1, r2, tof, M=M, prograde=prograde, low_path=low_path)
-    except (AssertionError, ValueError):
+    except (AssertionError, ValueError, RuntimeError, ZeroDivisionError):
         return None
     # lamberthub returns either (v1, v2) or (v1, v2, numiter) depending on solver.
     v1 = np.asarray(result[0], dtype=float)
     v2 = np.asarray(result[1], dtype=float)
+    if not (np.all(np.isfinite(v1)) and np.all(np.isfinite(v2))):
+        return None
     return v1, v2
 
 
