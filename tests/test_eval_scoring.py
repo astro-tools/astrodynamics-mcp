@@ -40,9 +40,16 @@ def _tool_call(name: str, args: dict[str, Any], call_id: str = "c1") -> ToolCall
     return ToolCall(id=call_id, function=name, arguments=args)
 
 
-def _error_envelope(code: str) -> str:
-    """A JSON error envelope shaped like astrodynamics_mcp.server emits."""
-    return json.dumps({"code": code, "message": f"{code} raised", "data": {}})
+def _error_envelope(code: str, *, tool: str = "tle_lookup") -> str:
+    """An error message shaped like the eval actually sees it.
+
+    The tool raises a JSON envelope, but FastMCP prepends
+    "Error executing tool <name>: " before it crosses the wire, and Inspect
+    AI carries that whole string into ChatMessageTool.error.message. Mirror
+    that so the tests exercise the embedded-JSON path, not a bare envelope.
+    """
+    envelope = json.dumps({"code": code, "message": f"{code} raised", "data": {}})
+    return f"Error executing tool {tool}: {envelope}"
 
 
 def _build_state(
@@ -196,6 +203,22 @@ class TestExtractHelpers:
             )
         ]
         assert extract_tool_errors(msgs) == {"c1": "credential_required.spacetrack"}
+
+    def test_extract_tool_errors_handles_both_bare_and_prefixed(self) -> None:
+        # FastMCP prepends "Error executing tool <name>: " before the envelope;
+        # a bare envelope (no prefix) must parse too.
+        bare = json.dumps({"code": "credential_required.discosweb", "message": "x", "data": {}})
+        prefixed = f"Error executing tool satellite_metadata: {bare}"
+        msgs: list[Any] = [
+            ChatMessageTool(content=bare, tool_call_id="a", error=ToolCallError("unknown", bare)),
+            ChatMessageTool(
+                content=prefixed, tool_call_id="b", error=ToolCallError("unknown", prefixed)
+            ),
+        ]
+        assert extract_tool_errors(msgs) == {
+            "a": "credential_required.discosweb",
+            "b": "credential_required.discosweb",
+        }
 
     def test_extract_tool_errors_skips_non_envelope_errors(self) -> None:
         msgs: list[Any] = [

@@ -35,11 +35,14 @@ functional_answer:
     present: true
   - path: "$.mode"
     equals: "grid"
-  - path: "$.run_count.value"
-    in_range: [4, 4]
+  - path: "$.status_counts.failed.value"
+    in_range: [0, 0]
   - path: "$.columns"
     length: {min: 1}
 notes: |
   GMAT single_tool: full-factorial grid sweep. The trace asserts the model
-  reached for mode='grid' with both swept axes; the functional check pins
-  the 2x2 cartesian product to four runs. requires_gmat.
+  reached for mode='grid' with both swept axes. The functional check
+  confirms the sweep produced fused output columns with zero failed runs;
+  it does not pin run_count, which counts fused report rows (one per
+  propagation step across every grid point), not the number of grid
+  points. requires_gmat.

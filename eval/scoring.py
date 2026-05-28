@@ -46,22 +46,40 @@ def extract_trace(messages: list[Any]) -> list[ToolCall]:
 def _error_code_from_message(message: str | None) -> str | None:
     """Pull the typed ``code`` out of one of our JSON error envelopes.
 
-    Tool failures cross the MCP wire as ``{"code", "message", "data"}`` JSON
-    (see ``astrodynamics_mcp.server``). Returns the ``code`` string, or
-    ``None`` when the message isn't our envelope (so a non-typed failure
-    never accidentally matches an ``expect_error`` assertion).
+    Tool failures originate as ``{"code", "message", "data"}`` JSON (see
+    ``astrodynamics_mcp.server``), but FastMCP prepends
+    ``"Error executing tool <name>: "`` to the message before it crosses the
+    wire, and Inspect AI carries that whole string through to
+    ``ChatMessageTool.error.message``. So the envelope is usually *embedded*
+    in the message rather than being the entire message — we recover the
+    first JSON object regardless of any prefix. Returns the ``code`` string,
+    or ``None`` when no envelope is present (so a non-typed failure never
+    accidentally matches an ``expect_error`` assertion).
     """
     if not message:
         return None
-    try:
-        envelope = json.loads(message)
-    except (json.JSONDecodeError, TypeError):
-        return None
+    envelope = _extract_json_object(message)
     if isinstance(envelope, Mapping):
         code = envelope.get("code")
         if isinstance(code, str):
             return code
     return None
+
+
+def _extract_json_object(message: str) -> Any:
+    """Parse the message as JSON, or the first embedded JSON object within it."""
+    try:
+        return json.loads(message)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    brace = message.find("{")
+    if brace == -1:
+        return None
+    try:
+        obj, _end = json.JSONDecoder().raw_decode(message[brace:])
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return obj
 
 
 def extract_tool_errors(messages: list[Any]) -> dict[str, str]:
