@@ -72,6 +72,11 @@ DEFAULT_TTLS: Mapping[str, float] = {
     # JPL Horizons planetary ephemerides drift on geological scales. 7d is
     # plenty conservative for porkchop / B-plane tools.
     "horizons": 7 * 24 * 60 * 60,
+    # Space-Track publishes GP elements roughly 1-4x/day per object. 6h
+    # matches the CelesTrak cadence and aligns with Space-Track's own
+    # API Rules of Behaviour ("save it locally; do not query for the
+    # same data repeatedly").
+    "spacetrack": 6 * 60 * 60,
 }
 
 
