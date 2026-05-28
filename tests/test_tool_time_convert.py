@@ -167,6 +167,7 @@ class TestFormatOutputs:
             out_format="j2000_seconds",
         )
         assert resp.scale == TimeScale.TT
+        assert isinstance(resp.value, float)
         assert abs(resp.value) < 1e-6
 
 

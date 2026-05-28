@@ -56,6 +56,12 @@ _BODY_TO_HORIZONS: dict[str, str] = {
 _HORIZONS_CENTER = "@sun"
 _HORIZONS_STEP = "1d"
 
+# Mean obliquity of the J2000 ecliptic relative to the ICRF equator
+# (IAU 2006, ε0 = 84381.406″). Horizons returns states in the ICRF ecliptic
+# frame; rotating about the X-axis by this angle gives ICRF equatorial
+# components, needed for a true declination of the launch asymptote (DLA).
+_J2000_OBLIQUITY_RAD = float(np.radians(84381.406 / 3600.0))
+
 # JD epoch of 1970-01-01 00:00:00 UTC. JD-TDB vs JD-UTC differs by ~70 s in
 # the modern era; for porkchop at 1d Horizons cadence the resulting
 # angular-position error is <0.01° (well under any cell-level resolution).
@@ -122,7 +128,10 @@ class PorkchopCell(BaseModel):
     dec_dep_asymptote: Quantity = Field(
         ...,
         description=(
-            "Declination of the departure-asymptote unit vector in the ICRF ecliptic frame, deg."
+            "Declination of the departure asymptote (DLA) in the ICRF equatorial "
+            "frame, deg — the v_infinity direction rotated from the ecliptic working "
+            "frame by the J2000 obliquity. This is the equatorial declination launch "
+            "vehicles target, not ecliptic latitude."
         ),
         examples=[{"value": -12.0, "unit": "deg"}],
     )
@@ -447,7 +456,14 @@ def _solve_cell(
     total_dv = v_inf_dep_mag + v_inf_arr_mag
 
     if v_inf_dep_mag > 0:
-        dec_rad = float(np.arcsin(np.clip(v_inf_dep_vec[2] / v_inf_dep_mag, -1.0, 1.0)))
+        # v_inf is in the ICRF ecliptic frame; rotate its z-component into the
+        # ICRF equatorial frame (rotation about X by the J2000 obliquity) so
+        # this is a true equatorial declination (the DLA launch designers use),
+        # not ecliptic latitude.
+        sin_eps = np.sin(_J2000_OBLIQUITY_RAD)
+        cos_eps = np.cos(_J2000_OBLIQUITY_RAD)
+        z_equatorial = v_inf_dep_vec[1] * sin_eps + v_inf_dep_vec[2] * cos_eps
+        dec_rad = float(np.arcsin(np.clip(z_equatorial / v_inf_dep_mag, -1.0, 1.0)))
     else:
         dec_rad = 0.0
     dec_deg = float(np.degrees(dec_rad))

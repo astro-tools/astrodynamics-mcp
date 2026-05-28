@@ -8,7 +8,7 @@
     },
     "dec_dep_asymptote": {
       "unit": "deg",
-      "value": 0.0
+      "value": 19.072363920037805
     },
     "depart_epoch": "2026-11-01T00:00:00Z",
     "tof": {
@@ -34,7 +34,7 @@
       },
       "dec_dep_asymptote": {
         "unit": "deg",
-        "value": 0.0
+        "value": 19.072363920037805
       },
       "depart_epoch": "2026-11-01T00:00:00Z",
       "tof": {
@@ -58,7 +58,7 @@
       },
       "dec_dep_asymptote": {
         "unit": "deg",
-        "value": 0.0
+        "value": 23.00906432325379
       },
       "depart_epoch": "2026-11-01T00:00:00Z",
       "tof": {
@@ -82,7 +82,7 @@
       },
       "dec_dep_asymptote": {
         "unit": "deg",
-        "value": 0.0
+        "value": 23.37586522990087
       },
       "depart_epoch": "2026-11-01T00:00:00Z",
       "tof": {
@@ -106,7 +106,7 @@
       },
       "dec_dep_asymptote": {
         "unit": "deg",
-        "value": 0.0
+        "value": 22.768781456401758
       },
       "depart_epoch": "2026-11-01T00:00:00Z",
       "tof": {
@@ -130,7 +130,7 @@
       },
       "dec_dep_asymptote": {
         "unit": "deg",
-        "value": 0.0
+        "value": 20.413453289220254
       },
       "depart_epoch": "2026-11-21T00:00:00Z",
       "tof": {
