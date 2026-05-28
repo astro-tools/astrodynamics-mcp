@@ -17,12 +17,14 @@ from __future__ import annotations
 import math
 import os
 import re
+import shutil
 import tempfile
 import time
-from contextlib import suppress
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager, suppress
 from importlib import resources
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypeVar
 
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
@@ -976,6 +978,99 @@ def _resolve_script_input(script: str) -> tuple[Path, Path | None]:
             code="invalid_input.script_path_not_found",
         )
     return path, None
+
+
+@contextmanager
+def _resolved_script(script: str) -> Iterator[Path]:
+    """Resolve ``script`` to an on-disk path and clean up any inline-text temp file.
+
+    Wraps :func:`_resolve_script_input` + the per-tool ``try/finally
+    cleanup_path.unlink(missing_ok=True)`` dance. The yielded path is
+    valid for the lifetime of the ``with`` block; once the block exits
+    (success or failure), any temp file created from inline text is
+    unlinked, while a caller-supplied path is left alone.
+    """
+    script_path, cleanup_path = _resolve_script_input(script)
+    try:
+        yield script_path
+    finally:
+        if cleanup_path is not None:
+            cleanup_path.unlink(missing_ok=True)
+
+
+@contextmanager
+def _owned_workspace(prefix: str) -> Iterator[tuple[Path, Callable[[], None]]]:
+    """Own a ``tempfile.mkdtemp`` workspace until ownership is explicitly handed off.
+
+    Yields ``(workspace_path, mark_handed_off)``. The producer calls
+    ``mark_handed_off()`` after :meth:`RunRegistry.register` accepts the
+    workspace; from that point the registry owns reclamation. If the
+    ``with`` block exits (success or failure) **without** the hand-off
+    callback firing, :func:`shutil.rmtree` reaps the directory so a
+    failure between ``mkdtemp`` and ``registry.register`` does not leak.
+    """
+    workspace = Path(tempfile.mkdtemp(prefix=prefix))
+    handed_off = False
+
+    def mark_handed_off() -> None:
+        nonlocal handed_off
+        handed_off = True
+
+    try:
+        yield workspace, mark_handed_off
+    finally:
+        if not handed_off:
+            shutil.rmtree(workspace, ignore_errors=True)
+
+
+def _load_mission(script_path: Path) -> Any:
+    """Call :meth:`gmat_run.Mission.load` and wrap typed errors.
+
+    Shared between :func:`gmat_run_mission` and :func:`gmat_execute_script`;
+    both need the identical ``GmatLoadError`` → ``upstream.gmat_run_load_failed``
+    and ``GmatError`` → ``upstream.gmat_run_bootstrap_failed`` mapping.
+    """
+    from gmat_run import Mission
+    from gmat_run.errors import GmatError, GmatLoadError
+
+    try:
+        return Mission.load(script_path)
+    except GmatLoadError as exc:
+        raise UpstreamError(
+            f"GMAT could not load script: {exc}",
+            code="upstream.gmat_run_load_failed",
+            original_exception=exc,
+        ) from exc
+    except GmatError as exc:
+        raise UpstreamError(
+            f"GMAT discovery / bootstrap failed: {exc}",
+            code="upstream.gmat_run_bootstrap_failed",
+            original_exception=exc,
+        ) from exc
+
+
+_T = TypeVar("_T")
+
+
+def _truncate(
+    items: Sequence[_T],
+    *,
+    threshold: int,
+    head_tail: int,
+    output: Literal["summary", "full"],
+) -> tuple[list[_T], list[_T], list[_T], bool]:
+    """Apply the inline-vs-truncate decision shared by every shaper.
+
+    Returns ``(full, head, tail, truncated)``: in ``output='full'`` mode
+    or when ``len(items) <= threshold`` the response carries every item
+    in ``full`` and ``truncated`` is ``False``; otherwise ``full`` is
+    empty, ``head`` / ``tail`` carry the first / last ``head_tail``
+    items, and ``truncated`` is ``True``.
+    """
+    total = len(items)
+    if output == "full" or total <= threshold:
+        return list(items), [], [], False
+    return [], list(items[:head_tail]), list(items[-head_tail:]), True
 
 
 def _render_mission_summary(summary: Any) -> MissionSummaryView:
