@@ -10,6 +10,7 @@ import pytest
 from eval._ci_report import (
     EvalSummary,
     FailingPrompt,
+    SkippedPrompt,
     collect_failures,
     main,
     render_markdown,
@@ -161,7 +162,7 @@ class TestRenderMarkdown:
         md = render_markdown(self._summary(), threshold=0.80)
         assert "## Eval gate: ✅ PASS" in md
         assert "**Accuracy:** 1.000" in md
-        assert "Every prompt passed" in md
+        assert "Every prompt that ran passed" in md
 
     def test_fail_path_lists_failures(self) -> None:
         failing = (
@@ -220,6 +221,32 @@ class TestRenderMarkdown:
         assert "**Errored samples:** 1 (counted as failures)" in md
         assert "sample errored" in md
         assert "error: Error code: 413" in md
+
+    def test_skipped_section_renders(self) -> None:
+        skipped = (
+            SkippedPrompt(
+                sample_id="sequential_spacetrack_tle_then_sgp4", unmet=("credential:spacetrack",)
+            ),
+            SkippedPrompt(sample_id="gmat_run_mission_simple_orbit", unmet=("gmat",)),
+        )
+        summary = self._summary(skipped=skipped)
+        md = render_markdown(summary, threshold=0.80)
+        assert "**Skipped:** 2" in md
+        assert "### Skipped prompts (2)" in md
+        assert "sequential_spacetrack_tle_then_sgp4" in md
+        assert "unmet: credential:spacetrack" in md
+        assert "gmat_run_mission_simple_orbit" in md
+
+    def test_no_skipped_section_when_empty(self) -> None:
+        md = render_markdown(self._summary(), threshold=0.80)
+        assert "Skipped" not in md
+
+    def test_skips_do_not_affect_gate(self) -> None:
+        # Accuracy (over run prompts) drives the gate; skips are neutral.
+        skipped = (SkippedPrompt(sample_id="x", unmet=("gmat",)),)
+        summary = self._summary(accuracy=0.9, n_samples=10, n_passed=9, skipped=skipped)
+        md = render_markdown(summary, threshold=0.80)
+        assert "## Eval gate: ✅ PASS" in md
 
     def test_truncates_long_failure_list(self) -> None:
         failing = tuple(

@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
-from eval._prompts import PromptSpec, load_prompt_from_yaml, load_prompts
+from eval._prompts import (
+    PromptSpec,
+    load_prompt_from_yaml,
+    load_prompts,
+    requirements_met,
+    unmet_requirements,
+)
 
 _VALID_YAML = """
 prompt: "Fetch the current TLE for the ISS (NORAD 25544)."
@@ -123,3 +130,80 @@ class TestLoadPrompts:
         _write(tmp_path, "a.yaml", _VALID_YAML)
         prompts = load_prompts(tmp_path)
         assert [p.id for p in prompts] == ["a", "b"]
+
+
+def _spec(**overrides: Any) -> PromptSpec:
+    base: dict[str, Any] = {
+        "id": "t",
+        "prompt": "p",
+        "tier": "single_tool",
+        "tools_required": ["tle_lookup"],
+        "permitted_traces": [[{"tool": "tle_lookup"}]],
+        "functional_answer": [],
+    }
+    base.update(overrides)
+    return PromptSpec.model_validate(base)
+
+
+class TestRequirementSchema:
+    def test_requires_credential_accepts_known_sources(self) -> None:
+        spec = _spec(requires_credential=["spacetrack", "discosweb"])
+        assert spec.requires_credential == ["spacetrack", "discosweb"]
+
+    def test_requires_credential_rejects_unknown_source(self) -> None:
+        with pytest.raises(Exception, match="unknown source"):
+            _spec(requires_credential=["spacex"])
+
+    def test_requires_gmat_defaults_false(self) -> None:
+        assert _spec().requires_gmat is False
+        assert _spec(requires_gmat=True).requires_gmat is True
+
+    def test_expect_error_parses(self) -> None:
+        spec = _spec(
+            permitted_traces=[
+                [{"tool": "tle_lookup", "expect_error": "credential_required.spacetrack"}]
+            ]
+        )
+        assert spec.permitted_traces[0][0].expect_error == "credential_required.spacetrack"
+
+    def test_expect_error_defaults_none(self) -> None:
+        assert _spec().permitted_traces[0][0].expect_error is None
+
+    def test_expect_error_blank_rejected(self) -> None:
+        with pytest.raises(Exception, match="non-empty"):
+            _spec(permitted_traces=[[{"tool": "tle_lookup", "expect_error": "   "}]])
+
+
+class TestRequirementsMet:
+    def test_no_requirements_always_met(self) -> None:
+        assert requirements_met(_spec(), env={}) is True
+        assert unmet_requirements(_spec(), env={}) == []
+
+    def test_credential_met_when_env_present(self) -> None:
+        spec = _spec(requires_credential=["spacetrack"])
+        env = {
+            "ASTRODYNAMICS_MCP_SPACETRACK_USERNAME": "u",
+            "ASTRODYNAMICS_MCP_SPACETRACK_PASSWORD": "p",
+        }
+        assert requirements_met(spec, env=env) is True
+
+    def test_credential_unmet_when_partial(self) -> None:
+        spec = _spec(requires_credential=["spacetrack"])
+        env = {"ASTRODYNAMICS_MCP_SPACETRACK_USERNAME": "u"}  # password missing
+        assert requirements_met(spec, env=env) is False
+        assert unmet_requirements(spec, env=env) == ["credential:spacetrack"]
+
+    def test_discosweb_single_field(self) -> None:
+        spec = _spec(requires_credential=["discosweb"])
+        assert requirements_met(spec, env={"ASTRODYNAMICS_MCP_DISCOSWEB_TOKEN": "t"}) is True
+        assert unmet_requirements(spec, env={}) == ["credential:discosweb"]
+
+    def test_gmat_requirement_uses_availability_probe(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        spec = _spec(requires_gmat=True)
+        monkeypatch.setattr("eval._prompts._gmat_available", lambda: False)
+        assert requirements_met(spec, env={}) is False
+        assert unmet_requirements(spec, env={}) == ["gmat"]
+        monkeypatch.setattr("eval._prompts._gmat_available", lambda: True)
+        assert requirements_met(spec, env={}) is True

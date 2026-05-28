@@ -1,0 +1,24 @@
+prompt: |
+  Using Space-Track as the source (not CelesTrak), fetch the latest TLE for
+  NORAD 25544 and propagate it 90 minutes forward from 2024-01-01T00:00:00Z
+  with SGP4, sampling every 10 minutes.
+tier: sequential
+tools_required: [tle_lookup, sgp4_propagate]
+requires_credential: [spacetrack]
+permitted_traces:
+  - - tool: tle_lookup
+      arg_constraints:
+        query: {equals: "25544"}
+        source: {equals: "space-track"}
+    - tool: sgp4_propagate
+functional_answer:
+  - path: "$.states[*].r.unit"
+    all_equal: "km"
+  - path: "$.states[*].v.unit"
+    all_equal: "km/s"
+notes: |
+  Credentialed happy-path: exercises the Space-Track passthrough feeding
+  SGP4. Gated on requires_credential: [spacetrack] — when the
+  ASTRODYNAMICS_MCP_SPACETRACK_USERNAME / _PASSWORD env vars are absent the
+  runner skips this prompt (reported skipped, not failed) rather than
+  hitting the guaranteed credential_required.spacetrack.

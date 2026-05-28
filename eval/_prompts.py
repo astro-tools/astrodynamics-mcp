@@ -12,6 +12,7 @@ malformed predicate fails at load time rather than the first eval run.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
@@ -19,12 +20,18 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from astrodynamics_mcp.credentials import SOURCES
 from eval._constraints import validate_constraint
 from eval._functional import validate_check
 
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
 Tier = Literal["single_tool", "sequential", "planning"]
+
+# The env-var prefix every credential field shares. Mirrors the wire
+# convention in astrodynamics_mcp.credentials (ASTRODYNAMICS_MCP_<SOURCE>_<FIELD>)
+# so the runner can decide skip-vs-run without importing that module's internals.
+_ENV_PREFIX = "ASTRODYNAMICS_MCP_"
 
 
 class ToolCallSpec(BaseModel):
@@ -40,12 +47,30 @@ class ToolCallSpec(BaseModel):
             "the constraint vocabulary; see eval/_constraints.py."
         ),
     )
+    expect_error: str | None = Field(
+        default=None,
+        description=(
+            "When set, the matched call must have produced a typed error envelope "
+            "whose `code` equals this string (e.g. 'credential_required.spacetrack'). "
+            "A successful call, or an error with a different code, does not match — "
+            "this is how error-path prompts assert the tool raised the right typed "
+            "failure instead of silently returning an empty success. When unset, a "
+            "candidate call matches only if it did *not* error."
+        ),
+    )
 
     @field_validator("arg_constraints")
     @classmethod
     def _validate_constraints(cls, value: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         for arg_name, constraint in value.items():
             validate_constraint(constraint, path=arg_name)
+        return value
+
+    @field_validator("expect_error")
+    @classmethod
+    def _expect_error_non_empty(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("expect_error must be a non-empty error code string when set")
         return value
 
 
@@ -76,6 +101,24 @@ class PromptSpec(BaseModel):
             "eval/_functional.py for the predicate vocabulary."
         ),
     )
+    requires_credential: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Credential source names (see astrodynamics_mcp.credentials.SOURCES) whose "
+            "environment variables must all be present for the prompt to run. When a "
+            "required credential is absent the runner *skips* the prompt — reported as "
+            "skipped, not failed — rather than exercising a guaranteed "
+            "credential_required error. Used by the credentialed happy-path prompts."
+        ),
+    )
+    requires_gmat: bool = Field(
+        default=False,
+        description=(
+            "When true the prompt drives a GMAT-backed tool and only runs where a GMAT "
+            "install is locatable (gmat_run importable and locate_gmat() succeeds). "
+            "Skipped, not failed, when GMAT is absent."
+        ),
+    )
     notes: str | None = Field(
         default=None,
         description=(
@@ -83,6 +126,17 @@ class PromptSpec(BaseModel):
             "particular arg constraint is loose. Not consumed by the scorer."
         ),
     )
+
+    @field_validator("requires_credential")
+    @classmethod
+    def _known_credentials(cls, value: list[str]) -> list[str]:
+        unknown = [s for s in value if s not in SOURCES]
+        if unknown:
+            raise ValueError(
+                f"requires_credential lists unknown source(s) {unknown!r}; "
+                f"known sources are {sorted(SOURCES)}"
+            )
+        return value
 
     @field_validator("tools_required")
     @classmethod
@@ -158,3 +212,48 @@ def load_prompts(directory: Path | None = None) -> list[PromptSpec]:
             continue
         prompts.append(load_prompt_from_yaml(path))
     return prompts
+
+
+def _gmat_available() -> bool:
+    """True when a GMAT install is locatable in the current process.
+
+    Mirrors the ``gmat_installed`` pytest marker's gate: the GMAT-backed
+    tools need ``gmat_run`` importable *and* a real install resolvable via
+    ``locate_gmat()`` (``GMAT_ROOT`` or a platform default). Any failure —
+    missing extra, missing binary — means the GMAT prompts are skipped.
+    """
+    try:
+        from gmat_run.install import locate_gmat
+
+        locate_gmat()
+    except Exception:
+        return False
+    return True
+
+
+def _credential_available(source: str, env: Mapping[str, str]) -> bool:
+    spec = SOURCES.get(source)
+    if spec is None:
+        return False
+    return all(env.get(f"{_ENV_PREFIX}{source.upper()}_{field.upper()}") for field in spec.fields)
+
+
+def unmet_requirements(prompt: PromptSpec, env: Mapping[str, str] | None = None) -> list[str]:
+    """Return the requirement tokens *prompt* does not satisfy in *env*.
+
+    Tokens are human-readable for the CI report: ``"gmat"`` and
+    ``"credential:<source>"``. An empty list means the prompt can run.
+    """
+    resolved_env = os.environ if env is None else env
+    unmet: list[str] = []
+    if prompt.requires_gmat and not _gmat_available():
+        unmet.append("gmat")
+    for source in prompt.requires_credential:
+        if not _credential_available(source, resolved_env):
+            unmet.append(f"credential:{source}")
+    return unmet
+
+
+def requirements_met(prompt: PromptSpec, env: Mapping[str, str] | None = None) -> bool:
+    """True when every declared requirement of *prompt* is satisfiable in *env*."""
+    return not unmet_requirements(prompt, env)

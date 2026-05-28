@@ -1,0 +1,40 @@
+prompt: |
+  Run this GMAT mission and tell me what happened — give me the run id, how
+  long the run took, and confirm a report was produced. Script:
+
+    Create Spacecraft Sat;
+    GMAT Sat.SMA = 7000;
+    GMAT Sat.ECC = 0.001;
+    GMAT Sat.INC = 28.5;
+
+    Create ForceModel FM;
+    GMAT FM.PointMasses = {Earth};
+
+    Create Propagator Prop;
+    GMAT Prop.FM = FM;
+
+    Create ReportFile rpt;
+    GMAT rpt.Filename = 'orbit_report.txt';
+    GMAT rpt.Add = {Sat.A1ModJulian, Sat.Earth.SMA, Sat.Earth.ECC};
+
+    BeginMissionSequence;
+    Propagate Prop(Sat) {Sat.ElapsedSecs = 3600};
+tier: single_tool
+tools_required: [gmat_run_mission]
+requires_gmat: true
+permitted_traces:
+  - - tool: gmat_run_mission
+functional_answer:
+  - path: "$.run_id"
+    present: true
+  - path: "$.wall_clock.unit"
+    equals: "s"
+  - path: "$.reports"
+    length: {min: 1}
+notes: |
+  GMAT single_tool primary: "run this mission and tell me what happened" is
+  the curated-surface niche gmat_run_mission is built for — it returns the
+  structured snapshot, wall-clock, and parsed report rows. The inline script
+  is a self-contained 1-hour two-body propagation with one ReportFile, so
+  the prompt is portable across installs (no dependency on a stock-sample
+  path that varies by GMAT_ROOT). requires_gmat: skipped where GMAT absent.

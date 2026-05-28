@@ -1,0 +1,22 @@
+prompt: |
+  Look up the ISS (NORAD 25544), then cross-reference its physical metadata
+  — mass and dimensions — by its NORAD catalogue ID.
+tier: sequential
+tools_required: [tle_lookup, satellite_metadata]
+requires_credential: [discosweb]
+permitted_traces:
+  - - tool: tle_lookup
+      arg_constraints:
+        query: {equals: "25544"}
+    - tool: satellite_metadata
+      arg_constraints:
+        norad_id: {equals: "25544"}
+functional_answer:
+  - path: "$.norad_id"
+    equals: "25544"
+  - path: "$.source"
+    equals: "discosweb"
+notes: |
+  Credentialed happy-path: tle_lookup hands a NORAD ID to satellite_metadata
+  for the DISCOSweb cross-reference. Gated on requires_credential:
+  [discosweb] — skipped when ASTRODYNAMICS_MCP_DISCOSWEB_TOKEN is absent.

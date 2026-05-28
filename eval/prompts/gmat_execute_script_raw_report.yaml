@@ -1,0 +1,39 @@
+prompt: |
+  Execute this GMAT script and give me the raw ReportFile text exactly as
+  GMAT wrote it — the header line, the units row, and the verbatim
+  formatting. I do not want parsed rows or a structured summary, just the
+  report file's raw text. Script:
+
+    Create Spacecraft Sat;
+    GMAT Sat.SMA = 7000;
+    GMAT Sat.ECC = 0.001;
+    GMAT Sat.INC = 28.5;
+
+    Create ForceModel FM;
+    GMAT FM.PointMasses = {Earth};
+
+    Create Propagator Prop;
+    GMAT Prop.FM = FM;
+
+    Create ReportFile rpt;
+    GMAT rpt.Filename = 'orbit_report.txt';
+    GMAT rpt.Add = {Sat.A1ModJulian, Sat.Earth.SMA, Sat.Earth.ECC};
+
+    BeginMissionSequence;
+    Propagate Prop(Sat) {Sat.ElapsedSecs = 3600};
+tier: single_tool
+tools_required: [gmat_execute_script, gmat_run_mission]
+requires_gmat: true
+permitted_traces:
+  - - tool: gmat_execute_script
+functional_answer:
+  - path: "$.run_id"
+    present: true
+  - path: "$.ok"
+    equals: true
+notes: |
+  Steering regression: both gmat_execute_script and gmat_run_mission are
+  exposed, so the model has to choose. The "raw ReportFile text verbatim,
+  not parsed rows" framing is the documented gmat_execute_script niche —
+  picking gmat_run_mission (which returns parsed rows) fails the trace.
+  Exercises the steering text in the two tools' descriptions. requires_gmat.

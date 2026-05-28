@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from eval.scoring import (
     extract_final_tool_response,
+    extract_tool_errors,
     extract_trace,
     hybrid_scorer,
 )
@@ -32,10 +33,16 @@ from inspect_ai.model._model import ModelName
 from inspect_ai.scorer import Score, Target
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import ToolCall
+from inspect_ai.tool._tool_call import ToolCallError
 
 
 def _tool_call(name: str, args: dict[str, Any], call_id: str = "c1") -> ToolCall:
     return ToolCall(id=call_id, function=name, arguments=args)
+
+
+def _error_envelope(code: str) -> str:
+    """A JSON error envelope shaped like astrodynamics_mcp.server emits."""
+    return json.dumps({"code": code, "message": f"{code} raised", "data": {}})
 
 
 def _build_state(
@@ -44,24 +51,40 @@ def _build_state(
     assistant_calls: list[ToolCall],
     tool_responses: list[tuple[str, dict[str, Any]]],
     metadata: dict[str, Any],
+    tool_errors: dict[str, str] | None = None,
 ) -> TaskState:
     """Assemble a ``TaskState`` carrying a synthetic LLM conversation.
 
     ``tool_responses`` is ``[(tool_call_id, response_payload), ...]`` —
-    each gets JSON-encoded onto a :class:`ChatMessageTool`.
+    each gets JSON-encoded onto a :class:`ChatMessageTool`. ``tool_errors``
+    maps a ``tool_call_id`` to a typed error code; the matching tool message
+    gets a :class:`ToolCallError` carrying the JSON error envelope, mirroring
+    how Inspect AI surfaces an MCP ``ToolError``.
     """
+    errors = tool_errors or {}
     sample = Sample(input=user_prompt, metadata=metadata)
     messages: list[Any] = [
         ChatMessageUser(content=user_prompt),
         ChatMessageAssistant(content="", tool_calls=assistant_calls),
     ]
     for call_id, payload in tool_responses:
-        messages.append(
-            ChatMessageTool(
-                content=json.dumps(payload),
-                tool_call_id=call_id,
+        code = errors.get(call_id)
+        if code is not None:
+            envelope = _error_envelope(code)
+            messages.append(
+                ChatMessageTool(
+                    content=envelope,
+                    tool_call_id=call_id,
+                    error=ToolCallError("unknown", envelope),
+                )
             )
-        )
+        else:
+            messages.append(
+                ChatMessageTool(
+                    content=json.dumps(payload),
+                    tool_call_id=call_id,
+                )
+            )
     state = TaskState(
         model=ModelName("test/model"),
         sample_id=sample.id or 0,
@@ -162,6 +185,31 @@ class TestExtractHelpers:
         assert response is None
         assert err is not None
         assert "not valid JSON" in err
+
+    def test_extract_tool_errors_reads_typed_code(self) -> None:
+        envelope = _error_envelope("credential_required.spacetrack")
+        msgs: list[Any] = [
+            ChatMessageTool(
+                content=envelope,
+                tool_call_id="c1",
+                error=ToolCallError("unknown", envelope),
+            )
+        ]
+        assert extract_tool_errors(msgs) == {"c1": "credential_required.spacetrack"}
+
+    def test_extract_tool_errors_skips_non_envelope_errors(self) -> None:
+        msgs: list[Any] = [
+            ChatMessageTool(
+                content="boom",
+                tool_call_id="c1",
+                error=ToolCallError("unknown", "plain non-JSON failure"),
+            )
+        ]
+        assert extract_tool_errors(msgs) == {}
+
+    def test_extract_tool_errors_omits_successful_responses(self) -> None:
+        msgs: list[Any] = [ChatMessageTool(content='{"ok": true}', tool_call_id="c1")]
+        assert extract_tool_errors(msgs) == {}
 
 
 @pytest.mark.asyncio
@@ -290,3 +338,100 @@ class TestHybridScorer:
         assert score.explanation is not None
         assert "trace_check: PASS" in score.explanation
         assert "functional_check: PASS" in score.explanation
+
+
+def _error_path_metadata(expect_error: str, *, source: str = "space-track") -> dict[str, Any]:
+    """An error-path prompt: the call must raise ``expect_error``."""
+    return {
+        "tier": "single_tool",
+        "tools_required": ["tle_lookup"],
+        "permitted_traces": [
+            [
+                {
+                    "tool": "tle_lookup",
+                    "arg_constraints": {"source": {"equals": source}},
+                    "expect_error": expect_error,
+                }
+            ]
+        ],
+        "functional_answer": [],
+        "notes": None,
+    }
+
+
+@pytest.mark.asyncio
+class TestErrorPathScoring:
+    """expect_error verification — the v0.2 credentialed-error-path contract."""
+
+    async def test_typed_error_matches_expect_error(self) -> None:
+        metadata = _error_path_metadata("credential_required.spacetrack")
+        state = _build_state(
+            user_prompt="Fetch NORAD 25544 from Space-Track.",
+            assistant_calls=[_tool_call("tle_lookup", {"query": "25544", "source": "space-track"})],
+            tool_responses=[("c1", {})],
+            tool_errors={"c1": "credential_required.spacetrack"},
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 1.0
+        assert meta["trace_passed"] is True
+
+    async def test_silent_empty_success_fails_expect_error(self) -> None:
+        """The negative control: a non-error empty response must NOT satisfy expect_error."""
+        metadata = _error_path_metadata("credential_required.spacetrack")
+        state = _build_state(
+            user_prompt="Fetch NORAD 25544 from Space-Track.",
+            assistant_calls=[_tool_call("tle_lookup", {"query": "25544", "source": "space-track"})],
+            tool_responses=[("c1", {"results": []})],  # silent empty success, no error
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 0.0
+        assert meta["trace_passed"] is False
+        assert any("expect_error" in r for r in meta["trace_failure_reasons"])
+
+    async def test_wrong_error_code_fails(self) -> None:
+        metadata = _error_path_metadata("credential_required.spacetrack")
+        state = _build_state(
+            user_prompt="Fetch NORAD 25544 from Space-Track.",
+            assistant_calls=[_tool_call("tle_lookup", {"query": "25544", "source": "space-track"})],
+            tool_responses=[("c1", {})],
+            tool_errors={"c1": "upstream.spacetrack_unreachable"},
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 0.0
+        assert meta["trace_passed"] is False
+
+    async def test_happy_path_step_does_not_match_errored_call(self) -> None:
+        """A step with no expect_error must not match a call that errored."""
+        metadata = _good_prompt_metadata()
+        metadata["functional_answer"] = []
+        state = _build_state(
+            user_prompt="Fetch the ISS TLE.",
+            assistant_calls=[_tool_call("tle_lookup", {"query": "25544"})],
+            tool_responses=[("c1", {})],
+            tool_errors={"c1": "upstream.celestrak_unreachable"},
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 0.0
+        assert meta["trace_passed"] is False
+
+    async def test_errored_call_then_successful_retry_matches_happy_path(self) -> None:
+        """Greedy matcher skips the errored call and anchors on the later success."""
+        metadata = _good_prompt_metadata()
+        metadata["functional_answer"] = []
+        state = _build_state(
+            user_prompt="Fetch the ISS TLE.",
+            assistant_calls=[
+                _tool_call("tle_lookup", {"query": "25544"}, "c1"),
+                _tool_call("tle_lookup", {"query": "25544"}, "c2"),
+            ],
+            tool_responses=[("c1", {}), ("c2", _good_response())],
+            tool_errors={"c1": "upstream.celestrak_unreachable"},
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 1.0
+        assert meta["trace_passed"] is True
