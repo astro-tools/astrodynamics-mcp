@@ -6,6 +6,25 @@ raised in a tool body surfaces on the MCP wire as a parseable JSON
 envelope carrying our stable string error code. Other unhandled
 exceptions are wrapped in an :class:`UpstreamError` so the LLM consumer
 always sees one of our typed codes — never a leaked Python traceback.
+
+Wire-format error contract
+--------------------------
+FastMCP's default ``call_tool`` path turns any error into a
+``CallToolResult(isError=True)`` whose only content is the string
+``"Error executing tool <name>: <message>"`` — and crucially it does this
+*after* argument validation, so a typed error raised inside a pydantic
+validator never reaches :func:`register_tool`'s wrapper and the stable
+``code`` is lost. We install our own low-level ``call_tool`` handler
+(:func:`_wire_call_tool`) that delegates to FastMCP, resolves the real
+:class:`AstrodynamicsMCPError` out of the wrapped exception's ``__cause__``
+chain (covering both tool-body errors and argument-validation errors),
+and returns a ``CallToolResult`` carrying the ``{code, message, data}``
+envelope in both ``structuredContent`` (a real structured channel) and a
+JSON ``TextContent`` block — with no ``"Error executing tool"`` prefix.
+
+The :meth:`FastMCP.call_tool` *method* still raises ``ToolError`` as before;
+only the wire-facing low-level handler is replaced, so in-process callers
+(and the existing method-level tests) are unaffected.
 """
 
 from __future__ import annotations
@@ -18,9 +37,10 @@ from typing import Any, TypeVar
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
-from mcp.types import ToolAnnotations
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
+from pydantic import ValidationError
 
-from astrodynamics_mcp.errors import AstrodynamicsMCPError, UpstreamError
+from astrodynamics_mcp.errors import AstrodynamicsMCPError, InvalidInputError, UpstreamError
 
 _SERVER_NAME = "astrodynamics-mcp"
 _SERVER_INSTRUCTIONS = (
@@ -118,3 +138,91 @@ def register_tool(
         return registered  # type: ignore[return-value]
 
     return decorator
+
+
+# ---------------------------------------------------------------------------
+# Wire-facing error serialisation
+# ---------------------------------------------------------------------------
+
+# Cap the __cause__ walk so a pathological self-referential chain can't loop.
+_MAX_CAUSE_DEPTH = 16
+
+
+def _validation_to_invalid_input(exc: ValidationError) -> InvalidInputError:
+    """Map a pydantic ``ValidationError`` (argument schema failure) to a typed code.
+
+    These come from FastMCP validating the call arguments *before* the tool
+    body runs, so they never carry one of our codes on their own. The first
+    error's location + message is enough for an LLM caller to repair the call.
+    """
+    errors = exc.errors()
+    if errors:
+        first = errors[0]
+        loc = ".".join(str(part) for part in first.get("loc", ()))
+        detail = str(first.get("msg", ""))
+    else:
+        loc = ""
+        detail = str(exc)
+    where = f" for {loc!r}" if loc else ""
+    message = f"argument validation failed{where}: {detail}"
+    return InvalidInputError(
+        message,
+        code="invalid_input.schema_validation",
+        data={"error_count": len(errors)},
+    )
+
+
+def _resolve_error(exc: BaseException) -> AstrodynamicsMCPError:
+    """Resolve the typed error behind a FastMCP-wrapped ``ToolError``.
+
+    FastMCP re-wraps everything (tool-body errors *and* argument-validation
+    failures) into a generic ``ToolError`` via ``raise ... from e``, so the
+    real error is reachable through the ``__cause__`` chain. Walk it for the
+    first :class:`AstrodynamicsMCPError` (our typed errors) or pydantic
+    :class:`ValidationError` (raw schema failures); anything else is an
+    unexpected exception that becomes ``upstream.unexpected_exception``.
+    """
+    cause: BaseException | None = exc
+    original: BaseException = exc
+    for _ in range(_MAX_CAUSE_DEPTH):
+        if cause is None:
+            break
+        if isinstance(cause, AstrodynamicsMCPError):
+            return cause
+        if isinstance(cause, ValidationError):
+            return _validation_to_invalid_input(cause)
+        original = cause
+        cause = cause.__cause__
+    return _wrap_unexpected(original)
+
+
+def _error_call_result(err: AstrodynamicsMCPError) -> CallToolResult:
+    """Build the wire ``CallToolResult`` carrying our typed error envelope.
+
+    The ``{code, message, data}`` envelope rides in ``structuredContent``
+    (the structured channel a programmatic consumer reads) *and* as a JSON
+    ``TextContent`` block (so prompt-driven and text-only clients still see
+    the code). No ``"Error executing tool"`` prefix is added.
+    """
+    payload = err.to_mcp_error()
+    return CallToolResult(
+        isError=True,
+        content=[TextContent(type="text", text=json.dumps(payload, separators=(",", ":")))],
+        structuredContent=payload,
+    )
+
+
+@mcp._mcp_server.call_tool(validate_input=False)  # type: ignore[untyped-decorator]
+async def _wire_call_tool(name: str, arguments: dict[str, Any]) -> Any:
+    """Low-level ``call_tool`` handler replacing FastMCP's default.
+
+    Delegates to :meth:`FastMCP.call_tool` (which still raises ``ToolError``)
+    and translates any failure into our structured-envelope result. Returning
+    a ``CallToolResult`` here makes the low-level server pass it through
+    verbatim — bypassing the default ``"Error executing tool"`` string. Only
+    ``ToolError`` is caught; control-flow signals (e.g. elicitation) propagate.
+    """
+    try:
+        return await mcp.call_tool(name, arguments)
+    except ToolError as exc:
+        return _error_call_result(_resolve_error(exc))

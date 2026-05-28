@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.types import CallToolRequest, CallToolRequestParams, CallToolResult, TextContent
 
 from astrodynamics_mcp.errors import (
     AstrodynamicsMCPError,
@@ -17,10 +18,31 @@ from astrodynamics_mcp.errors import (
 )
 from astrodynamics_mcp.server import (
     _envelope_to_tool_error,
+    _resolve_error,
+    _validation_to_invalid_input,
     _wrap_unexpected,
     mcp,
     register_tool,
 )
+
+
+async def _wire_call(name: str, arguments: dict[str, Any]) -> CallToolResult:
+    """Invoke a tool through the real low-level ``call_tool`` handler.
+
+    This is the wire path an MCP client drives — distinct from the
+    ``mcp.call_tool`` *method* (which still raises ``ToolError``). Tools are
+    registered on the module singleton at import, so we use it directly.
+    """
+    import astrodynamics_mcp.tools  # noqa: F401  # registration side effect
+
+    handler = mcp._mcp_server.request_handlers[CallToolRequest]
+    request = CallToolRequest(
+        method="tools/call",
+        params=CallToolRequestParams(name=name, arguments=arguments),
+    )
+    result = await handler(request)
+    assert isinstance(result.root, CallToolResult)
+    return result.root
 
 
 def _envelope_from_tool_error(excinfo: pytest.ExceptionInfo[ToolError]) -> dict[str, Any]:
@@ -236,3 +258,120 @@ class TestSubclassChainBaseError:
             await server_module.mcp.call_tool("root_err", {})
         envelope = _envelope_from_tool_error(excinfo)
         assert envelope["code"] == "freeform.code"
+
+
+class TestResolveError:
+    """Unit tests for the __cause__-chain resolver behind the wire handler."""
+
+    def test_resolves_typed_error_through_wrapped_toolerror(self) -> None:
+        typed = InvalidInputError("nope", "invalid_input.foo")
+        wrapped = ToolError("Error executing tool x: ...")
+        wrapped.__cause__ = typed
+        assert _resolve_error(wrapped) is typed
+
+    def test_resolves_typed_error_through_two_layers(self) -> None:
+        # register_tool produces ToolError(json) from the typed error, then
+        # Tool.run wraps that again — the resolver must reach two levels deep.
+        typed = UpstreamError("boom", "upstream.failure")
+        inner = ToolError("envelope-json")
+        inner.__cause__ = typed
+        outer = ToolError("Error executing tool x: envelope-json")
+        outer.__cause__ = inner
+        assert _resolve_error(outer) is typed
+
+    def test_pydantic_validation_error_maps_to_schema_validation(self) -> None:
+        from pydantic import BaseModel
+
+        class _M(BaseModel):
+            a: int
+
+        try:
+            _M(a="not-an-int")  # type: ignore[arg-type]
+        except Exception as exc:  # pydantic.ValidationError
+            wrapped = ToolError("Error executing tool x: ...")
+            wrapped.__cause__ = exc
+            resolved = _resolve_error(wrapped)
+        assert resolved.code == "invalid_input.schema_validation"
+        assert resolved.data["error_count"] >= 1
+
+    def test_unknown_cause_becomes_unexpected_upstream(self) -> None:
+        original = KeyError("missing")
+        wrapped = ToolError("Error executing tool x: 'missing'")
+        wrapped.__cause__ = original
+        resolved = _resolve_error(wrapped)
+        assert resolved.code == "upstream.unexpected_exception"
+        assert resolved.data["original_exception_type"] == "KeyError"
+
+    def test_validation_message_names_the_field(self) -> None:
+        from pydantic import BaseModel
+
+        class _M(BaseModel):
+            epoch: int
+
+        try:
+            _M()  # type: ignore[call-arg]
+        except Exception as exc:
+            invalid = _validation_to_invalid_input(exc)  # type: ignore[arg-type]
+        assert invalid.code == "invalid_input.schema_validation"
+        assert "epoch" in invalid.message
+
+
+class TestWireErrorContract:
+    """End-to-end: the structured envelope reaches the wire via the low-level handler.
+
+    These exercise the actual ``call_tool`` request handler (what stdio / HTTP
+    clients drive), guarding the contract that issue #102 broke: a typed code
+    must arrive in ``structuredContent`` with no ``Error executing tool`` prefix.
+    """
+
+    async def test_argument_validation_error_carries_typed_code(self) -> None:
+        # Bare-date epoch fails inside a pydantic validator — historically this
+        # lost the code entirely. It must now arrive on the wire.
+        result = await _wire_call(
+            "frame_transform",
+            {
+                "state": {
+                    "r": [{"value": 7000.0, "unit": "km"}] * 3,
+                    "v": [{"value": 1.0, "unit": "km/s"}] * 3,
+                    "frame": "GCRS",
+                    "epoch": "2026-01-01T00:00:00Z",
+                },
+                "to_frame": "ITRS",
+                "epoch": "2026-01-01",  # bare date — invalid
+            },
+        )
+        assert result.isError is True
+        assert result.structuredContent is not None
+        assert result.structuredContent["code"] == "invalid_input.epoch_missing_time_component"
+        # The text block is the clean JSON envelope — no "Error executing tool" prefix.
+        text_block = result.content[0]
+        assert isinstance(text_block, TextContent)
+        assert not text_block.text.startswith("Error executing tool")
+        parsed = json.loads(text_block.text)
+        assert parsed["code"] == "invalid_input.epoch_missing_time_component"
+
+    async def test_missing_argument_maps_to_schema_validation(self) -> None:
+        result = await _wire_call("frame_transform", {"to_frame": "ITRS"})
+        assert result.isError is True
+        assert result.structuredContent is not None
+        assert result.structuredContent["code"] == "invalid_input.schema_validation"
+
+    async def test_tool_body_error_carries_typed_code(self) -> None:
+        # Degenerate Lambert geometry (r1 == r2) raises UpstreamError in the body.
+        result = await _wire_call(
+            "lambert_solve",
+            {"r1": [7000.0, 0.0, 0.0], "r2": [7000.0, 0.0, 0.0], "tof": 3600.0, "mu": "earth"},
+        )
+        assert result.isError is True
+        assert result.structuredContent is not None
+        assert result.structuredContent["code"] == "upstream.lambert_no_solution"
+        text_block = result.content[0]
+        assert isinstance(text_block, TextContent)
+        assert not text_block.text.startswith("Error executing tool")
+
+    async def test_happy_path_is_not_an_error(self) -> None:
+        result = await _wire_call(
+            "time_convert",
+            {"value": "2026-05-23T12:00:00", "from_scale": "UTC", "to_scale": "TAI"},
+        )
+        assert result.isError is not True
