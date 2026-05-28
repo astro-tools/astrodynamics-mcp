@@ -2324,8 +2324,18 @@ def _register_gmat_tools() -> None:
             # Basename fallback: a file written directly under output_dir
             # that wasn't part of the producer's declared resource map
             # (the GMAT log, a sweep manifest, stray solver .data).
-            candidate = entry.output_dir / name
-            if candidate.is_file():
+            #
+            # `name` is client/LLM-supplied, so the join is a path-traversal
+            # sink: "../../etc/passwd" climbs out of output_dir, and an
+            # absolute name makes pathlib drop the left operand entirely
+            # ("output_dir / '/etc/passwd'" -> "/etc/passwd"). Resolve the
+            # candidate and require it to sit *directly* under output_dir
+            # before serving it — this rejects both escapes and preserves
+            # the documented non-recursive contract (nested files still need
+            # a declared resource name). On rejection we leave path as None
+            # so the unknown_artefact_name branch below handles it.
+            candidate = (entry.output_dir / name).resolve()
+            if candidate.is_file() and candidate.parent == entry.output_dir.resolve():
                 path = candidate
 
         if path is None:

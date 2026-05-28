@@ -150,6 +150,44 @@ class TestBasenameFallback:
             )
         assert "invalid_input.unknown_artefact_name" in str(excinfo.value)
 
+    async def test_relative_traversal_name_rejected(
+        self, tmp_path: Path, registry: RunRegistry, mcp_server: FastMCP
+    ) -> None:
+        """A ``../``-bearing name must not escape the run's output directory."""
+        out = _make_run(tmp_path / "workspaces", "run-a")
+        # A sensitive file a sibling of output_dir, reachable only by climbing
+        # out with ``..`` — the read tool must refuse rather than inline it.
+        secret = tmp_path / "workspaces" / "secret.txt"
+        secret.write_text("TOP SECRET\n", encoding="utf-8")
+        run_id = registry.mint()
+        registry.register(run_id, output_dir=out, artefacts={})
+        with pytest.raises(ToolError) as excinfo:
+            await mcp_server.call_tool(
+                "gmat_read_run_artefact",
+                {"run_id": run_id, "name": "../secret.txt"},
+            )
+        raw = str(excinfo.value)
+        assert "invalid_input.unknown_artefact_name" in raw
+        assert "TOP SECRET" not in raw
+
+    async def test_absolute_path_name_rejected(
+        self, tmp_path: Path, registry: RunRegistry, mcp_server: FastMCP
+    ) -> None:
+        """An absolute name must not be served — pathlib drops output_dir for it."""
+        out = _make_run(tmp_path / "workspaces", "run-a")
+        secret = tmp_path / "secret.txt"
+        secret.write_text("TOP SECRET\n", encoding="utf-8")
+        run_id = registry.mint()
+        registry.register(run_id, output_dir=out, artefacts={})
+        with pytest.raises(ToolError) as excinfo:
+            await mcp_server.call_tool(
+                "gmat_read_run_artefact",
+                {"run_id": run_id, "name": str(secret)},
+            )
+        raw = str(excinfo.value)
+        assert "invalid_input.unknown_artefact_name" in raw
+        assert "TOP SECRET" not in raw
+
 
 # ---------------------------------------------------------------------------
 # Typed-error surfaces
