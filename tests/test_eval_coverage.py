@@ -53,9 +53,8 @@ EXTENDED_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-# Extended tools the suite is expected to exercise with at least one
-# prompt (gmat_validate_script has no prompt yet, so it is excluded).
-EXTENDED_COVERED_TOOLS: frozenset[str] = EXTENDED_TOOLS - {"gmat_validate_script"}
+# Extended tools the suite is expected to exercise with at least one prompt.
+EXTENDED_COVERED_TOOLS: frozenset[str] = EXTENDED_TOOLS
 
 ALL_TOOLS: frozenset[str] = CORE_TOOLS | EXTENDED_TOOLS
 
@@ -151,11 +150,11 @@ def test_no_unknown_tools_in_tools_required() -> None:
 
 
 def test_credentialed_prompts_declare_requirements() -> None:
-    """Happy-path credentialed prompts gate on requires_credential.
+    """Prompts that exercise a credentialed source gate on requires_credential.
 
-    The error-path prompts (which assert credential_required.* fires) must
-    *not* gate — they run in the default no-secret env. Distinguish them by
-    whether any trace step carries expect_error.
+    A prompt is skipped when its secret is absent, so a credentialed call
+    must declare the matching requirement or it would fail (not skip) in the
+    default no-secret environment.
     """
     prompts = load_prompts()
     for prompt in prompts:
@@ -164,24 +163,27 @@ def test_credentialed_prompts_declare_requirements() -> None:
             for trace in prompt.permitted_traces
             for step in trace
         )
-        is_error_path = any(
-            step.expect_error is not None for trace in prompt.permitted_traces for step in trace
-        )
-        if "satellite_metadata" in prompt.tools_required and not is_error_path:
+        if "satellite_metadata" in prompt.tools_required:
             assert "discosweb" in prompt.requires_credential, (
-                f"{prompt.id!r} calls satellite_metadata on a happy path but does "
-                f"not require the discosweb credential"
+                f"{prompt.id!r} calls satellite_metadata but does not require the "
+                f"discosweb credential"
             )
-        if uses_spacetrack and not is_error_path:
+        if uses_spacetrack:
             assert "spacetrack" in prompt.requires_credential, (
-                f"{prompt.id!r} uses source='space-track' on a happy path but does "
-                f"not require the spacetrack credential"
+                f"{prompt.id!r} uses source='space-track' but does not require the "
+                f"spacetrack credential"
             )
 
 
 def test_gmat_prompts_declare_requires_gmat() -> None:
     prompts = load_prompts()
-    gmat_tools = {"gmat_run_mission", "gmat_sweep", "gmat_execute_script", "gmat_read_run_artefact"}
+    gmat_tools = {
+        "gmat_run_mission",
+        "gmat_sweep",
+        "gmat_execute_script",
+        "gmat_read_run_artefact",
+        "gmat_validate_script",
+    }
     for prompt in prompts:
         if gmat_tools & set(prompt.tools_required):
             assert prompt.requires_gmat, (

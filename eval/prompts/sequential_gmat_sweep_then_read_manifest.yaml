@@ -39,6 +39,7 @@ functional_answer:
     present: true
 notes: |
   Cross-tool: gmat_sweep mints a run_id that must thread into
-  gmat_read_run_artefact. Because the read step carries no expect_error, a
-  hallucinated run_id (which raises invalid_input.unknown_run_id) fails the
-  trace — the model has to carry the real id forward. requires_gmat.
+  gmat_read_run_artefact. A hallucinated run_id raises
+  invalid_input.unknown_run_id, and since a trace step never matches an
+  errored call, that fails the trace — the model has to carry the real id
+  forward. requires_gmat.

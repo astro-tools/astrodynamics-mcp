@@ -158,21 +158,6 @@ class TestRequirementSchema:
         assert _spec().requires_gmat is False
         assert _spec(requires_gmat=True).requires_gmat is True
 
-    def test_expect_error_parses(self) -> None:
-        spec = _spec(
-            permitted_traces=[
-                [{"tool": "tle_lookup", "expect_error": "credential_required.spacetrack"}]
-            ]
-        )
-        assert spec.permitted_traces[0][0].expect_error == "credential_required.spacetrack"
-
-    def test_expect_error_defaults_none(self) -> None:
-        assert _spec().permitted_traces[0][0].expect_error is None
-
-    def test_expect_error_blank_rejected(self) -> None:
-        with pytest.raises(Exception, match="non-empty"):
-            _spec(permitted_traces=[[{"tool": "tle_lookup", "expect_error": "   "}]])
-
 
 class TestRequirementsMet:
     def test_no_requirements_always_met(self) -> None:

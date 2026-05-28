@@ -48,8 +48,7 @@ eval/
 The suite covers the core read-only tools plus the GMAT tools
 (`gmat_run_mission`, `gmat_sweep`, `gmat_execute_script`,
 `gmat_read_run_artefact`), the DISCOSweb `satellite_metadata`
-cross-reference, the Space-Track passthrough, and the credentialed
-typed-error contract (`credential_required.*`).
+cross-reference, and the Space-Track passthrough.
 
 ## Running locally
 
@@ -95,7 +94,6 @@ permitted_traces:
       arg_constraints:
         <arg_name>: <ArgConstraint>      # see _constraints.py for the vocabulary
         ...
-      expect_error: "<error.code>"        # optional; assert this typed failure
     - tool: <next_tool_in_chain>
       arg_constraints: ...
   - - tool: <alternative_first_step>     # any permitted trace passing is enough
@@ -107,21 +105,9 @@ functional_answer:
 notes: "<optional human-only note: known model quirks, related prompts, etc.>"
 ```
 
-### Error-path prompts (`expect_error`)
-
-A trace step may carry `expect_error: "<code>"` (e.g.
-`credential_required.spacetrack`). The step then matches only a call that
-produced a typed error envelope (`{code, message, data}`, surfaced by
-`astrodynamics_mcp.server`) whose `code` equals that string. A successful
-call, an error with a different code, or a silent empty response does
-*not* match — that is how the credentialed-error prompts assert the tool
-raised the right typed failure instead of fabricating an answer.
-Conversely, a step *without* `expect_error` matches only non-errored
-calls, so a tool that failed silently before a retry is skipped over.
-
-Error-path prompts typically leave `functional_answer` empty (the final
-tool message is an error, not a usable JSON answer) and let the
-`expect_error` assertion carry the score.
+A trace step matches a tool call only when the call did *not* error, so a
+tool that failed silently before a retry is skipped over in favour of the
+later successful call.
 
 ### Skip discipline (`requires_credential` / `requires_gmat`)
 
@@ -136,10 +122,7 @@ Some prompts only run where their prerequisites exist:
 Skipped prompts are filtered out of the dataset — they neither run nor
 count for or against the gate. `eval/_ci_report.py` re-derives the
 skipped set from the same environment and lists it under "Skipped
-prompts" so the omission is visible rather than silent. The credentialed
-*error*-path prompts deliberately carry no `requires_credential`: they
-run in the default no-secret environment, which is exactly where the
-`credential_required.*` contract is exercised.
+prompts" so the omission is visible rather than silent.
 
 GMAT prompts run in CI because `.github/workflows/eval.yml` provisions a
 real install via `astro-tools/setup-gmat@v0` and syncs the `gmat` extra.

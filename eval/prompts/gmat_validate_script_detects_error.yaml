@@ -1,0 +1,24 @@
+prompt: |
+  Is this GMAT script valid? Check it for me — I think the Propagate command
+  might reference a propagator I never created. Script:
+
+    Create Spacecraft Sat;
+    GMAT Sat.SMA = 7000;
+
+    BeginMissionSequence;
+    Propagate UndefinedProp(Sat) {Sat.ElapsedSecs = 3600};
+tier: single_tool
+tools_required: [gmat_validate_script]
+requires_gmat: true
+permitted_traces:
+  - - tool: gmat_validate_script
+functional_answer:
+  - path: "$.ok"
+    equals: false
+  - path: "$.errors"
+    length: {min: 1}
+notes: |
+  GMAT single_tool, negative case: the script references a PropSetup
+  (UndefinedProp) it never creates, so GMAT's interpreter rejects it. This
+  exercises the failures-as-data contract — gmat_validate_script returns
+  ok=false with a populated errors list rather than raising. requires_gmat.

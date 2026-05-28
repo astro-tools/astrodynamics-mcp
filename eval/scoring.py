@@ -43,64 +43,19 @@ def extract_trace(messages: list[Any]) -> list[ToolCall]:
     return trace
 
 
-def _error_code_from_message(message: str | None) -> str | None:
-    """Pull the typed ``code`` out of one of our JSON error envelopes.
+def extract_errored_call_ids(messages: list[Any]) -> set[str]:
+    """Return the ``tool_call_id``s whose tool response carried an error.
 
-    Tool failures originate as ``{"code", "message", "data"}`` JSON (see
-    ``astrodynamics_mcp.server``), but FastMCP prepends
-    ``"Error executing tool <name>: "`` to the message before it crosses the
-    wire, and Inspect AI carries that whole string through to
-    ``ChatMessageTool.error.message``. So the envelope is usually *embedded*
-    in the message rather than being the entire message — we recover the
-    first JSON object regardless of any prefix. Returns the ``code`` string,
-    or ``None`` when no envelope is present (so a non-typed failure never
-    accidentally matches an ``expect_error`` assertion).
+    Inspect AI surfaces a failed tool call as a ``ChatMessageTool`` with a
+    non-``None`` ``error``. The trace matcher uses this so a step expecting a
+    usable response does not match a call that errored (a tool that failed
+    silently before a retry is skipped over in favour of the later success).
     """
-    if not message:
-        return None
-    envelope = _extract_json_object(message)
-    if isinstance(envelope, Mapping):
-        code = envelope.get("code")
-        if isinstance(code, str):
-            return code
-    return None
-
-
-def _extract_json_object(message: str) -> Any:
-    """Parse the message as JSON, or the first embedded JSON object within it."""
-    try:
-        return json.loads(message)
-    except (json.JSONDecodeError, TypeError):
-        pass
-    brace = message.find("{")
-    if brace == -1:
-        return None
-    try:
-        obj, _end = json.JSONDecoder().raw_decode(message[brace:])
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return obj
-
-
-def extract_tool_errors(messages: list[Any]) -> dict[str, str]:
-    """Map ``tool_call_id -> typed error code`` for every errored tool response.
-
-    Inspect AI surfaces an MCP ``ToolError`` on the ``ChatMessageTool`` as a
-    ``ToolCallError`` whose ``message`` is our JSON error envelope; the parsed
-    ``code`` is the stable string the prompts assert against via
-    ``expect_error``. Responses without an error, or whose error message isn't
-    our envelope, are omitted.
-    """
-    errors: dict[str, str] = {}
-    for msg in messages:
-        if not isinstance(msg, ChatMessageTool):
-            continue
-        if msg.error is None or msg.tool_call_id is None:
-            continue
-        code = _error_code_from_message(msg.error.message)
-        if code is not None:
-            errors[msg.tool_call_id] = code
-    return errors
+    return {
+        msg.tool_call_id
+        for msg in messages
+        if isinstance(msg, ChatMessageTool) and msg.error is not None and msg.tool_call_id
+    }
 
 
 def extract_final_tool_response(messages: list[Any]) -> tuple[Any | None, str | None]:
@@ -129,21 +84,16 @@ def extract_final_tool_response(messages: list[Any]) -> tuple[Any | None, str | 
 def _match_trace(
     actual: list[ToolCall],
     permitted: list[Mapping[str, Any]],
-    errors_by_id: Mapping[str, str],
+    errored_ids: set[str],
 ) -> tuple[bool, list[str]]:
     """Match *permitted* (a single trace's steps) against *actual* as a subsequence.
 
-    Greedy left-to-right: for each permitted step, advance the cursor
-    through *actual* until a matching call is found. A call matches a step
-    when the tool name and ``arg_constraints`` agree **and** its error
-    status lines up with the step's ``expect_error``:
-
-    - ``expect_error`` unset → the call must *not* have errored (a step
-      expecting a usable response never matches an errored call, so a
-      tool that failed silently before a retry is skipped over).
-    - ``expect_error`` set → the call must have produced exactly that
-      typed error code. This is what makes a silent empty success fail
-      an error-path prompt: no typed error ⇒ no match.
+    Greedy left-to-right: for each permitted step, advance the cursor through
+    *actual* until a matching call is found. A call matches a step when the
+    tool name and ``arg_constraints`` agree **and** the call did not error —
+    a step expecting a usable response never matches an errored call, so a
+    tool that failed silently before a retry is skipped over in favour of the
+    later success.
 
     Returns ``(passed, failure_reasons)``; the reasons describe the first
     step that could not be matched.
@@ -152,7 +102,6 @@ def _match_trace(
     for step_index, step in enumerate(permitted):
         expected_tool = step["tool"]
         constraints = step.get("arg_constraints") or {}
-        expect_error = step.get("expect_error")
         first_arg_failure: list[str] | None = None
         first_error_failure: str | None = None
         match_index: int | None = None
@@ -165,24 +114,13 @@ def _match_trace(
                 if first_arg_failure is None:
                     first_arg_failure = reasons
                 continue
-            actual_error = errors_by_id.get(call.id)
-            if expect_error is None:
-                if actual_error is None:
-                    match_index = i
-                    break
-                if first_error_failure is None:
-                    first_error_failure = (
-                        f"call matched args but errored with {actual_error!r}; "
-                        f"step expects a successful (non-error) call"
-                    )
-                continue
-            if actual_error == expect_error:
+            if call.id not in errored_ids:
                 match_index = i
                 break
             if first_error_failure is None:
                 first_error_failure = (
-                    f"call matched args but error code was {actual_error!r}; "
-                    f"step expects expect_error={expect_error!r}"
+                    "call matched args but the tool errored; "
+                    "step expects a successful (non-error) call"
                 )
         if match_index is None:
             if first_error_failure is not None:
@@ -204,14 +142,14 @@ def _match_trace(
 def _trace_check(
     actual: list[ToolCall],
     permitted_traces: list[list[Mapping[str, Any]]],
-    errors_by_id: Mapping[str, str],
+    errored_ids: set[str],
 ) -> tuple[bool, list[str]]:
     """At least one permitted trace must match; return overall pass + per-trace reasons."""
     if not permitted_traces:
         return False, ["no permitted_traces declared for this prompt"]
     all_reasons: list[str] = []
     for i, trace in enumerate(permitted_traces):
-        passed, reasons = _match_trace(actual, trace, errors_by_id)
+        passed, reasons = _match_trace(actual, trace, errored_ids)
         if passed:
             return True, []
         all_reasons.append(f"trace[{i}] failed: {'; '.join(reasons)}")
@@ -234,8 +172,8 @@ def hybrid_scorer() -> Scorer:
         functional_answer = state.metadata.get("functional_answer") or []
 
         trace = extract_trace(state.messages)
-        errors_by_id = extract_tool_errors(state.messages)
-        trace_passed, trace_reasons = _trace_check(trace, permitted_traces, errors_by_id)
+        errored_ids = extract_errored_call_ids(state.messages)
+        trace_passed, trace_reasons = _trace_check(trace, permitted_traces, errored_ids)
 
         response, parse_error = extract_final_tool_response(state.messages)
         if parse_error is not None:

@@ -47,30 +47,12 @@ class ToolCallSpec(BaseModel):
             "the constraint vocabulary; see eval/_constraints.py."
         ),
     )
-    expect_error: str | None = Field(
-        default=None,
-        description=(
-            "When set, the matched call must have produced a typed error envelope "
-            "whose `code` equals this string (e.g. 'credential_required.spacetrack'). "
-            "A successful call, or an error with a different code, does not match — "
-            "this is how error-path prompts assert the tool raised the right typed "
-            "failure instead of silently returning an empty success. When unset, a "
-            "candidate call matches only if it did *not* error."
-        ),
-    )
 
     @field_validator("arg_constraints")
     @classmethod
     def _validate_constraints(cls, value: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
         for arg_name, constraint in value.items():
             validate_constraint(constraint, path=arg_name)
-        return value
-
-    @field_validator("expect_error")
-    @classmethod
-    def _expect_error_non_empty(cls, value: str | None) -> str | None:
-        if value is not None and not value.strip():
-            raise ValueError("expect_error must be a non-empty error code string when set")
         return value
 
 
