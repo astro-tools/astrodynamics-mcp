@@ -1,24 +1,24 @@
 % Description: Low-thrust electric-propulsion burn -- ElectricTank + ElectricThruster + SolarPowerSystem driving a long FiniteBurn around an Earth-Moon trajectory.
 
-Create Spacecraft DefaultSC
-DefaultSC.DateFormat       = UTCGregorian
-DefaultSC.Epoch            = '15 Dec 2026 14:56:42.200'
-DefaultSC.CoordinateSystem = EarthMJ2000Eq
-DefaultSC.DisplayStateType = Cartesian
-DefaultSC.X                = -15015.40312811781
-DefaultSC.Y                = -23568.97680091111
-DefaultSC.Z                = 2241.504923500546
-DefaultSC.VX               = -0.485537892208224
-DefaultSC.VY               = -5.048763191594085
-DefaultSC.VZ               = -0.8799883161637991
-DefaultSC.DryMass          = 7
-DefaultSC.Cd               = 2.2
-DefaultSC.Cr               = 1.8
-DefaultSC.DragArea         = 15
-DefaultSC.SRPArea          = 1
-DefaultSC.Tanks            = {ElectricTank1}
-DefaultSC.Thrusters        = {ElectricThruster1}
-DefaultSC.PowerSystem      = SolarPowerSystem1
+Create Spacecraft Sat
+Sat.DateFormat       = UTCGregorian
+Sat.Epoch            = '15 Dec 2026 14:56:42.200'
+Sat.CoordinateSystem = EarthMJ2000Eq
+Sat.DisplayStateType = Cartesian
+Sat.X                = -15015.40312811781
+Sat.Y                = -23568.97680091111
+Sat.Z                = 2241.504923500546
+Sat.VX               = -0.485537892208224
+Sat.VY               = -5.048763191594085
+Sat.VZ               = -0.8799883161637991
+Sat.DryMass          = 7
+Sat.Cd               = 2.2
+Sat.Cr               = 1.8
+Sat.DragArea         = 15
+Sat.SRPArea          = 1
+Sat.Tanks            = {ElectricTank1}
+Sat.Thrusters        = {ElectricThruster1}
+Sat.PowerSystem      = SolarPowerSystem1
 
 Create ElectricTank ElectricTank1
 ElectricTank1.AllowNegativeFuelMass = false
@@ -83,19 +83,19 @@ FiniteBurn1.ThrottleLogicAlgorithm = 'MaxNumberOfThrusters'
 
 Create ReportFile RF
 RF.Filename = 'electric_propulsion.txt'
-RF.Add = {DefaultSC.UTCGregorian, DefaultSC.Earth.RMAG, DefaultSC.Luna.RMAG}
+RF.Add = {Sat.UTCGregorian, Sat.Earth.RMAG, Sat.Luna.RMAG}
 RF.WriteHeaders = True
 
 BeginMissionSequence
 
-Propagate 'Coast for 2 Hours' DefaultProp(DefaultSC) {DefaultSC.ElapsedSecs = 7200}
+Propagate 'Coast for 2 Hours' DefaultProp(Sat) {Sat.ElapsedSecs = 7200}
 
-BeginFiniteBurn FiniteBurn1(DefaultSC)
+BeginFiniteBurn FiniteBurn1(Sat)
 
-Propagate 'Prop Through Burn' DefaultProp(DefaultSC) {DefaultSC.ElapsedDays = 1.98}
+Propagate 'Prop Through Burn' DefaultProp(Sat) {Sat.ElapsedDays = 1.98}
 
-EndFiniteBurn FiniteBurn1(DefaultSC)
+EndFiniteBurn FiniteBurn1(Sat)
 
-Propagate 'Lunar Periapsis' DefaultProp(DefaultSC) {DefaultSC.Luna.Periapsis}
-Propagate 'Earth Apoapsis' DefaultProp(DefaultSC) {DefaultSC.Earth.Apoapsis}
-Propagate 'Earth Periapsis' DefaultProp(DefaultSC) {DefaultSC.Earth.Periapsis}
+Propagate 'Lunar Periapsis' DefaultProp(Sat) {Sat.Luna.Periapsis}
+Propagate 'Earth Apoapsis' DefaultProp(Sat) {Sat.Earth.Apoapsis}
+Propagate 'Earth Periapsis' DefaultProp(Sat) {Sat.Earth.Periapsis}

@@ -4,22 +4,22 @@ Create CoordinateSystem MoonMJ2000Eq
 MoonMJ2000Eq.Origin = Luna
 MoonMJ2000Eq.Axes   = MJ2000Eq
 
-Create Spacecraft PropSat
-PropSat.DateFormat       = UTCGregorian
-PropSat.DisplayStateType = Cartesian
-PropSat.Epoch            = '1 Jun 2026 00:00:00.000'
-PropSat.CoordinateSystem = MoonMJ2000Eq
-PropSat.X                =  -8992.197
-PropSat.Y                =  17505.351
-PropSat.Z                = -61412.481
-PropSat.VX               = -0.04684787
-PropSat.VY               =  0.10867048
-PropSat.VZ               = -0.09986946
-PropSat.DryMass          = 130
-PropSat.Cd               = 2.2
-PropSat.Cr               = 1.8
-PropSat.DragArea         = 15
-PropSat.SRPArea          = 1
+Create Spacecraft Sat
+Sat.DateFormat       = UTCGregorian
+Sat.DisplayStateType = Cartesian
+Sat.Epoch            = '1 Jun 2026 00:00:00.000'
+Sat.CoordinateSystem = MoonMJ2000Eq
+Sat.X                =  -8992.197
+Sat.Y                =  17505.351
+Sat.Z                = -61412.481
+Sat.VX               = -0.04684787
+Sat.VY               =  0.10867048
+Sat.VZ               = -0.09986946
+Sat.DryMass          = 130
+Sat.Cd               = 2.2
+Sat.Cr               = 1.8
+Sat.DragArea         = 15
+Sat.SRPArea          = 1
 
 Create ForceModel FM
 FM.CentralBody                      = Earth
@@ -47,9 +47,9 @@ Prop.MaxStepAttempts = 50
 
 Create ReportFile RF
 RF.Filename = 'multibody_gravity.txt'
-RF.Add = {PropSat.UTCGregorian, PropSat.MoonMJ2000Eq.X, PropSat.MoonMJ2000Eq.Y, PropSat.MoonMJ2000Eq.Z, PropSat.Luna.RMAG}
+RF.Add = {Sat.UTCGregorian, Sat.MoonMJ2000Eq.X, Sat.MoonMJ2000Eq.Y, Sat.MoonMJ2000Eq.Z, Sat.Luna.RMAG}
 RF.WriteHeaders = True
 
 BeginMissionSequence
 
-Propagate Prop(PropSat) {PropSat.ElapsedDays = 30}
+Propagate Prop(Sat) {Sat.ElapsedDays = 30}

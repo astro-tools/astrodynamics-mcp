@@ -1,21 +1,21 @@
 % Description: LEO altitude-box station keeping -- DC-targeted apogee-raise burns triggered when altitude drops below threshold.
 
-Create Spacecraft LEOsat
-LEOsat.DateFormat       = UTCGregorian
-LEOsat.Epoch            = '01 Jan 2026 12:00:00.000'
-LEOsat.CoordinateSystem = EarthMJ2000Eq
-LEOsat.DisplayStateType = Cartesian
-LEOsat.X                = -4083.9
-LEOsat.Y                = 4691.8
-LEOsat.Z                = -2576.7
-LEOsat.VX               = -4.252
-LEOsat.VY               = -5.509
-LEOsat.VZ               = -3.284
-LEOsat.DryMass          = 850
-LEOsat.Cd               = 2.2
-LEOsat.Cr               = 1.8
-LEOsat.DragArea         = 15
-LEOsat.SRPArea          = 1
+Create Spacecraft LEOSat
+LEOSat.DateFormat       = UTCGregorian
+LEOSat.Epoch            = '01 Jan 2026 12:00:00.000'
+LEOSat.CoordinateSystem = EarthMJ2000Eq
+LEOSat.DisplayStateType = Cartesian
+LEOSat.X                = -4083.9
+LEOSat.Y                = 4691.8
+LEOSat.Z                = -2576.7
+LEOSat.VX               = -4.252
+LEOSat.VY               = -5.509
+LEOSat.VZ               = -3.284
+LEOSat.DryMass          = 850
+LEOSat.Cd               = 2.2
+LEOSat.Cr               = 1.8
+LEOSat.DragArea         = 15
+LEOSat.SRPArea          = 1
 
 Create ForceModel LEOprop_ForceModel
 LEOprop_ForceModel.CentralBody                      = Earth
@@ -58,23 +58,23 @@ Create DifferentialCorrector DC
 
 Create ReportFile RF
 RF.Filename = 'leo_station_keeping.txt'
-RF.Add = {LEOsat.UTCGregorian, LEOsat.Earth.Altitude, LEOsat.Earth.SMA, LEOsat.Earth.ECC}
+RF.Add = {LEOSat.UTCGregorian, LEOSat.Earth.Altitude, LEOSat.Earth.SMA, LEOSat.Earth.ECC}
 RF.WriteHeaders = True
 
 BeginMissionSequence
 
-While 'While ElapsedDays < 10' LEOsat.ElapsedDays < 10.0
-   Propagate 'Prop One Step' LEOprop(LEOsat);
-   If 'If Alt < Threshold' LEOsat.Earth.Altitude < 342
-      Propagate 'Prop To Periapsis' LEOprop(LEOsat) {LEOsat.Periapsis};
-      Target 'Raise Orbit' DC {SolveMode = Solve, ExitMode = DiscardAndContinue};
-         Vary 'Vary TCM1.V' DC(TCM1.Element1 = 0.002, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.05});
-         Maneuver 'Apply TCM1' TCM1(LEOsat);
-         Propagate 'Prop to Apoapsis' LEOprop(LEOsat) {LEOsat.Earth.Apoapsis};
-         Achieve 'Achieve RMAG' DC(LEOsat.Earth.RMAG = 6737, {Tolerance = 0.1});
-         Vary 'Vary TCM2.V' DC(TCM2.Element1 = 1e-005, {Perturbation = 0.00005, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.05});
-         Maneuver 'Apply TCM2' TCM2(LEOsat);
-         Achieve 'Achieve ECC' DC(LEOsat.Earth.ECC = 0.00005, {Tolerance = 0.0001});
-      EndTarget;
-   EndIf;
-EndWhile;
+While 'While ElapsedDays < 10' LEOSat.ElapsedDays < 10.0
+   Propagate 'Prop One Step' LEOprop(LEOSat)
+   If 'If Alt < Threshold' LEOSat.Earth.Altitude < 342
+      Propagate 'Prop To Periapsis' LEOprop(LEOSat) {LEOSat.Periapsis}
+      Target 'Raise Orbit' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
+         Vary 'Vary TCM1.V' DC(TCM1.Element1 = 0.002, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.05})
+         Maneuver 'Apply TCM1' TCM1(LEOSat)
+         Propagate 'Prop to Apoapsis' LEOprop(LEOSat) {LEOSat.Earth.Apoapsis}
+         Achieve 'Achieve RMAG' DC(LEOSat.Earth.RMAG = 6737, {Tolerance = 0.1})
+         Vary 'Vary TCM2.V' DC(TCM2.Element1 = 1e-005, {Perturbation = 0.00005, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.05})
+         Maneuver 'Apply TCM2' TCM2(LEOSat)
+         Achieve 'Achieve ECC' DC(LEOSat.Earth.ECC = 0.00005, {Tolerance = 0.0001})
+      EndTarget
+   EndIf
+EndWhile

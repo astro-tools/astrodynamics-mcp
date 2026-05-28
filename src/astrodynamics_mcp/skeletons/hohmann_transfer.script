@@ -1,16 +1,16 @@
 % Description: DC-targeted Hohmann transfer from a LEO parking orbit to GEO (TOI and GOI impulsive burns, VNB axes).
 
-Create Spacecraft DefaultSC
-DefaultSC.DateFormat = UTCGregorian
-DefaultSC.Epoch = '01 Jan 2026 12:00:00.000'
-DefaultSC.CoordinateSystem = EarthMJ2000Eq
-DefaultSC.DisplayStateType = Keplerian
-DefaultSC.SMA = 7000
-DefaultSC.ECC = 0.001
-DefaultSC.INC = 28.5
-DefaultSC.RAAN = 75
-DefaultSC.AOP = 90
-DefaultSC.TA = 0
+Create Spacecraft Sat
+Sat.DateFormat = UTCGregorian
+Sat.Epoch = '01 Jan 2026 12:00:00.000'
+Sat.CoordinateSystem = EarthMJ2000Eq
+Sat.DisplayStateType = Keplerian
+Sat.SMA = 7000
+Sat.ECC = 0.001
+Sat.INC = 28.5
+Sat.RAAN = 75
+Sat.AOP = 90
+Sat.TA = 0
 
 Create ForceModel DefaultProp_ForceModel
 DefaultProp_ForceModel.CentralBody = Earth
@@ -33,21 +33,21 @@ Create DifferentialCorrector DC
 
 Create ReportFile RF
 RF.Filename = 'hohmann_transfer.txt'
-RF.Add = {DefaultSC.UTCGregorian, DefaultSC.X, DefaultSC.Y, DefaultSC.Z, DefaultSC.SMA, DefaultSC.ECC}
+RF.Add = {Sat.UTCGregorian, Sat.X, Sat.Y, Sat.Z, Sat.SMA, Sat.ECC}
 RF.WriteHeaders = True
 
 BeginMissionSequence
 
-Propagate 'Prop to Perigee' DefaultProp(DefaultSC) {DefaultSC.Periapsis};
+Propagate 'Prop to Perigee' DefaultProp(Sat) {Sat.Periapsis}
 
-Target 'Raise and Circularize' DC {SolveMode = Solve, ExitMode = DiscardAndContinue};
-   Vary 'Vary TOI.V' DC(TOI.Element1 = 0.5, {Perturbation = 0.0001, Lower = 0, Upper = 3.14159, MaxStep = 0.2});
-   Maneuver 'Apply TOI' TOI(DefaultSC);
-   Propagate 'Prop to Apogee' DefaultProp(DefaultSC) {DefaultSC.Apoapsis};
-   Achieve 'Achieve RMAG' DC(DefaultSC.Earth.RMAG = 42165, {Tolerance = 0.1});
-   Vary 'Vary GOI.V' DC(GOI.Element1 = 0.5, {Perturbation = 0.0001, Lower = 0, Upper = 3.14159, MaxStep = 0.2});
-   Maneuver 'Apply GOI' GOI(DefaultSC);
-   Achieve 'Achieve ECC' DC(DefaultSC.ECC = 0, {Tolerance = 0.1});
-EndTarget;
+Target 'Raise and Circularize' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
+   Vary 'Vary TOI.V' DC(TOI.Element1 = 0.5, {Perturbation = 0.0001, Lower = 0, Upper = 3, MaxStep = 0.2})
+   Maneuver 'Apply TOI' TOI(Sat)
+   Propagate 'Prop to Apogee' DefaultProp(Sat) {Sat.Apoapsis}
+   Achieve 'Achieve RMAG' DC(Sat.Earth.RMAG = 42165, {Tolerance = 0.1})
+   Vary 'Vary GOI.V' DC(GOI.Element1 = 0.5, {Perturbation = 0.0001, Lower = 0, Upper = 3, MaxStep = 0.2})
+   Maneuver 'Apply GOI' GOI(Sat)
+   Achieve 'Achieve ECC' DC(Sat.ECC = 0, {Tolerance = 0.001})
+EndTarget
 
-Propagate 'Prop 1 Day' DefaultProp(DefaultSC) {DefaultSC.ElapsedSecs = 86400};
+Propagate 'Prop 1 Day' DefaultProp(Sat) {Sat.ElapsedSecs = 86400}
