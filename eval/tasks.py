@@ -23,6 +23,7 @@ Run with::
 
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -101,10 +102,18 @@ def per_sample_react_solver() -> Solver:
     filtered :class:`ToolSource` view rather than re-spawning the
     subprocess.
     """
+    # Pass the full environment to the spawned server. Without an explicit
+    # env, the MCP stdio client scrubs to a minimal allowlist
+    # (HOME/PATH/SHELL/TERM/USER/LOGNAME) — dropping GMAT_ROOT (so the
+    # GMAT-backed tools can't locate the install) and the
+    # ASTRODYNAMICS_MCP_* credential vars (so credentialed tools never see
+    # their secrets). The server is our own trusted binary, so inheriting
+    # the eval job's environment is the intended behaviour.
     server: Any = mcp_server_stdio(
         name="astrodynamics-mcp",
         command=_SERVER_COMMAND,
         args=list(_SERVER_ARGS),
+        env=dict(os.environ),
     )
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:

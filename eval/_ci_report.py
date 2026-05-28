@@ -25,7 +25,16 @@ from typing import Any
 
 from inspect_ai.log import list_eval_logs, read_eval_log
 
-from eval._prompts import load_prompts, unmet_requirements
+# Run as a script (``python eval/_ci_report.py``), only ``eval/`` lands on
+# sys.path — not the repo root — so ``from eval._prompts import ...`` below
+# raises ModuleNotFoundError. The CI workflow invokes it exactly that way.
+# Pytest covers this via ``pythonpath = ["."]``; the CLI path needs the
+# same escape hatch tasks.py uses.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from eval._prompts import load_prompts, unmet_requirements  # noqa: E402
 
 _MAX_FAILURES_LISTED = 15
 

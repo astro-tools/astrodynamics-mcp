@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -265,6 +268,24 @@ class TestRenderMarkdown:
         assert "and 10 more" in md
         assert "`prompt_0`" in md
         assert "`prompt_24`" not in md
+
+
+class TestRunsAsScript:
+    def test_import_succeeds_when_run_as_script(self) -> None:
+        """Regression: run as ``python eval/_ci_report.py`` only puts eval/ on
+        sys.path, so ``from eval._prompts import ...`` must not ModuleNotFoundError.
+        Reproduce the CI invocation: repo root cwd, no PYTHONPATH."""
+        repo_root = Path(__file__).resolve().parent.parent
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+        proc = subprocess.run(
+            [sys.executable, "eval/_ci_report.py", "--help"],
+            cwd=repo_root,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, f"script crashed on import:\n{proc.stderr}"
+        assert "No module named 'eval'" not in proc.stderr
 
 
 class TestNoLogMarkdown:
