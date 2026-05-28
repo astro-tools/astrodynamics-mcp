@@ -1,5 +1,9 @@
 % Description: Circular lunar orbit station keeping -- DC-targeted dv1/dv2 burns inside a For loop maintain RMAG ~= 1850 km whenever altitude drops below 1825 km.
 
+Create CoordinateSystem MoonInertial
+MoonInertial.Origin = Luna
+MoonInertial.Axes   = BodyInertial
+
 Create Spacecraft LunaSat
 LunaSat.DateFormat       = UTCGregorian
 LunaSat.Epoch            = '01 Jan 2026 12:00:00.000'
@@ -47,10 +51,6 @@ Create ImpulsiveBurn dv2
 dv2.CoordinateSystem = Local
 dv2.Origin           = Luna
 dv2.Axes             = VNB
-
-Create CoordinateSystem MoonInertial
-MoonInertial.Origin = Luna
-MoonInertial.Axes   = BodyInertial
 
 Create DifferentialCorrector DefaultDC
 

@@ -46,7 +46,7 @@ ElectricThruster1.ConstantThrust     = 0.0012
 
 Create SolarPowerSystem SolarPowerSystem1
 SolarPowerSystem1.EpochFormat     = 'UTCGregorian'
-SolarPowerSystem1.InitialEpoch    = '01 Jan 2026 11:59:28.000'
+SolarPowerSystem1.InitialEpoch    = '15 Dec 2026 14:56:42.200'
 SolarPowerSystem1.InitialMaxPower = 1.2
 SolarPowerSystem1.AnnualDecayRate = 5
 SolarPowerSystem1.Margin          = 5

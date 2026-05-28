@@ -93,13 +93,16 @@ Target 'Change Plane/Perigee' DC {SolveMode = Solve, ExitMode = DiscardAndContin
    Maneuver 'Apply MCC' MCC(geoSat)
    Propagate 'Prop to Perigee' DefaultProp(geoSat) {geoSat.Periapsis}
    Achieve 'Apply INC' DC(geoSat.EarthMJ2000Eq.INC = 2, {Tolerance = 0.001})
-   Achieve 'Achieve RMAG' DC(geoSat.RMAG = 42195, {Tolerance = 0.001})
+   % Perigee radius matches the GEO SMA so the final apoapsis-lowering
+   % burn (next block) circularises the orbit instead of leaving a
+   % perigee/apogee mismatch.
+   Achieve 'Achieve RMAG' DC(geoSat.RMAG = 42164.17, {Tolerance = 0.001})
 EndTarget
 
 Target 'Lower Apogee' DC {SolveMode = Solve, ExitMode = DiscardAndContinue}
    Vary 'Vary MOI.V' DC(MOI.Element1 = -0.1, {Perturbation = 0.0001, Lower = -9.999999e300, Upper = 9.999999e300, MaxStep = 0.1})
    Maneuver 'Apply MOI' MOI(geoSat)
-   Achieve 'Achieve SMA' DC(geoSat.Earth.SMA = 42166.90, {Tolerance = 0.001})
+   Achieve 'Achieve SMA' DC(geoSat.Earth.SMA = 42164.17, {Tolerance = 0.001})
 EndTarget
 
 Propagate 'Prop 10 days' DefaultProp(geoSat) {geoSat.ElapsedDays = 10}

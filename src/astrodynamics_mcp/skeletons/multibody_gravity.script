@@ -42,7 +42,7 @@ Prop.FM              = FM
 Prop.Accuracy        = 1e-13
 Prop.InitialStepSize = 60
 Prop.MinStep         = 0
-Prop.MaxStep         = 60
+Prop.MaxStep         = 600
 Prop.MaxStepAttempts = 50
 
 Create ReportFile RF
