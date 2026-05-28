@@ -45,12 +45,14 @@ def _skeleton_uri(slug: str) -> str:
     return f"{_SKELETON_URI_SCHEME}://{slug}"
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("gmat_run") is not None,
+    reason="negative case requires a bare environment (no [gmat] extra installed)",
+)
 class TestNegativeCase:
     """Without ``gmat-run`` installed the real surface carries no skeletons."""
 
     async def test_module_guard_is_false_in_test_env(self) -> None:
-        # Same guarantee the GMAT tool-slot tests rely on — if this flips the
-        # rest of this file is testing the wrong case.
         assert gmat_tools._GMAT_RUN_AVAILABLE is False
 
     async def test_real_surface_has_no_skeleton_resources(self) -> None:

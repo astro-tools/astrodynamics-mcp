@@ -10,6 +10,8 @@ directly.
 
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -24,6 +26,7 @@ _EXPECTED_TOOL_NAMES = frozenset(
         "gmat_sweep",
         "gmat_execute_script",
         "gmat_validate_script",
+        "gmat_read_run_artefact",
     }
 )
 
@@ -33,14 +36,14 @@ _EXPECTED_TOOL_NAMES = frozenset(
 _PLACEHOLDER_TOOL_NAMES: frozenset[str] = frozenset()
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("gmat_run") is not None,
+    reason="negative case requires a bare environment (no [gmat] extra installed)",
+)
 class TestNegativeCase:
     """Without ``gmat-run`` installed, the real surface has no GMAT slots."""
 
     async def test_module_guard_is_false_in_test_env(self) -> None:
-        # The test environment is the bare dev install — `gmat-run` lives in
-        # the `[gmat]` extra and isn't pulled by `uv sync --all-groups`. If
-        # this assertion ever flips, the rest of this file is testing the
-        # wrong case and needs updating alongside CI.
         assert gmat_tools._GMAT_RUN_AVAILABLE is False
 
     async def test_real_surface_has_no_gmat_tools(self) -> None:

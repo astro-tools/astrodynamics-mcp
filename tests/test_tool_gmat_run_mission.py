@@ -22,7 +22,6 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
 from astrodynamics_mcp.server_lint import check_tool_descriptions
-from astrodynamics_mcp.tools import gmat as gmat_tools
 from astrodynamics_mcp.tools.gmat import (
     GmatRunMissionResponse,
     _build_response,
@@ -201,10 +200,10 @@ class _FakeDataFrame:
         del dtype
         return self._rows
 
-    def head(self, n: int) -> "_FakeDataFrame":
+    def head(self, n: int) -> _FakeDataFrame:
         return _FakeDataFrame(self.columns, self._rows[:n])
 
-    def tail(self, n: int) -> "_FakeDataFrame":
+    def tail(self, n: int) -> _FakeDataFrame:
         return _FakeDataFrame(self.columns, self._rows[-n:])
 
 
@@ -242,11 +241,9 @@ def _large_report(rows: int = 100) -> _FakeDataFrame:
 
 def _fresh_mcp(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
     """Stand up a per-test FastMCP and re-register the GMAT slots against it."""
-    fresh = FastMCP("gmat-run-mission-test")
-    monkeypatch.setattr("astrodynamics_mcp.server.mcp", fresh)
-    monkeypatch.setattr(gmat_tools, "_GMAT_RUN_AVAILABLE", True)
-    gmat_tools._register_gmat_tools()
-    return fresh
+    from tests._gmat_helpers import make_fresh_mcp
+
+    return make_fresh_mcp("gmat-run-mission-test", monkeypatch)
 
 
 # ---------------------------------------------------------------------------
