@@ -143,8 +143,31 @@ class TestFormatOutputs:
             out_format="unix",
         )
         assert isinstance(resp.value, float)
-        # 2026-05-23T12:00:00 UTC = unix 1779278400.
+        # 2026-05-23T12:00:00 UTC = unix 1779537600.
         assert 1_779_000_000 < resp.value < 1_780_000_000
+
+    async def test_unix_output_reports_utc_anchor_regardless_of_to_scale(self) -> None:
+        # `unix` is UTC-anchored; the value must not depend on `to_scale`, and
+        # the response `scale` must report the true anchor (UTC), not the
+        # inapplicable requested `to_scale`.
+        resp = await time_convert(
+            value="2026-05-23T12:00:00",
+            from_scale=TimeScale.UTC,
+            to_scale=TimeScale.TAI,
+            out_format="unix",
+        )
+        assert resp.scale == TimeScale.UTC
+        assert resp.value == pytest.approx(1779537600.0)
+
+    async def test_j2000_seconds_reports_tt_anchor_regardless_of_to_scale(self) -> None:
+        resp = await time_convert(
+            value="2000-01-01T12:00:00",
+            from_scale=TimeScale.TT,
+            to_scale=TimeScale.UTC,
+            out_format="j2000_seconds",
+        )
+        assert resp.scale == TimeScale.TT
+        assert abs(resp.value) < 1e-6
 
 
 class TestRoundTrip:

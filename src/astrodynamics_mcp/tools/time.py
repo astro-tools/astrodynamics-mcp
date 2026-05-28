@@ -60,6 +60,15 @@ _GPS_TAI_OFFSET_SEC: float = 19.0
 # J2000 reference epoch in TT Julian Days. Used for `j2000_seconds`.
 _J2000_TT_JD: float = 2451545.0
 
+# Absolute formats are anchored to a fixed scale regardless of `to_scale`:
+# `unix` counts UTC seconds from the POSIX epoch, `j2000_seconds` counts TT
+# seconds from J2000. The response's `scale` field reports this anchor so the
+# label matches the emitted value.
+_ANCHOR_SCALE: dict[TimeFormat, TimeScale] = {
+    "unix": TimeScale.UTC,
+    "j2000_seconds": TimeScale.TT,
+}
+
 
 class TimeConvertResponse(BaseModel):
     """Converted time value plus UT1/IERS metadata when relevant."""
@@ -73,7 +82,16 @@ class TimeConvertResponse(BaseModel):
             "for `iso`; a float for `jd`, `mjd`, `j2000_seconds`, `unix`."
         ),
     )
-    scale: TimeScale = Field(..., description="The output time scale.")
+    scale: TimeScale = Field(
+        ...,
+        description=(
+            "The time scale the output value is expressed in. Matches the "
+            "requested `to_scale` for the scale-bound formats (iso / jd / mjd). "
+            "For the absolute formats it is the fixed anchor instead — UTC for "
+            "`unix`, TT for `j2000_seconds` — since those values do not depend "
+            "on `to_scale`."
+        ),
+    )
     format: TimeFormat = Field(..., description="The output format.")
     ut1_utc_seconds: Quantity | None = Field(
         None,
@@ -306,9 +324,15 @@ async def time_convert(
                 original_exception=exc,
             ) from exc
 
+    # `unix` and `j2000_seconds` are absolute counters anchored to a fixed
+    # scale (UTC and TT respectively); the emitted value does not depend on
+    # `to_scale`. Report the true anchor so the response's `scale` label
+    # matches the number rather than echoing an inapplicable `to_scale`.
+    effective_scale = _ANCHOR_SCALE.get(out_format, to_scale)
+
     return TimeConvertResponse(
         value=out_value,
-        scale=to_scale,
+        scale=effective_scale,
         format=out_format,
         ut1_utc_seconds=ut1_utc,
         iers_fetched_at=iers_fetched_at,
