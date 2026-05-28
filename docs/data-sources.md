@@ -7,8 +7,7 @@ a cached value flagged `stale=true` rather than silently returning
 nothing.
 
 For credentialled sources the credential passthrough itself is documented
-separately — see [Credentials](credentials.md). DISCOSweb lands in a
-later release.
+separately — see [Credentials](credentials.md).
 
 ## CelesTrak — `tle_lookup`
 
@@ -84,6 +83,84 @@ Space-Track enforces per-account rate limits — roughly 30 requests per
 minute and 300 per hour as of writing. Abusive use can get an account
 suspended; the on-disk cache plus session-cookie reuse are how the
 adapter stays within that envelope.
+
+## ESA DISCOSweb — `satellite_metadata`
+
+[DISCOSweb](https://discosweb.esoc.esa.int) is ESA's Database and
+Information System Characterising Objects in Space — the catalogue of
+persistent satellite metadata that the OMM payload from `tle_lookup`
+does not carry. `satellite_metadata(norad_id=…)` queries
+`/api/objects?filter=eq(satno,<id>)&include=launch,launch.site,operators,reentry`
+and returns a single record with mass, bounding-box dimensions, launch
+date and site, operator, mission type (Payload / Rocket Body / Debris /
+Unknown), and decay status.
+
+NORAD catalogue ID is the cross-reference key between `satellite_metadata`
+and `tle_lookup`: the same value is returned by `tle_lookup` and consumed
+here. Names and group keywords are not accepted — look up the NORAD ID
+first if you only have a name.
+
+### Getting an ESA Space Debris User Account
+
+DISCOSweb sits behind an [ESA Space Debris User Account](https://discosweb.esoc.esa.int/auth/signup).
+The signup form asks for a research / institutional purpose; approval is
+manual and typically takes a few business days. Once approved, generate a
+personal API token from the *Account → API Access* page in the DISCOSweb
+UI. The token is the only credential the adapter needs.
+
+Provide the token to the server in one of two ways, per
+[Credentials](credentials.md):
+
+- **Stdio transport:** set `ASTRODYNAMICS_MCP_DISCOSWEB_TOKEN=<token>`
+  in the environment of the process that launches `astrodynamics-mcp stdio`.
+- **HTTP transport:** include
+  `{"astrodynamics_mcp/credentials": {"discosweb": {"token": "<token>"}}}`
+  in the `_meta` block of the MCP `initialize` request. Session metadata
+  wins over the environment variable when both are present.
+
+A missing token surfaces *before* any network call as
+`credential_required.discosweb` so the LLM consumer can prompt the user
+without spending a network round-trip.
+
+### Caching and rate limits
+
+Responses cache on disk under the same XDG layer as CelesTrak and
+Space-Track with a **24h TTL**. DISCOSweb metadata changes slowly —
+decay events at most weekly per object, mass and dimensions essentially
+never — so a long TTL is appropriate. The cache also conserves the free
+DISCOSweb tier's per-account daily quota (in the low hundreds of
+requests as of writing); a busy session that re-asks for the same NORAD
+ID many times spends one request per day per object, not per call.
+
+Cookies and tokens are never written to the cache; only the JSON
+response payload is stored, keyed by NORAD ID under the `discosweb`
+source directory.
+
+### Failure modes
+
+When the upstream is unreachable:
+
+- A cached value within or beyond its TTL is returned with `stale=True`
+  and the original `fetched_at`.
+- No cached value → `DataSourceError` with code
+  `data_source.discosweb_unreachable`.
+
+A refused token (HTTP 401 or 403) surfaces as
+`data_source.discosweb_auth_failed` so the LLM consumer can distinguish
+"credential rejected" from "network unreachable". Authentication
+failures do *not* fall through to a stale cache hit — a refused
+credential is a permanent state, not a transient outage.
+
+DISCOSweb returns an empty `data` array (not a 404) when no record
+matches the NORAD ID. The tool surfaces this as
+`data_source.discosweb_norad_not_found` so very recent launches not yet
+in DISCOSweb's catalogue have an actionable error code rather than a
+silent empty response.
+
+A malformed envelope or record surfaces as
+`upstream.discosweb_unexpected_shape` (top-level shape changed) or
+`upstream.discosweb_invalid_record` (primary attributes missing).
+Malformed responses are never written to the cache.
 
 ## JPL Horizons — `porkchop`, `bplane_target`
 
