@@ -98,7 +98,7 @@ def _validate_epoch(value: object) -> str:
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
         raise InvalidInputError(
             f"epoch must be UTC ISO 8601, not just {value!r} — include a "
-            f"time component, e.g. {value!r}[:10] + 'T00:00:00Z'",
+            f"time component, e.g. {value}T00:00:00Z",
             code="invalid_input.epoch_missing_time_component",
         )
     if not _EPOCH_ISO8601_RE.match(value):
