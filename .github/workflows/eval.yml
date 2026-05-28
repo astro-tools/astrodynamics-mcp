@@ -128,6 +128,18 @@ jobs:
           #     from in-flight samples being cancelled when an error
           #     threshold trips. Inspect AI's default ('fail on any
           #     error') is too aggressive for a survey gate.
+          # * --timeout 60          : per-request model API timeout. The
+          #     Inspect default is NO timeout, so a stalled request blocks
+          #     forever.
+          # * --max-retries 2       : cap retries on 429 / transient errors.
+          #     GH Models Free-tier throttling (daily cap plus a 5-30 min
+          #     secondary anti-abuse limit) returns 429; Inspect's default
+          #     backoff retries for ~30 min before giving up, which hangs
+          #     the whole job until the workflow timeout kills it. Two
+          #     retries surfaces the rate limit as errored samples within
+          #     minutes instead.
+          # * --time-limit 300      : per-sample wall-clock backstop so no
+          #     single sample (e.g. a cold GMAT bootstrap) can stall the run.
           if [ -n "${{ inputs.tier }}" ]; then
             uv run inspect eval eval/tasks.py@astrodynamics_mcp_eval_subset \
               -T tier="${{ inputs.tier }}" \
@@ -136,6 +148,9 @@ jobs:
               --max-samples 3 \
               --max-connections 4 \
               --no-fail-on-error \
+              --max-retries 2 \
+              --timeout 60 \
+              --time-limit 300 \
               --temperature 0 \
               --log-dir logs
           else
@@ -145,6 +160,9 @@ jobs:
               --max-samples 3 \
               --max-connections 4 \
               --no-fail-on-error \
+              --max-retries 2 \
+              --timeout 60 \
+              --time-limit 300 \
               --temperature 0 \
               --log-dir logs
           fi
