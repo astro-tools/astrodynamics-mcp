@@ -12,6 +12,7 @@ values; those are what the LLM reads when deciding how to call the tool.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Any, Literal
 
@@ -108,6 +109,28 @@ def _validate_epoch(value: object) -> str:
             code="invalid_input.epoch_malformed",
         )
     return value
+
+
+def _epoch_to_instant(value: str) -> datetime:
+    """Parse a validated :data:`Epoch` string to a timezone-aware ``datetime``.
+
+    The string has already passed ``_validate_epoch`` (and thus the
+    ``_EPOCH_ISO8601_RE`` shape), so the only normalization needed here is to
+    feed ``datetime.fromisoformat`` a form it accepts on the 3.10 floor:
+    ``Z`` → ``+00:00`` and ``±HHMM`` → ``±HH:MM``. A timezone-naive epoch is
+    interpreted as UTC, matching the surface's documented convention.
+    """
+    text = value
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    else:
+        # Insert the colon into a compact ±HHMM offset (3.10 fromisoformat
+        # requires it); ±HH:MM and offset-less forms are left untouched.
+        text = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", text)
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 Epoch = Annotated[
@@ -390,10 +413,9 @@ class Interval(BaseModel):
     """A time interval bounded by two epochs.
 
     `start` and `end` must be UTC ISO 8601; `duration_s` carries the unit
-    explicitly. The `end > start` ordering check uses lexicographic string
-    comparison — correct only when both epochs use the same timezone
-    designator. The consuming tool (e.g. access_windows) is responsible for
-    parsing across mixed offsets.
+    explicitly. The `end > start` ordering check compares the two epochs as
+    parsed instants, so it is correct across mixed timezone designators
+    (e.g. an `end` of `...Z` against a `start` of `...+00:00`).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -413,7 +435,7 @@ class Interval(BaseModel):
 
     @model_validator(mode="after")
     def _end_after_start(self) -> Interval:
-        if self.end <= self.start:
+        if _epoch_to_instant(self.end) <= _epoch_to_instant(self.start):
             raise InvalidInputError(
                 f"interval end {self.end!r} must be strictly after start {self.start!r}",
                 code="invalid_input.interval_end_not_after_start",

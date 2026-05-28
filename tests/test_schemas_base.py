@@ -356,6 +356,28 @@ class TestInterval:
             )
         assert excinfo.value.code == "invalid_input.interval_end_not_after_start"
 
+    def test_mixed_designators_compare_by_instant(self) -> None:
+        # `Z` and `+00:00` denote the same instant but sort differently as
+        # strings; the ordering check must compare parsed instants. `end` is
+        # one hour after `start` despite the differing designators.
+        interval = Interval(
+            start="2026-05-23T12:00:00+00:00",
+            end="2026-05-23T13:00:00Z",
+            duration_s=Quantity(value=3600.0, unit="s"),
+        )
+        assert interval.end == "2026-05-23T13:00:00Z"
+
+    def test_equal_instant_across_designators_rejected(self) -> None:
+        # Same instant expressed two ways must still be rejected as not strictly
+        # after — a lexicographic compare would have spuriously accepted it.
+        with pytest.raises(InvalidInputError) as excinfo:
+            Interval(
+                start="2026-05-23T12:00:00Z",
+                end="2026-05-23T12:00:00+00:00",
+                duration_s=Quantity(value=0.0, unit="s"),
+            )
+        assert excinfo.value.code == "invalid_input.interval_end_not_after_start"
+
 
 class TestKeplerianElements:
     def _good(self) -> dict[str, Any]:
