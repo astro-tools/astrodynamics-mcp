@@ -361,7 +361,7 @@ def _error_path_metadata(expect_error: str, *, source: str = "space-track") -> d
 
 @pytest.mark.asyncio
 class TestErrorPathScoring:
-    """expect_error verification — the v0.2 credentialed-error-path contract."""
+    """expect_error verification — the credentialed-error-path contract."""
 
     async def test_typed_error_matches_expect_error(self) -> None:
         metadata = _error_path_metadata("credential_required.spacetrack")

@@ -1,17 +1,17 @@
 """Coverage gate over ``eval/prompts/*.yaml``.
 
-Asserts the suite stays populated (≥40 prompts after the v0.2 expansion)
-and within the tier-distribution discipline, that every *core* tool has a
-single-tool prompt and a sequential-or-planning prompt, and that each
-v0.2 tool the suite covers is referenced by at least one prompt. A
-failing assertion here means a prompt got added or removed without
-rebalancing — the regression catches it before merge.
+Asserts the suite stays populated (≥40 prompts) and within the
+tier-distribution discipline, that every *core* tool has a single-tool
+prompt and a sequential-or-planning prompt, and that each extended tool
+the suite covers is referenced by at least one prompt. A failing
+assertion here means a prompt got added or removed without rebalancing —
+the regression catches it before merge.
 
-The strict per-tool tier matrix applies to the v0.1 core tools only. The
-v0.2 tools (GMAT + DISCOSweb metadata) are covered more loosely: GMAT
-prompts skip where no install exists and the credentialed prompts skip
-without secrets, so forcing each onto every tier would not buy real
-signal in the default gate.
+The strict per-tool tier matrix applies to the core read-only tools
+only. The extended tools (GMAT + DISCOSweb metadata) are covered more
+loosely: GMAT prompts skip where no install exists and the credentialed
+prompts skip without secrets, so forcing each onto every tier would not
+buy real signal in the default gate.
 
 These also double as the test that the live suite is *populated* — an
 empty ``eval/prompts/`` directory would fail loudly here rather than
@@ -24,8 +24,8 @@ from collections import Counter
 
 from eval._prompts import load_prompts
 
-# v0.1 core tool surface — subject to the strict single-tool + beyond
-# coverage matrix below.
+# Core read-only tool surface — subject to the strict single-tool +
+# beyond coverage matrix below.
 CORE_TOOLS: frozenset[str] = frozenset(
     {
         "tle_lookup",
@@ -39,9 +39,10 @@ CORE_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-# v0.2 tools the eval suite references. Recognised so a typo in
-# tools_required still fails, but not held to the strict per-tier matrix.
-V02_TOOLS: frozenset[str] = frozenset(
+# The GMAT + DISCOSweb-metadata tools the eval suite references.
+# Recognised so a typo in tools_required still fails, but not held to the
+# strict per-tier matrix.
+EXTENDED_TOOLS: frozenset[str] = frozenset(
     {
         "gmat_run_mission",
         "gmat_sweep",
@@ -52,11 +53,11 @@ V02_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-# v0.2 tools that the suite is expected to exercise with at least one
+# Extended tools the suite is expected to exercise with at least one
 # prompt (gmat_validate_script has no prompt yet, so it is excluded).
-V02_COVERED_TOOLS: frozenset[str] = V02_TOOLS - {"gmat_validate_script"}
+EXTENDED_COVERED_TOOLS: frozenset[str] = EXTENDED_TOOLS - {"gmat_validate_script"}
 
-ALL_TOOLS: frozenset[str] = CORE_TOOLS | V02_TOOLS
+ALL_TOOLS: frozenset[str] = CORE_TOOLS | EXTENDED_TOOLS
 
 MIN_PROMPTS = 40
 MIN_SINGLE_TOOL = 20
@@ -112,28 +113,29 @@ def test_every_core_tool_has_a_sequential_or_planning_prompt() -> None:
     )
 
 
-def test_v02_tools_each_have_a_prompt() -> None:
-    """Every v0.2 tool the suite claims to cover is referenced by a prompt."""
+def test_extended_tools_each_have_a_prompt() -> None:
+    """Every extended tool the suite claims to cover is referenced by a prompt."""
     prompts = load_prompts()
     covered = {tool for prompt in prompts for tool in prompt.tools_required}
-    missing = V02_COVERED_TOOLS - covered
+    missing = EXTENDED_COVERED_TOOLS - covered
     assert not missing, (
-        f"v0.2 tools without any prompt: {sorted(missing)}; "
+        f"extended tools without any prompt: {sorted(missing)}; "
         f"each must be exercised by at least one prompt"
     )
 
 
-def test_v02_tools_span_single_tool_and_sequential() -> None:
-    """The v0.2 expansion covers both the single-tool and sequential tiers."""
+def test_extended_tools_span_single_tool_and_sequential() -> None:
+    """The extended tools cover both the single-tool and sequential tiers."""
     prompts = load_prompts()
     tiers_by_tool: dict[str, set[str]] = {}
     for prompt in prompts:
         for tool in prompt.tools_required:
-            if tool in V02_COVERED_TOOLS:
+            if tool in EXTENDED_COVERED_TOOLS:
                 tiers_by_tool.setdefault(tool, set()).add(prompt.tier)
     all_tiers = {tier for tiers in tiers_by_tool.values() for tier in tiers}
     assert {"single_tool", "sequential"} <= all_tiers, (
-        f"v0.2 tools cover tiers {sorted(all_tiers)}; expected at least single_tool and sequential"
+        f"extended tools cover tiers {sorted(all_tiers)}; "
+        f"expected at least single_tool and sequential"
     )
 
 
