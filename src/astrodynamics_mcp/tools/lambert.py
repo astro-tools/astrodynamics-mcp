@@ -6,6 +6,12 @@ a uniform tool surface. Multi-revolution solutions are enumerated via
 ``v1/v2`` echo the user-requested ``(revs, low_path=True)`` solution and
 ``all_solutions`` lists every feasible alternative.
 
+Note that "requested" means ``M = revs`` — the *highest* rev count asked
+for. With the default ``revs=0`` the headline is the direct transfer, but
+for ``revs > 0`` the headline ``v1/v2/transfer_elements/dv`` describe the
+highest-rev arc (usually a much larger Δv); the direct transfer is the
+``M=0`` entry in ``all_solutions``.
+
 dv is the two-impulse sum ``|v1 - depart_velocity| + |v2 - arrive_velocity|``
 when both boundary velocities are supplied — the cost of dropping a
 spacecraft moving at ``depart_velocity`` onto the transfer arc and then
@@ -116,10 +122,13 @@ class LambertSolution(BaseModel):
 class LambertSolveResponse(BaseModel):
     """Response from :func:`lambert_solve`.
 
-    Top-level ``v1`` / ``v2`` / ``transfer_elements`` echo the user-requested
-    ``(revs, low_path=True)`` solution for ergonomics; ``all_solutions``
-    lists every feasible (M, low_path) pair from M=0 up to the requested
-    revolution count.
+    Top-level ``v1`` / ``v2`` / ``transfer_elements`` / ``dv`` echo the
+    user-requested ``(revs, low_path=True)`` solution for ergonomics —
+    i.e. the ``M = revs`` arc. With the default ``revs=0`` that is the direct
+    transfer; for ``revs > 0`` it is the highest-rev arc (usually a much
+    larger Δv), and the direct transfer is the ``M=0`` entry in
+    ``all_solutions``, which lists every feasible (M, low_path) pair from M=0
+    up to the requested revolution count.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -164,7 +173,9 @@ _DESCRIPTION = (
     "Algorithm: `izzo` is fast and robust for the common case; switch to "
     "`gooding` if `izzo` fails on near-degenerate geometries. For revs > 0 "
     "the response enumerates the multi-rev solutions in all_solutions "
-    "(low + high path per rev count). Supply depart_velocity AND arrive_velocity "
+    "(low + high path per rev count), and the top-level v1/v2/dv then describe "
+    "the highest-rev arc you asked for, not the direct transfer — read the M=0 "
+    "entry in all_solutions for the direct transfer. Supply depart_velocity AND arrive_velocity "
     "together to get the two-impulse Δv. Degenerate geometries (r1 == r2, "
     "infeasible tof, no convergence) surface as `upstream.lambert_no_solution`."
 )
@@ -370,8 +381,9 @@ async def lambert_solve(
                 "Maximum number of complete revolutions to enumerate. 0 (default) "
                 "returns only the zero-rev / direct-transfer solution. For revs ≥ 1 "
                 "both low_path branches are enumerated; the primary v1/v2 echo the "
-                "(revs, low_path=True) solution, all_solutions lists every feasible "
-                "alternative."
+                "(revs, low_path=True) solution — i.e. the highest-rev arc, NOT the "
+                "direct transfer — and all_solutions lists every feasible alternative "
+                "(the direct transfer is the M=0 entry there)."
             ),
         ),
     ] = 0,
