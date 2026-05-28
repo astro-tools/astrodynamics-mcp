@@ -177,6 +177,43 @@ class TestStaleFallback:
         assert age_days >= 1
 
 
+class TestStaleFallbackUnusable:
+    """When the stale cached payload no longer rebuilds (schema tightened, or
+    sgp4 chokes on an extra='allow' field), fall through to the typed
+    unreachable error instead of raising a parse failure during an outage."""
+
+    async def test_unparseable_stale_payload_raises_unreachable(self, cache: Cache) -> None:
+        import json as _json
+        from datetime import timedelta
+
+        # Seed the cache directly with a record missing INCLINATION, bypassing
+        # the put-time validation so the stale rebuild is the one that fails.
+        broken = dict(_SAMPLE_OMM_ISS)
+        del broken["INCLINATION"]
+        path = cache._path("celestrak", "catnr:25544")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            _json.dumps(
+                {
+                    "key": "catnr:25544",
+                    "fetched_at": (datetime.now(tz=timezone.utc) - timedelta(days=1)).isoformat(),
+                    "value": [broken],
+                }
+            )
+        )
+
+        def fail_handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("simulated outage")
+
+        client = _mock_client(fail_handler)
+        try:
+            with pytest.raises(DataSourceError) as excinfo:
+                await fetch_tle("25544", client=client, cache=cache)
+        finally:
+            await client.aclose()
+        assert excinfo.value.code == "data_source.celestrak_unreachable"
+
+
 class TestHardFailureNoCache:
     async def test_network_failure_no_cache_raises_data_source_error(self, cache: Cache) -> None:
         def fail_handler(request: httpx.Request) -> httpx.Response:

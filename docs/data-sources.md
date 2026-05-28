@@ -176,7 +176,10 @@ is rate-limited and tolerates one in-flight request per client; the
 adapter does not parallelise calls to the upstream.
 
 Failure modes mirror CelesTrak: a stale cached value is preferred over
-total failure; no cache → `data_source.horizons_unreachable`.
+total failure; no cache → `data_source.horizons_unreachable`. Horizons
+returns HTTP 200 with an in-band error for an invalid body, center, or
+time window; the adapter surfaces that as `upstream.horizons_error` and
+never caches it.
 
 ## IERS — `time_convert`, `frame_transform`
 

@@ -10,6 +10,7 @@ same (target, center, window, step) is local.
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -18,6 +19,8 @@ from pydantic import BaseModel, ConfigDict
 
 from astrodynamics_mcp.cache import DEFAULT_TTLS, Cache, default_cache
 from astrodynamics_mcp.errors import DataSourceError, UpstreamError
+
+_logger = logging.getLogger(__name__)
 
 _HORIZONS_URL = "https://ssd.jpl.nasa.gov/api/horizons.api"
 _SOURCE = "horizons"
@@ -140,14 +143,45 @@ async def fetch_ephemeris(
     except (httpx.HTTPError, ValueError) as exc:
         stale_hit = cache.get_stale(_SOURCE, key)
         if stale_hit is not None:
-            return _build_response(sig, stale_hit.value, stale_hit.fetched_at, stale=True)
+            try:
+                return _build_response(sig, stale_hit.value, stale_hit.fetched_at, stale=True)
+            except Exception as rebuild_exc:
+                # The cached payload no longer rebuilds (e.g. an older entry
+                # without a 'result' key). "Outage beats hard error" only
+                # holds if we can serve the stale value; when we can't, fall
+                # through to the typed unreachable error rather than raising a
+                # confusing parse failure during an outage.
+                _logger.warning(
+                    "Horizons stale cache entry for %r@%r is unusable: %s",
+                    target,
+                    center,
+                    rebuild_exc,
+                )
         raise DataSourceError(
             f"Horizons unreachable for {target!r}@{center!r}: {exc}",
             code="data_source.horizons_unreachable",
             source=_SOURCE,
         ) from exc
 
-    if not isinstance(payload, dict) or "result" not in payload:
+    if not isinstance(payload, dict):
+        raise UpstreamError(
+            f"Horizons returned non-object payload of type {type(payload).__name__} "
+            f"for {target!r}@{center!r}",
+            code="upstream.horizons_unexpected_shape",
+        )
+
+    # Horizons returns HTTP 200 with an in-band ``error`` string for bad
+    # COMMAND / CENTER / time inputs. Without this guard the error blob is
+    # cached under the (valid) signature key and re-served for the full 7-day
+    # TTL. Surface it as a typed error and skip caching.
+    if "error" in payload:
+        raise UpstreamError(
+            f"Horizons rejected the request for {target!r}@{center!r}: {payload['error']}",
+            code="upstream.horizons_error",
+            data={"horizons_error": payload["error"]},
+        )
+
+    if "result" not in payload:
         raise UpstreamError(
             f"Horizons returned unexpected shape (no 'result' key) for {target!r}@{center!r}",
             code="upstream.horizons_unexpected_shape",

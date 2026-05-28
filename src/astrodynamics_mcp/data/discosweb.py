@@ -33,6 +33,8 @@ stay within the free-tier per-account quota.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -42,6 +44,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from astrodynamics_mcp import __version__
 from astrodynamics_mcp.cache import DEFAULT_TTLS, Cache, default_cache
 from astrodynamics_mcp.errors import DataSourceError, UpstreamError
+
+_logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://discosweb.esoc.esa.int"
 _OBJECTS_PATH = "/api/objects"
@@ -106,6 +110,7 @@ class DiscoswebResponse(BaseModel):
 
 
 _singleton_client: httpx.AsyncClient | None = None
+_singleton_loop: asyncio.AbstractEventLoop | None = None
 
 
 def _build_singleton_client() -> httpx.AsyncClient:
@@ -125,13 +130,48 @@ def _get_singleton_client() -> httpx.AsyncClient:
     """Lazy-build and return the module-level singleton client.
 
     Called only on the production code path (``client=None`` in
-    :func:`fetch_metadata`). The singleton is intentionally long-lived
-    so the HTTPS connection pool stays warm across many tool calls.
+    :func:`fetch_metadata`). The singleton is intentionally long-lived so the
+    HTTPS connection pool stays warm across many tool calls.
+
+    An :class:`httpx.AsyncClient` binds to whichever event loop first drives
+    it; reusing it from a *different* loop raises ``... is bound to a
+    different event loop``. We stash the owning loop alongside the client and
+    rebuild on mismatch. We do not :meth:`~httpx.AsyncClient.aclose` the stale
+    client here — it belongs to the other (typically already-closed) loop,
+    whose teardown has already released its sockets. In a normal long-lived
+    ``stdio`` / ``http`` process there is only ever one loop, so this branch
+    fires only under test harnesses that spin a fresh loop per test.
+
+    This function is pure-sync (no ``await``), so on a single event loop it
+    runs atomically with respect to other coroutines — concurrent first
+    callers cannot double-build the singleton.
     """
-    global _singleton_client
+    global _singleton_client, _singleton_loop
+    running = asyncio.get_running_loop()
+    if _singleton_client is not None and _singleton_loop is not running:
+        _singleton_client = None
+        _singleton_loop = None
     if _singleton_client is None:
         _singleton_client = _build_singleton_client()
+        _singleton_loop = running
     return _singleton_client
+
+
+async def aclose() -> None:
+    """Close the module-level singleton client, if one was built.
+
+    Wired into the server's FastMCP lifespan so the long-lived client's
+    sockets / SSL contexts are released on shutdown instead of leaking. Must
+    run inside the still-open event loop that owns the client (lifespan
+    teardown does), since :meth:`~httpx.AsyncClient.aclose` is a coroutine —
+    an ``atexit`` hook firing after the loop closes could not await it.
+    Idempotent: a no-op when no client was ever built.
+    """
+    global _singleton_client, _singleton_loop
+    if _singleton_client is not None:
+        await _singleton_client.aclose()
+        _singleton_client = None
+        _singleton_loop = None
 
 
 def _cache_key(norad_id: str) -> str:
@@ -402,7 +442,19 @@ async def fetch_metadata(
     except (httpx.HTTPError, ValueError) as exc:
         stale_hit = cache.get_stale(_SOURCE, key)
         if stale_hit is not None:
-            return _build_response(stale_hit.value, stale_hit.fetched_at, stale=True)
+            try:
+                return _build_response(stale_hit.value, stale_hit.fetched_at, stale=True)
+            except Exception as rebuild_exc:
+                # The cached payload no longer rebuilds — the JSON-API schema
+                # tightened since it was written. "Outage beats hard error"
+                # only holds if we can serve the stale value; when we can't,
+                # fall through to the typed unreachable error rather than
+                # raising a confusing parse failure during an outage.
+                _logger.warning(
+                    "DISCOSweb stale cache entry for NORAD %r is unusable: %s",
+                    norad_id,
+                    rebuild_exc,
+                )
         raise DataSourceError(
             f"DISCOSweb unreachable for NORAD {norad_id!r}: {exc}",
             code="data_source.discosweb_unreachable",
