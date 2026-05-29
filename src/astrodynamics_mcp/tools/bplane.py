@@ -329,7 +329,7 @@ def _min_norm_solve(jac: np.ndarray, delta_b: np.ndarray) -> np.ndarray:
 @register_tool(
     name="bplane_target",
     description=_DESCRIPTION,
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    annotations=ToolAnnotations(title="B-Plane Targeting", readOnlyHint=True, openWorldHint=True),
 )
 async def bplane_target(
     state: Annotated[

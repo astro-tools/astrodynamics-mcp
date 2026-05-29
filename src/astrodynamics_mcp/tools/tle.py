@@ -126,7 +126,7 @@ _DESCRIPTION = (
 @register_tool(
     name="tle_lookup",
     description=_DESCRIPTION,
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    annotations=ToolAnnotations(title="TLE Lookup", readOnlyHint=True, openWorldHint=True),
 )
 async def tle_lookup(
     query: Annotated[

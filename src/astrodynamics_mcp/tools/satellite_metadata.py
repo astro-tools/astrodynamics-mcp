@@ -218,7 +218,7 @@ def _to_dimensions(record: DiscoswebRecord) -> Dimensions | None:
 @register_tool(
     name="satellite_metadata",
     description=_DESCRIPTION,
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    annotations=ToolAnnotations(title="Satellite Metadata", readOnlyHint=True, openWorldHint=True),
 )
 async def satellite_metadata(
     norad_id: Annotated[

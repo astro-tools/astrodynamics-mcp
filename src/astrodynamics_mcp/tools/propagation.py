@@ -181,7 +181,7 @@ def _summary_indices(n: int, cap: int) -> list[int]:
 @register_tool(
     name="sgp4_propagate",
     description=_DESCRIPTION,
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+    annotations=ToolAnnotations(title="SGP4 Propagate", readOnlyHint=True, openWorldHint=False),
 )
 async def sgp4_propagate(
     tle: Annotated[
