@@ -1,0 +1,22 @@
+{
+  "name": "astrodynamics-mcp",
+  "description": "Authoritative astrodynamics tools for any LLM — TLE/SGP4 propagation, Lambert solving, ground-station access, time/frame conversions, porkchop scans, B-plane targeting, satellite metadata, and (optional [gmat]) real NASA GMAT mission execution.",
+  "author": {
+    "name": "Dimitrije Jankovic",
+    "url": "https://github.com/astro-tools"
+  },
+  "homepage": "https://astro-tools.github.io/astrodynamics-mcp/",
+  "repository": "https://github.com/astro-tools/astrodynamics-mcp",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "astrodynamics",
+    "orbital-mechanics",
+    "mission-analysis",
+    "sgp4",
+    "tle",
+    "lambert",
+    "ephemeris"
+  ],
+  "mcpServers": "./.mcp.json"
+}
