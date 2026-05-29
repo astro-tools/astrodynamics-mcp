@@ -15,6 +15,7 @@ Streamable HTTP, leaving the trust boundary to the operator.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 import shutil
@@ -2062,30 +2063,35 @@ def _register_gmat_tools() -> None:
             _resolved_script(script) as script_path,
             _owned_workspace("astrodynamics-mcp-sweep-") as (sweep_out_dir, mark_handed_off),
         ):
-            backend = LocalJoblibPool(max_workers=max_workers)
-            t0 = time.perf_counter()
-            try:
+            # gmat-sweep's driver call is blocking-synchronous and can run for
+            # minutes; run it off the event loop so the server stays responsive
+            # on every transport. The loky worker backend already runs the GMAT
+            # work in separate processes — this only moves the Python driver off
+            # the loop thread. Registry registration below stays on the loop
+            # thread (after the await), so no registry lock is needed.
+            def _dispatch_sweep() -> Any:
+                backend = LocalJoblibPool(max_workers=max_workers)
                 if mode == "grid":
                     assert grid is not None
-                    frame = sweep(
+                    return sweep(
                         script_path,
                         grid=grid,
                         backend=backend,
                         out=sweep_out_dir,
                         progress=False,
                     )
-                elif mode == "samples":
+                if mode == "samples":
                     assert samples_df is not None
-                    frame = sweep(
+                    return sweep(
                         script_path,
                         samples=samples_df,
                         backend=backend,
                         out=sweep_out_dir,
                         progress=False,
                     )
-                elif mode == "monte_carlo":
+                if mode == "monte_carlo":
                     assert coerced_perturb is not None and n is not None
-                    frame = monte_carlo(
+                    return monte_carlo(
                         script_path,
                         n=n,
                         perturb=coerced_perturb,
@@ -2094,17 +2100,21 @@ def _register_gmat_tools() -> None:
                         out=sweep_out_dir,
                         progress=False,
                     )
-                else:  # latin_hypercube
-                    assert coerced_perturb is not None and n is not None
-                    frame = latin_hypercube(
-                        script_path,
-                        n=n,
-                        perturb=coerced_perturb,
-                        seed=seed,
-                        backend=backend,
-                        out=sweep_out_dir,
-                        progress=False,
-                    )
+                # latin_hypercube
+                assert coerced_perturb is not None and n is not None
+                return latin_hypercube(
+                    script_path,
+                    n=n,
+                    perturb=coerced_perturb,
+                    seed=seed,
+                    backend=backend,
+                    out=sweep_out_dir,
+                    progress=False,
+                )
+
+            t0 = time.perf_counter()
+            try:
+                frame = await asyncio.to_thread(_dispatch_sweep)
             except SweepConfigError as exc:
                 raise InvalidInputError(
                     f"gmat-sweep rejected the sweep config: {exc}",
