@@ -2,7 +2,7 @@
   "mcpServers": {
     "astrodynamics": {
       "command": "uvx",
-      "args": ["astrodynamics-mcp", "stdio"]
+      "args": ["--from", "astrodynamics-mcp[gmat]", "astrodynamics-mcp", "stdio"]
     }
   }
 }

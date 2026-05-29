@@ -13,8 +13,9 @@ behaviour, or numerical output.
 ### Added
 
 - A root `.mcp.json` declaring the server in the standard `mcpServers`
-  shape (zero-install `uvx astrodynamics-mcp stdio`), so the repository is
-  auto-detectable by directory scanners that follow the
+  shape (zero-install via `uvx`, with the `[gmat]` extra so the GMAT tools
+  are available when a local GMAT install is present), so the repository
+  is auto-detectable by directory scanners that follow the
   [Open Plugins](https://open-plugins.com) standard (e.g. the Cursor
   Directory). It doubles as a copy-paste client config.
 
