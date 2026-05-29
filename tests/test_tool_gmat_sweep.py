@@ -10,9 +10,11 @@ get green CI on the rest of the suite.
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import sys
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
@@ -522,6 +524,53 @@ class TestToolThroughMcp:
         backend = calls.sweep_calls[0]["backend"]
         assert isinstance(backend, _FakeLocalJoblibPool)
         assert backend.max_workers == 1
+
+    async def test_sweep_does_not_block_the_event_loop(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        # The sweep driver is blocking-synchronous and must run off the loop
+        # (via asyncio.to_thread). Gate the fake backend on a threading.Event:
+        # while it blocks in its worker thread, the event loop must stay live —
+        # the polling await below has to regain control and observe `started`.
+        # If the driver ran on the loop thread (the pre-fix bug), control would
+        # never return here and `release` would never be set, so the gate's
+        # bounded wait fails the run fast instead of hanging CI.
+        calls = _FakeSweepCalls(result=_trivial_result(rows=1))
+        started = threading.Event()
+        release = threading.Event()
+
+        def _gated_sweep(script: Any, **kwargs: Any) -> _FakeFrame:
+            started.set()
+            if not release.wait(timeout=10):
+                raise AssertionError("event loop never released the gated sweep")
+            return calls.result
+
+        calls.sweep = _gated_sweep  # type: ignore[method-assign]
+        _install_fake_gmat_sweep(monkeypatch, calls)
+        fresh = _fresh_mcp(monkeypatch)
+        script = tmp_path / "fixture.script"
+        script.write_text("% noop\n")
+
+        task = asyncio.create_task(
+            fresh.call_tool(
+                "gmat_sweep",
+                {"script": str(script), "mode": "grid", "grid": {"Sat.SMA": [7000, 7100]}},
+            )
+        )
+
+        # Loop stays responsive: we regain control and see the sweep running in
+        # its worker thread while the call is still in flight.
+        ticks = 0
+        while not started.is_set() and ticks < 400:
+            await asyncio.sleep(0.005)
+            ticks += 1
+        assert started.is_set(), "sweep never started off the loop thread"
+        assert not task.done(), "sweep call resolved before the gate was released"
+
+        release.set()
+        _content, structured = await asyncio.wait_for(task, timeout=10)
+        parsed = GmatSweepResponse.model_validate(structured)
+        assert parsed.mode == "grid"
 
     async def test_samples_mode_builds_dataframe(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
