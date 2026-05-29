@@ -38,7 +38,7 @@ every client below sets the same way: an `env` block alongside `command` /
 ```json
 {
   "mcpServers": {
-    "astrodynamics": {
+    "astrodynamics-mcp": {
       "command": "astrodynamics-mcp",
       "args": ["stdio"],
       "env": {
@@ -67,7 +67,7 @@ Claude Code reads MCP server definitions from its `mcp` settings. Add:
 ```json
 {
   "mcpServers": {
-    "astrodynamics": {
+    "astrodynamics-mcp": {
       "command": "astrodynamics-mcp",
       "args": ["stdio"]
     }
@@ -99,7 +99,7 @@ the same shape as Claude Code:
 ```json
 {
   "mcpServers": {
-    "astrodynamics": {
+    "astrodynamics-mcp": {
       "command": "astrodynamics-mcp",
       "args": ["stdio"]
     }

@@ -17,7 +17,7 @@ The user has wired the server into Claude Code:
 ```json
 {
   "mcpServers": {
-    "astrodynamics": {
+    "astrodynamics-mcp": {
       "command": "astrodynamics-mcp",
       "args": ["stdio"]
     }

@@ -65,7 +65,7 @@ your MCP client config:
 ```json
 {
   "mcpServers": {
-    "astrodynamics": {
+    "astrodynamics-mcp": {
       "command": "astrodynamics-mcp",
       "args": ["stdio"]
     }

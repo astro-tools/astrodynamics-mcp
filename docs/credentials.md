@@ -44,7 +44,7 @@ Example MCP client config block (Claude Code):
 ```json
 {
   "mcpServers": {
-    "astrodynamics": {
+    "astrodynamics-mcp": {
       "command": "astrodynamics-mcp",
       "args": ["stdio"],
       "env": {

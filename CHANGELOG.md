@@ -12,12 +12,21 @@ behaviour, or numerical output.
 
 ### Added
 
-- A root `.mcp.json` declaring the server in the standard `mcpServers`
-  shape (zero-install via `uvx`, with the `[gmat]` extra so the GMAT tools
-  are available when a local GMAT install is present), so the repository
-  is auto-detectable by directory scanners that follow the
-  [Open Plugins](https://open-plugins.com) standard (e.g. the Cursor
-  Directory). It doubles as a copy-paste client config.
+- A root `.mcp.json` and a `.plugin/plugin.json` manifest, following the
+  [Open Plugin Specification](https://open-plugins.com), so the repository
+  is auto-detectable — with real plugin metadata (name, description,
+  author, homepage, license, keywords) instead of placeholders — by
+  directory scanners such as the Cursor Directory. The `.mcp.json` runs
+  the server zero-install via `uvx` with the `[gmat]` extra (so the GMAT
+  tools are available when a local GMAT install is present) and doubles as
+  a copy-paste client config.
+
+### Changed
+
+- Standardised the client-config alias to `astrodynamics-mcp` (from
+  `astrodynamics`) across the README, docs, and example transcripts, so
+  the alias the client groups the tools under matches the package and
+  plugin name.
 
 ## [0.2.1] — 2026-05-29
 

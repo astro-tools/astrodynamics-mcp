@@ -16,7 +16,7 @@ least one pass returned for a Madrid-on-a-Hubble-pass-day window).
 ```json
 {
   "mcpServers": {
-    "astrodynamics": {
+    "astrodynamics-mcp": {
       "command": "astrodynamics-mcp",
       "args": ["stdio"]
     }
