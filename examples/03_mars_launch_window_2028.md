@@ -21,7 +21,7 @@ default) and don't apply the mock.
 ```json
 {
   "mcpServers": {
-    "astrodynamics": {
+    "astrodynamics-mcp": {
       "command": "astrodynamics-mcp",
       "args": ["stdio"]
     }

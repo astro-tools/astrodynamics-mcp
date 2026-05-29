@@ -39,7 +39,7 @@ Add it to your MCP client. Claude Code, for example:
 ```json
 {
   "mcpServers": {
-    "astrodynamics": {
+    "astrodynamics-mcp": {
       "command": "astrodynamics-mcp",
       "args": ["stdio"]
     }
