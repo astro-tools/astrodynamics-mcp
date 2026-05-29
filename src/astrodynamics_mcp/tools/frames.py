@@ -120,7 +120,9 @@ def _validate_frame_endpoints(from_frame: Frame, to_frame: Frame) -> None:
 @register_tool(
     name="frame_transform",
     description=_DESCRIPTION,
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+    annotations=ToolAnnotations(
+        title="Coordinate-Frame Transform", readOnlyHint=True, openWorldHint=False
+    ),
 )
 async def frame_transform(
     state: Annotated[

@@ -328,7 +328,7 @@ def _build_solution(
 @register_tool(
     name="lambert_solve",
     description=_DESCRIPTION,
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+    annotations=ToolAnnotations(title="Lambert Solver", readOnlyHint=True, openWorldHint=False),
 )
 async def lambert_solve(
     r1: Annotated[

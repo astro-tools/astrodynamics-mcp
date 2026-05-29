@@ -5,6 +5,28 @@ All notable changes to astrodynamics-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-05-29
+
+Packaging and metadata polish for directory submission; no change to tool
+behaviour or numerical output.
+
+### Added
+
+- A human-readable `title` on every tool's annotations (e.g. "TLE
+  Lookup", "GMAT Run Mission"), so MCP clients and directories can show a
+  display name alongside the tool id.
+- A [Privacy page](https://astro-tools.github.io/astrodynamics-mcp/privacy/)
+  and a README Privacy section documenting that the server runs locally
+  and collects nothing; the MCPB manifest now declares a
+  `privacy_policies` URL.
+- Project logo committed to the repository.
+
+### Changed
+
+- Refreshed the MCPB bundle's `long_description` to cover the full v0.2
+  tool surface (`satellite_metadata`, the GMAT tools, the Space-Track
+  source); it previously described only the eight v0.1 tools.
+
 ## [0.2.0] — 2026-05-29
 
 The GMAT integration release. Adds GMAT mission execution, parameter
@@ -258,6 +280,7 @@ GitHub Models on every workflow dispatch.
   trusted publishing, and creates the GitHub Release on every `v*` tag.
   macOS is deferred to v0.2 (#1, #2).
 
+[0.2.1]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.3...v0.1.4

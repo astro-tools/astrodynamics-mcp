@@ -4,7 +4,7 @@
   "display_name": "astrodynamics-mcp",
   "version": "{{VERSION}}",
   "description": "Model Context Protocol server giving any LLM client authoritative astrodynamics tools — TLE/SGP4, Lambert, ground-station access, time/frame conversions, porkchop, B-plane.",
-  "long_description": "astrodynamics-mcp exposes eight no-auth astrodynamics tools (tle_lookup, sgp4_propagate, lambert_solve, access_windows, time_convert, frame_transform, porkchop, bplane_target) to any MCP-capable LLM client over stdio. Every result carries explicit units and explicit frame strings; failures surface as typed AstroMCPError envelopes. Tools call vetted upstream libraries (sgp4, lamberthub, skyfield, astropy) and no-auth data sources (CelesTrak, JPL Horizons, IERS).",
+  "long_description": "astrodynamics-mcp exposes authoritative astrodynamics tools to any MCP-capable LLM client over stdio. The base install ships nine tools: tle_lookup (CelesTrak, or Space-Track with credentials), sgp4_propagate, lambert_solve, access_windows, time_convert, frame_transform, porkchop, bplane_target, and satellite_metadata (ESA DISCOSweb). With the optional [gmat] extra and a local NASA GMAT install, five more register for driving real GMAT missions: gmat_run_mission, gmat_sweep, gmat_execute_script, gmat_validate_script, and gmat_read_run_artefact. Every result carries explicit units and frame strings; failures surface as typed AstroMCPError envelopes. Tools call vetted upstream libraries (sgp4, lamberthub, skyfield, astropy) and no-auth data sources (CelesTrak, JPL Horizons, IERS); credentialed sources (Space-Track, ESA DISCOSweb) are used only when you configure them.",
   "author": {
     "name": "Dimitrije Jankovic",
     "url": "https://github.com/astro-tools"
@@ -15,6 +15,7 @@
   },
   "homepage": "https://github.com/astro-tools/astrodynamics-mcp",
   "documentation": "https://astro-tools.github.io/astrodynamics-mcp/",
+  "privacy_policies": ["https://astro-tools.github.io/astrodynamics-mcp/privacy/"],
   "license": "MIT",
   "keywords": [
     "mcp",

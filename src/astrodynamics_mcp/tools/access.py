@@ -225,7 +225,9 @@ def _grouped_triples(times: Any, events: Any) -> list[tuple[Any, Any, Any]]:
 @register_tool(
     name="access_windows",
     description=_DESCRIPTION,
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+    annotations=ToolAnnotations(
+        title="Ground-Station Access Windows", readOnlyHint=True, openWorldHint=False
+    ),
 )
 async def access_windows(
     observer: Annotated[

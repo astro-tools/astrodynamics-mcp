@@ -514,7 +514,7 @@ def _ascii_contour(rows_of_c3: list[list[float | None]]) -> str:
 @register_tool(
     name="porkchop",
     description=_DESCRIPTION,
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=True),
+    annotations=ToolAnnotations(title="Porkchop Plot", readOnlyHint=True, openWorldHint=True),
 )
 async def porkchop(
     departure_body: Annotated[

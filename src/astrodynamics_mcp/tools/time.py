@@ -238,7 +238,7 @@ def _ut1_utc_quantity(t_in: Any) -> Quantity:
 @register_tool(
     name="time_convert",
     description=_DESCRIPTION,
-    annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+    annotations=ToolAnnotations(title="Time-Scale Convert", readOnlyHint=True, openWorldHint=False),
 )
 async def time_convert(
     value: Annotated[

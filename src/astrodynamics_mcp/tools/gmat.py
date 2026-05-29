@@ -1819,7 +1819,9 @@ def _register_gmat_tools() -> None:
     @register_tool(
         name="gmat_run_mission",
         description=_RUN_MISSION_DESCRIPTION,
-        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+        annotations=ToolAnnotations(
+            title="GMAT Run Mission", readOnlyHint=True, openWorldHint=False
+        ),
     )
     async def gmat_run_mission(
         script: Annotated[
@@ -1931,7 +1933,9 @@ def _register_gmat_tools() -> None:
     @register_tool(
         name="gmat_sweep",
         description=_SWEEP_DESCRIPTION,
-        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+        annotations=ToolAnnotations(
+            title="GMAT Parameter Sweep", readOnlyHint=True, openWorldHint=False
+        ),
     )
     async def gmat_sweep(
         script: Annotated[
@@ -2151,7 +2155,9 @@ def _register_gmat_tools() -> None:
     @register_tool(
         name="gmat_execute_script",
         description=_EXECUTE_SCRIPT_DESCRIPTION,
-        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+        annotations=ToolAnnotations(
+            title="GMAT Execute Script", readOnlyHint=True, openWorldHint=False
+        ),
     )
     async def gmat_execute_script(
         script: Annotated[
@@ -2257,7 +2263,9 @@ def _register_gmat_tools() -> None:
     @register_tool(
         name="gmat_validate_script",
         description=_VALIDATE_SCRIPT_DESCRIPTION,
-        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+        annotations=ToolAnnotations(
+            title="GMAT Validate Script", readOnlyHint=True, openWorldHint=False
+        ),
     )
     async def gmat_validate_script(
         script: Annotated[
@@ -2309,7 +2317,9 @@ def _register_gmat_tools() -> None:
     @register_tool(
         name="gmat_read_run_artefact",
         description=_READ_RUN_ARTEFACT_DESCRIPTION,
-        annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False),
+        annotations=ToolAnnotations(
+            title="GMAT Read Run Artefact", readOnlyHint=True, openWorldHint=False
+        ),
     )
     async def gmat_read_run_artefact(
         run_id: Annotated[
