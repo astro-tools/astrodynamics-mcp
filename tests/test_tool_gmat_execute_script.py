@@ -411,6 +411,19 @@ class TestPreRunFailuresRaise:
             await mcp.call_tool("gmat_execute_script", {"script": "relative/path.script"})
         assert "invalid_input.script_path_not_absolute" in str(excinfo.value)
 
+    async def test_non_positive_timeout_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _install_fake_gmat_run(monkeypatch, mission=_FakeMission())
+        mcp = _fresh_mcp(monkeypatch)
+
+        from mcp.server.fastmcp.exceptions import ToolError
+
+        with pytest.raises(ToolError) as excinfo:
+            await mcp.call_tool(
+                "gmat_execute_script",
+                {"script": "% x\nCreate Spacecraft Sat\n", "timeout_seconds": -5},
+            )
+        assert "invalid_input.gmat_timeout_not_positive" in str(excinfo.value)
+
 
 # ---------------------------------------------------------------------------
 # Round-trip parity with gmat_run_mission

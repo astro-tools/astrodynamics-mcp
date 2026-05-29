@@ -24,7 +24,27 @@ from types import ModuleType
 import pytest
 from mcp.server.fastmcp import FastMCP
 
+from astrodynamics_mcp.tools import _gmat_worker
 from astrodynamics_mcp.tools import gmat as gmat_tools
+
+
+async def _in_process_dispatch(
+    spec: _gmat_worker.GmatSpec, *, timeout_override: float | None = None
+) -> _gmat_worker.WorkerResult:
+    """Run the worker body in-process instead of spawning a subprocess.
+
+    The three GMAT tools run gmatpy out-of-process in production. The unit
+    suite drives them with a fake ``gmat_run`` injected into ``sys.modules``;
+    a real subprocess would not see that fake. So every ``make_fresh_mcp``
+    test flips the dispatch seam to call :func:`_gmat_worker.run_operation`
+    directly — the worker body then imports the injected fake just as it would
+    import the real engine in a worker interpreter.
+
+    ``timeout_override`` is accepted (the handlers pass it) but ignored: the
+    in-process path has no subprocess to time out.
+    """
+    del timeout_override
+    return _gmat_worker.run_operation(spec)
 
 
 def make_fresh_mcp(
@@ -36,10 +56,15 @@ def make_fresh_mcp(
     five-line copy of this body; they now delegate here. Pass
     ``register_tools=False`` for tests that exercise the registration
     helpers themselves.
+
+    Also flips the GMAT execution seam to in-process dispatch (see
+    :func:`_in_process_dispatch`) so the injected fake ``gmat_run`` drives the
+    worker body without spawning a real interpreter.
     """
     fresh = FastMCP(name)
     monkeypatch.setattr("astrodynamics_mcp.server.mcp", fresh)
     monkeypatch.setattr(gmat_tools, "_GMAT_RUN_AVAILABLE", True)
+    monkeypatch.setattr(gmat_tools, "_dispatch_worker", _in_process_dispatch)
     if register_tools:
         gmat_tools._register_gmat_tools()
     return fresh
