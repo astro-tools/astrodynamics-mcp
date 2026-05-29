@@ -15,14 +15,13 @@ Streamable HTTP, leaving the trust boundary to the operator.
 
 from __future__ import annotations
 
-import asyncio
 import math
 import re
 import shutil
 import tempfile
 import time
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from importlib import resources
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeVar
@@ -34,6 +33,7 @@ from astrodynamics_mcp import server as _server_module
 from astrodynamics_mcp.errors import InvalidInputError, UpstreamError
 from astrodynamics_mcp.runs import default_registry
 from astrodynamics_mcp.server import register_tool
+from astrodynamics_mcp.tools import _gmat_worker
 from astrodynamics_mcp.units import Quantity
 
 try:
@@ -44,13 +44,18 @@ except ImportError:
     _GMAT_RUN_AVAILABLE = False
 
 
-# Serialises access to the process-wide GMAT singleton. gmat-run bootstraps
-# gmatpy into a single global state; concurrent gmat_validate_script calls
-# would race on UseLogFile / Clear / LoadScript and trample each other's
-# log files. Only gmat_validate_script needs to take the lock — the other
-# tools route through gmat-run's Mission wrapper, which owns its own
-# log-redirect dance.
-_GMAT_GLOBAL_LOCK = asyncio.Lock()
+# gmat_run_mission / gmat_execute_script / gmat_validate_script run gmatpy out
+# of the server process — each load+run executes in a fresh worker interpreter
+# (see :mod:`astrodynamics_mcp.tools._gmat_worker`). gmatpy keeps one global
+# Moderator per interpreter that ``LoadScript`` / ``RunScript`` / ``Clear``
+# mutate, and ``RunScript`` blocks in C++ holding the GIL; isolating each run in
+# its own process is the only way to be both safe and non-blocking, so there is
+# no in-process lock to take here any more.
+#
+# The handlers dispatch through this module-level seam. Production routes to a
+# spawned subprocess; the unit tests monkeypatch it to run the worker in-process
+# so the injected fake ``gmat_run`` still drives the body.
+_dispatch_worker = _gmat_worker.dispatch_subprocess
 
 
 # Threshold below which a ReportFile is returned fully inline. Above it the
@@ -1050,30 +1055,75 @@ def _owned_workspace(prefix: str) -> Iterator[tuple[Path, Callable[[], None]]]:
             shutil.rmtree(workspace, ignore_errors=True)
 
 
-def _load_mission(script_path: Path) -> Any:
-    """Call :meth:`gmat_run.Mission.load` and wrap typed errors.
+class _SnapshotAdapter:
+    """Expose a worker :class:`~_gmat_worker.ResultSnapshot` through the same
+    attribute surface that the response shapers (:func:`_build_response`,
+    :func:`_walk_artefacts`, :func:`_collect_artefact_map`) duck-type on.
 
-    Shared between :func:`gmat_run_mission` and :func:`gmat_execute_script`;
-    both need the identical ``GmatLoadError`` → ``upstream.gmat_run_load_failed``
-    and ``GmatError`` → ``upstream.gmat_run_bootstrap_failed`` mapping.
+    The shapers read ``mission.summary()`` plus ``result.report_paths`` /
+    ``.reports`` / ``.ephemeris_paths`` / ``.contact_paths`` / ``.solver_paths``
+    / ``.converged`` / ``.output_dir`` — the exact set a finished
+    ``gmat_run.Results`` (and its owning ``Mission``) carries. The adapter is
+    handed in as both ``mission`` and ``result`` so an out-of-process run feeds
+    the shapers identically to an in-process one, no shaper changes required.
     """
-    from gmat_run import Mission
-    from gmat_run.errors import GmatError, GmatLoadError
 
-    try:
-        return Mission.load(script_path)
-    except GmatLoadError as exc:
+    def __init__(self, snapshot: _gmat_worker.ResultSnapshot) -> None:
+        self._summary = snapshot.summary
+        self.report_paths = snapshot.report_paths
+        self.ephemeris_paths = snapshot.ephemeris_paths
+        self.contact_paths = snapshot.contact_paths
+        self.solver_paths = snapshot.solver_paths
+        self.converged = snapshot.converged
+        self.reports = snapshot.reports
+        self.output_dir = snapshot.output_dir
+        self.log = snapshot.log
+
+    def summary(self) -> Any:
+        return self._summary
+
+
+def _raise_for_worker_failure(result: _gmat_worker.WorkerResult) -> None:
+    """Re-raise a worker error status as the matching typed MCP error.
+
+    A no-op for the success statuses. ``run_error`` is deliberately *not*
+    raised here — :func:`gmat_execute_script` reports a failed run as data
+    (``ok=False`` + ``stderr``), so it inspects that status itself; the curated
+    :func:`gmat_run_mission` calls this helper and lets it raise.
+    """
+    status = result.status
+    if status == "load_error":
         raise UpstreamError(
-            f"GMAT could not load script: {exc}",
+            f"GMAT could not load script: {result.message}",
             code="upstream.gmat_run_load_failed",
-            original_exception=exc,
-        ) from exc
-    except GmatError as exc:
+            data={"original_exception_message": result.message},
+        )
+    if status == "bootstrap_error":
         raise UpstreamError(
-            f"GMAT discovery / bootstrap failed: {exc}",
+            f"GMAT discovery / bootstrap failed: {result.message}",
             code="upstream.gmat_run_bootstrap_failed",
-            original_exception=exc,
-        ) from exc
+            data={"original_exception_message": result.message},
+        )
+    if status == "field_error":
+        raise InvalidInputError(
+            f"override write to {result.path!r} failed: {result.message}",
+            code="invalid_input.gmat_override_failed",
+            data={"path": result.path, "original_exception_message": result.message},
+        )
+    if status == "run_error":
+        raise UpstreamError(
+            f"GMAT mission run failed: {result.message}",
+            code="upstream.gmat_run_failed",
+            data={"original_exception_message": result.message},
+        )
+    if status == "timeout":
+        raise UpstreamError(result.message, code="upstream.gmat_run_timeout")
+    if status == "crashed":
+        raise UpstreamError(
+            f"GMAT worker process crashed before returning a result: {result.message}",
+            code="upstream.gmat_worker_crashed",
+            data={"original_exception_message": result.message},
+        )
 
 
 _T = TypeVar("_T")
@@ -1423,40 +1473,6 @@ def _filter_names(all_keys: list[str], selection: list[str] | None) -> list[str]
         return list(all_keys)
     known = set(all_keys)
     return [name for name in selection if name in known]
-
-
-def _apply_overrides(mission: Any, overrides: dict[str, Any]) -> None:
-    """Apply each override via ``mission[key] = value``, wrapping errors.
-
-    gmat-run raises ``GmatFieldError`` for an unknown resource, an unknown
-    field, or a type-coercion failure. We surface those as typed
-    ``InvalidInputError`` so the LLM consumer sees a stable code matching
-    the failure category.
-    """
-    if not overrides:
-        return
-    from gmat_run.errors import GmatFieldError
-
-    for dotted, value in overrides.items():
-        try:
-            mission[dotted] = value
-        except GmatFieldError as exc:
-            raise InvalidInputError(
-                f"override write to {dotted!r} failed: {exc}",
-                code="invalid_input.gmat_override_failed",
-                data={"path": dotted, "original_exception_message": str(exc)},
-            ) from exc
-        except (TypeError, AttributeError) as exc:
-            # gmat-run's assignment surface raises TypeError / AttributeError
-            # for some bad-shape inputs (e.g. wrong python type for a real
-            # field, mistyped subscript) that don't go through
-            # GmatFieldError. Surface them with the same typed code rather
-            # than leaking a raw transport-level 500.
-            raise InvalidInputError(
-                f"override write to {dotted!r} failed: {exc}",
-                code="invalid_input.gmat_override_failed",
-                data={"path": dotted, "original_exception_message": str(exc)},
-            ) from exc
 
 
 _SWEEP_HEAD_TAIL_ROWS = 5
@@ -1833,39 +1849,38 @@ def _register_gmat_tools() -> None:
             ),
         ] = "summary",
     ) -> GmatRunMissionResponse:
-        from gmat_run.errors import GmatRunError
-
         registry = default_registry()
         run_id = registry.mint()
         with (
             _resolved_script(script) as script_path,
             _owned_workspace("astrodynamics-mcp-run-") as (workspace, mark_handed_off),
         ):
-            mission = _load_mission(script_path)
-            _apply_overrides(mission, overrides or {})
-
+            spec = _gmat_worker.GmatSpec(
+                operation="run",
+                script_path=str(script_path),
+                overrides=overrides or {},
+                workspace=str(workspace),
+            )
             t0 = time.perf_counter()
-            try:
-                result = mission.run(working_dir=workspace)
-            except GmatRunError as exc:
-                raise UpstreamError(
-                    f"GMAT mission run failed: {exc}",
-                    code="upstream.gmat_run_failed",
-                    original_exception=exc,
-                ) from exc
+            worker_result = await _dispatch_worker(spec)
             wall_clock_s = time.perf_counter() - t0
+
+            # load / bootstrap / override / run / timeout / crash all raise.
+            _raise_for_worker_failure(worker_result)
+            assert worker_result.snapshot is not None  # status == "run_ok"
+            adapter = _SnapshotAdapter(worker_result.snapshot)
 
             registry.register(
                 run_id,
                 output_dir=workspace,
-                artefacts=_collect_artefact_map(result),
+                artefacts=_collect_artefact_map(adapter),
             )
             mark_handed_off()
 
             return _build_response(
                 run_id=run_id,
-                mission=mission,
-                result=result,
+                mission=adapter,
+                result=adapter,
                 wall_clock_s=wall_clock_s,
                 select_outputs=select_outputs,
                 output=output,
@@ -2116,54 +2131,61 @@ def _register_gmat_tools() -> None:
             ),
         ] = "summary",
     ) -> GmatExecuteScriptResponse:
-        from gmat_run.errors import GmatRunError
-
         registry = default_registry()
         run_id = registry.mint()
         with (
             _resolved_script(script) as script_path,
             _owned_workspace("astrodynamics-mcp-run-") as (workspace, mark_handed_off),
         ):
-            mission = _load_mission(script_path)
-
+            spec = _gmat_worker.GmatSpec(
+                operation="execute",
+                script_path=str(script_path),
+                workspace=str(workspace),
+            )
             t0 = time.perf_counter()
-            try:
-                result = mission.run(working_dir=workspace)
-            except GmatRunError as exc:
-                wall_clock_s = time.perf_counter() - t0
-                # Register the (likely empty) workspace anyway so the caller
-                # can pull the GMAT log via gmat_read_run_artefact if GMAT
-                # managed to write one before bailing out.
+            worker_result = await _dispatch_worker(spec)
+            wall_clock_s = time.perf_counter() - t0
+
+            if worker_result.status == "run_error":
+                # Failures-as-data: a GMAT run error is surfaced as ok=False
+                # with the engine log on stderr, not raised. Register the
+                # (likely empty) workspace anyway so the caller can pull the
+                # GMAT log via gmat_read_run_artefact if GMAT managed to write
+                # one before bailing out.
                 registry.register(run_id, output_dir=workspace, artefacts={})
                 mark_handed_off()
                 return GmatExecuteScriptResponse(
                     run_id=run_id,
                     ok=False,
-                    stderr=exc.log,
+                    stderr=worker_result.log,
                     wall_clock=Quantity(value=float(wall_clock_s), unit="s"),
                     reports=[],
                     artefacts=[],
                 )
-            wall_clock_s = time.perf_counter() - t0
+
+            # load / bootstrap / timeout / crash still raise.
+            _raise_for_worker_failure(worker_result)
+            assert worker_result.snapshot is not None  # status == "execute_ok"
+            adapter = _SnapshotAdapter(worker_result.snapshot)
 
             registry.register(
                 run_id,
                 output_dir=workspace,
-                artefacts=_collect_artefact_map(result),
+                artefacts=_collect_artefact_map(adapter),
             )
             mark_handed_off()
 
             reports = [
-                _shape_raw_report(name, Path(result.report_paths[name]), output=output)
-                for name in result.report_paths
+                _shape_raw_report(name, Path(adapter.report_paths[name]), output=output)
+                for name in adapter.report_paths
             ]
             return GmatExecuteScriptResponse(
                 run_id=run_id,
                 ok=True,
-                stderr=result.log,
+                stderr=adapter.log,
                 wall_clock=Quantity(value=float(wall_clock_s), unit="s"),
                 reports=reports,
-                artefacts=_walk_artefacts(result),
+                artefacts=_walk_artefacts(adapter),
             )
 
     @register_tool(
@@ -2185,82 +2207,37 @@ def _register_gmat_tools() -> None:
             ),
         ],
     ) -> GmatValidateScriptResponse:
-        # Bypasses gmat_run.Mission.load to capture the GMAT log across the
-        # parse step — Mission.load only redirects UseLogFile during run(),
-        # so its public surface doesn't expose load-time diagnostics. Reaches
-        # into gmat-run private helpers (_get_api_exception,
-        # _initialize_spacecraft) intentionally; once upstream
-        # astro-tools/gmat-run#153 ships Mission.validate(), this body
-        # collapses to a single call into that helper.
-        from gmat_run.install import locate_gmat
-        from gmat_run.mission import _get_api_exception, _initialize_spacecraft
-        from gmat_run.runtime import bootstrap
-        from gmat_run.summary import build_mission_summary
-
+        # The load-time log-capture dance (bypassing Mission.load to scrape the
+        # GMAT log across the parse step, reaching into gmat-run private helpers
+        # intentionally) runs inside the worker interpreter — see
+        # _gmat_worker._run_validate. Out-of-process execution makes the old
+        # _GMAT_GLOBAL_LOCK around the shared Moderator unnecessary: each
+        # validate gets its own fresh engine.
         with _resolved_script(script) as script_path:
-            try:
-                install = locate_gmat()
-                gmat = bootstrap(install)
-            except Exception as exc:
-                raise UpstreamError(
-                    f"GMAT discovery / bootstrap failed: {exc}",
-                    code="upstream.gmat_run_bootstrap_failed",
-                    original_exception=exc,
-                ) from exc
+            spec = _gmat_worker.GmatSpec(operation="validate", script_path=str(script_path))
+            worker_result = await _dispatch_worker(spec)
 
-            # The install's startup file points GMAT at <root>/output/GmatLog.txt;
-            # we restore that target in the finally clause rather than os.devnull
-            # so a subsequent gmat_run_mission inherits the conventional default
-            # instead of silently swallowing diagnostics.
-            default_log_path = install.bin_dir.parent / "output" / "GmatLog.txt"
+            # Bootstrap failure / timeout / crash raise; a parse/init failure is
+            # reported as data (ok=False), so status is "validate_ok" for it.
+            _raise_for_worker_failure(worker_result)
+            assert worker_result.validate is not None  # status == "validate_ok"
+            validate = worker_result.validate
 
-            # Lock around the process-wide GMAT singleton — Clear / UseLogFile /
-            # LoadScript would race with a concurrent validate or run call.
-            async with _GMAT_GLOBAL_LOCK:
-                with tempfile.TemporaryDirectory(prefix="astrodynamics-mcp-validate-") as tmp:
-                    log_path = Path(tmp) / "validate.log"
-                    # Fresh sandbox so a prior load in the same process can't
-                    # leak resources into the summary inventory below. Some
-                    # plugins refuse Clear under specific states — suppress
-                    # rather than abort.
-                    with suppress(Exception):
-                        gmat.Clear()
-                    gmat.UseLogFile(str(log_path))
-                    init_error: str | None = None
-                    load_ok = False
-                    try:
-                        load_ok = bool(gmat.LoadScript(str(script_path)))
-                        if load_ok:
-                            api_exception = _get_api_exception(gmat)
-                            try:
-                                _initialize_spacecraft(gmat)
-                            except api_exception as exc:
-                                init_error = f"{type(exc).__name__}: {exc}"
-                    finally:
-                        # Repoint the log handle off the temp path before the
-                        # TemporaryDirectory unlinks itself — GMAT's
-                        # MessageInterface holds the file open otherwise (same
-                        # Windows-handle issue Mission.run handles after a run).
-                        # Restore to the install's default rather than devnull
-                        # so a follow-up Mission.run still has a sensible
-                        # default target.
-                        with suppress(Exception):
-                            gmat.UseLogFile(str(default_log_path))
-                    raw_log = log_path.read_text(encoding="utf-8", errors="replace")
-
-            ok = load_ok and init_error is None
-            errors, warnings = _parse_gmat_log(raw_log)
-            if init_error is not None:
-                errors.append(ParseDiagnostic(line=None, message=init_error, raw=init_error))
+            ok = validate.load_ok and validate.init_error is None
+            errors, warnings = _parse_gmat_log(validate.raw_log)
+            if validate.init_error is not None:
+                errors.append(
+                    ParseDiagnostic(line=None, message=validate.init_error, raw=validate.init_error)
+                )
             summary_view: MissionSummaryView | None = None
-            if ok:
-                summary_view = _render_mission_summary(build_mission_summary(gmat, script_path))
+            if ok and validate.summary is not None:
+                summary_view = _render_mission_summary(validate.summary)
             return GmatValidateScriptResponse(
                 ok=ok,
                 errors=errors,
                 warnings=warnings,
                 summary=summary_view,
-                raw_log=raw_log,
+                raw_log=validate.raw_log,
             )
 
     @register_tool(

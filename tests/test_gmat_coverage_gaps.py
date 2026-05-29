@@ -28,11 +28,11 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 
 from astrodynamics_mcp import runs as runs_module
+from astrodynamics_mcp.tools import _gmat_worker
 from astrodynamics_mcp.tools import gmat as gmat_tools
 from astrodynamics_mcp.tools.gmat import (
     _SKELETON_URI_SCHEME,
     RawReportContent,
-    _apply_overrides,
     _parse_gmat_log,
     _validate_sweep_payload,
 )
@@ -112,38 +112,66 @@ class TestRegisterResourcesErrors:
 
 
 # ---------------------------------------------------------------------------
-# _apply_overrides broadened exception handling
+# Worker override-failure classification (broadened exception handling)
 # ---------------------------------------------------------------------------
 
 
-class TestApplyOverridesBroadenedTypes:
-    """``_apply_overrides`` catches TypeError / AttributeError as invalid_input.*."""
+def _install_override_failing_mission(monkeypatch: pytest.MonkeyPatch, exc: BaseException) -> None:
+    """Inject a fake ``gmat_run`` whose mission raises ``exc`` on any override."""
+    install_minimal_gmat_run_modules(monkeypatch)
 
-    def test_type_error_surfaces_typed_code(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        install_minimal_gmat_run_modules(monkeypatch)
+    class _Mission:
+        def __setitem__(self, _key: str, _value: Any) -> None:
+            raise exc
 
-        class _Mission:
-            def __setitem__(self, _key: str, _value: Any) -> None:
-                raise TypeError("can only assign real to real field")
+    gmat_run_mod = ModuleType("gmat_run")
 
-        from astrodynamics_mcp.errors import InvalidInputError
+    class _Factory:
+        @staticmethod
+        def load(_path: Path) -> _Mission:
+            return _Mission()
 
-        with pytest.raises(InvalidInputError) as excinfo:
-            _apply_overrides(_Mission(), {"Sat.SMA": "not-a-number"})
-        assert excinfo.value.code == "invalid_input.gmat_override_failed"
+    gmat_run_mod.__dict__["Mission"] = _Factory
+    monkeypatch.setitem(sys.modules, "gmat_run", gmat_run_mod)
 
-    def test_attribute_error_surfaces_typed_code(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        install_minimal_gmat_run_modules(monkeypatch)
 
-        class _Mission:
-            def __setitem__(self, _key: str, _value: Any) -> None:
-                raise AttributeError("'Mission' object has no attribute '_resource'")
+class TestWorkerOverrideBroadenedTypes:
+    """The worker classifies TypeError / AttributeError as ``field_error``.
 
-        from astrodynamics_mcp.errors import InvalidInputError
+    gmat-run's assignment surface raises ``GmatFieldError`` for unknown
+    fields, but some bad-shape inputs leak ``TypeError`` / ``AttributeError``
+    instead; both must be folded into the same status so the parent maps them
+    to ``invalid_input.gmat_override_failed`` (covered end-to-end by
+    ``test_tool_gmat_run_mission`` and ``test_gmat_worker``).
+    """
 
-        with pytest.raises(InvalidInputError) as excinfo:
-            _apply_overrides(_Mission(), {"Sat.SMA": 7000.0})
-        assert excinfo.value.code == "invalid_input.gmat_override_failed"
+    def test_type_error_surfaces_field_error(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _install_override_failing_mission(monkeypatch, TypeError("can only assign real to real"))
+        spec = _gmat_worker.GmatSpec(
+            operation="run",
+            script_path=str(tmp_path / "x.script"),
+            overrides={"Sat.SMA": "not-a-number"},
+        )
+        result = _gmat_worker.run_operation(spec)
+        assert result.status == "field_error"
+        assert result.path == "Sat.SMA"
+
+    def test_attribute_error_surfaces_field_error(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _install_override_failing_mission(
+            monkeypatch, AttributeError("'Mission' object has no attribute '_resource'")
+        )
+        spec = _gmat_worker.GmatSpec(
+            operation="run",
+            script_path=str(tmp_path / "x.script"),
+            overrides={"Sat.SMA": 7000.0},
+        )
+        result = _gmat_worker.run_operation(spec)
+        assert result.status == "field_error"
+        assert result.path == "Sat.SMA"
 
 
 # ---------------------------------------------------------------------------
@@ -363,9 +391,10 @@ class TestWorkspaceLeakFix:
         tmpdir = Path(tempfile.gettempdir())
         before = {p for p in tmpdir.iterdir() if p.name.startswith(prefix)}
 
-        # Drive _load_mission to fail with GmatLoadError -- the workspace
-        # was created on entry and must be reaped by the new context
-        # manager even though registry.register never fires.
+        # Drive the load step to fail with GmatLoadError -- the workspace was
+        # created on entry and must be reaped by the owning context manager
+        # even though registry.register never fires (the worker reports
+        # load_error and the handler raises before mark_handed_off).
         class _LoadError(Exception):
             pass
 
