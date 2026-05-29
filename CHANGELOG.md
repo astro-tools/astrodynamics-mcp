@@ -5,6 +5,85 @@ All notable changes to astrodynamics-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-05-29
+
+The GMAT integration release. Adds GMAT mission execution, parameter
+sweeps, and script validation behind an optional `[gmat]` extra;
+credential passthrough for Space-Track and ESA DISCOSweb; a
+`satellite_metadata` tool; and a wider eval suite and CI matrix. Drops
+the Smithery publishing path.
+
+### Added
+
+- GMAT integration tools behind an optional `[gmat]` extra —
+  `gmat_run_mission`, `gmat_sweep`, `gmat_execute_script`,
+  `gmat_validate_script`, and `gmat_read_run_artefact`, wrapping
+  `gmat-run` and `gmat-sweep`. The tools register only when `gmat-run`
+  is importable (`pip install astrodynamics-mcp[gmat]`), so the base
+  install stays GMAT-free. Each call runs `gmatpy` in an isolated
+  subprocess: gmatpy bootstraps a single global Moderator that
+  successive runs in one interpreter would corrupt, and its C++ run loop
+  holds the GIL, so isolation keeps runs from leaking state into each
+  other or blocking the server's event loop (#70, #71, #72, #73, #82,
+  #91).
+- GMAT script skeletons shipped as MCP resources under
+  `gmat-skeleton://` URIs — 20 vetted mission archetypes (LEO / GEO /
+  lunar transfers, Hohmann, B-plane targeting, finite- and
+  electric-propulsion burns, LEO and lunar station-keeping, contact and
+  eclipse location, attitude pointing, constellations, control flow) to
+  seed LLM-assisted script authoring (#83).
+- Credential passthrough for credentialed data sources — environment
+  variables for the stdio transport, session-init `_meta` metadata for
+  HTTP. A tool that needs a credential it cannot find raises a typed
+  `CredentialRequiredError` (stable `credential_required.<source>` code,
+  naming the missing fields) rather than failing silently (#67).
+- Space-Track as an alternate source for `tle_lookup` via
+  `source="space-track"`, for recent launches and as a CelesTrak
+  fallback. Requires Space-Track credentials; CelesTrak stays the
+  no-auth default (#74).
+- `satellite_metadata` — physical and provenance metadata (mass,
+  bounding-box dimensions, COSPAR ID, launch date and site, operator,
+  mission type, decay status) for a NORAD ID, backed by ESA DISCOSweb.
+  Requires a DISCOSweb bearer token (#75).
+- Eval suite expanded to 40 prompts with GMAT-tool and credentialed-tool
+  coverage. GMAT and credentialed prompts skip — rather than fail — when
+  their prerequisites are absent, so the suite runs without secrets or a
+  GMAT install (#76).
+- Multi-model offline eval workflow for release-cut comparison across
+  the GitHub Models catalogue, separate from the per-PR gate (#69).
+- macOS added to the CI test matrix — now Ubuntu, Windows, and macOS ×
+  Python 3.10 / 3.11 / 3.12 (#68).
+- Documentation for the v0.2 surface: a GMAT-integration design page
+  recording the tool-granularity, HTTP-transport, and `[gmat]`-extra
+  decisions, plus tool-reference and recipe updates (#66, #77).
+
+### Changed
+
+- Typed `AstroMCPError` envelopes now reach the wire on every tool — the
+  `code`, `message`, and `data` fields serialise into the MCP error
+  response so the LLM consumer can branch on a stable code, and
+  non-finite (`NaN` / `Inf`) values are rejected at the `Quantity`
+  boundary instead of leaking into a response (#108).
+- Data-layer hardening across the adapters: per-event-loop client
+  lifecycle with clean shutdown, stale-cache fallback on upstream
+  outage, correct Space-Track query encoding, and caching of Horizons
+  in-band errors (#110).
+
+### Fixed
+
+- Contained the basename fallback in `gmat_read_run_artefact` so a
+  crafted `name` cannot escape the run's output directory — artefact
+  reads are confined to direct children of the run workspace (#109).
+
+### Removed
+
+- Smithery publishing infrastructure. The canonical MCPB bundle ships
+  with an empty `tools[]` (clients discover tools over the MCP protocol
+  at runtime), but Smithery requires a populated `tools[]` to List a
+  server — an irreconcilable conflict — so the Smithery-specific bundle
+  and its publish job are removed. PyPI, the Official MCP Registry, and
+  the GitHub Release MCPB asset remain the distribution path (#64).
+
 ## [0.1.5] — 2026-05-27
 
 ### Added
@@ -179,6 +258,7 @@ GitHub Models on every workflow dispatch.
   trusted publishing, and creates the GitHub Release on every `v*` tag.
   macOS is deferred to v0.2 (#1, #2).
 
+[0.2.0]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.5...v0.2.0
 [0.1.5]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.2...v0.1.3
