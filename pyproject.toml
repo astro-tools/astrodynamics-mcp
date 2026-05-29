@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "astrodynamics-mcp"
-version = "0.1.5"
+version = "0.2.0"
 description = "Model Context Protocol server giving any LLM client authoritative astrodynamics tools — TLE/SGP4, Lambert, ground-station access, time/frame conversions, porkchop, B-plane."
 readme = "README.md"
 requires-python = ">=3.10"
