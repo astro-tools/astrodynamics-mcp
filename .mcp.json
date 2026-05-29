@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "astrodynamics": {
+      "command": "uvx",
+      "args": ["astrodynamics-mcp", "stdio"]
+    }
+  }
+}
