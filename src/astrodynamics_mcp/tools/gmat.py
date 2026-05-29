@@ -1126,6 +1126,32 @@ def _raise_for_worker_failure(result: _gmat_worker.WorkerResult) -> None:
         )
 
 
+def _resolve_timeout(requested: float | None) -> float | None:
+    """Resolve a caller-supplied per-call timeout against the server ceiling.
+
+    ``None`` defers to the env-configured default (returned as ``None`` so the
+    dispatcher reads the env itself). A supplied value must be positive — a
+    non-positive request is rejected rather than silently disabling the cap —
+    and is clamped down to the operator's configured maximum
+    (``ASTRODYNAMICS_MCP_GMAT_TIMEOUT``) so a call can shorten the wall-clock
+    budget or lengthen it up to, but not beyond, that ceiling. When the
+    operator has disabled the cap entirely there is no ceiling to clamp to, so
+    the request is honoured as-is.
+    """
+    if requested is None:
+        return None
+    if requested <= 0:
+        raise InvalidInputError(
+            f"timeout_seconds must be a positive number of seconds, got {requested!r}",
+            code="invalid_input.gmat_timeout_not_positive",
+            data={"timeout_seconds": requested},
+        )
+    ceiling = _gmat_worker._timeout_seconds()
+    if ceiling is None:
+        return float(requested)
+    return min(float(requested), ceiling)
+
+
 _T = TypeVar("_T")
 
 
@@ -1848,9 +1874,24 @@ def _register_gmat_tools() -> None:
                 ),
             ),
         ] = "summary",
+        timeout_seconds: Annotated[
+            float | None,
+            Field(
+                description=(
+                    "Optional wall-clock cap for this run, in seconds. GMAT runs "
+                    "out-of-process; if the run exceeds the cap the worker is killed "
+                    "and the tool returns upstream.gmat_run_timeout. Leave null to "
+                    "use the server's configured default. Raise it for a heavy "
+                    "optimizer / long propagation, lower it for a quick check; values "
+                    "are clamped to the server's configured maximum and must be "
+                    "positive."
+                ),
+            ),
+        ] = None,
     ) -> GmatRunMissionResponse:
         registry = default_registry()
         run_id = registry.mint()
+        timeout_override = _resolve_timeout(timeout_seconds)
         with (
             _resolved_script(script) as script_path,
             _owned_workspace("astrodynamics-mcp-run-") as (workspace, mark_handed_off),
@@ -1862,7 +1903,7 @@ def _register_gmat_tools() -> None:
                 workspace=str(workspace),
             )
             t0 = time.perf_counter()
-            worker_result = await _dispatch_worker(spec)
+            worker_result = await _dispatch_worker(spec, timeout_override=timeout_override)
             wall_clock_s = time.perf_counter() - t0
 
             # load / bootstrap / override / run / timeout / crash all raise.
@@ -2130,9 +2171,24 @@ def _register_gmat_tools() -> None:
                 ),
             ),
         ] = "summary",
+        timeout_seconds: Annotated[
+            float | None,
+            Field(
+                description=(
+                    "Optional wall-clock cap for this run, in seconds. GMAT runs "
+                    "out-of-process; if the run exceeds the cap the worker is killed "
+                    "and the tool returns upstream.gmat_run_timeout. Leave null to "
+                    "use the server's configured default. Raise it for a heavy "
+                    "optimizer / long propagation, lower it for a quick check; values "
+                    "are clamped to the server's configured maximum and must be "
+                    "positive."
+                ),
+            ),
+        ] = None,
     ) -> GmatExecuteScriptResponse:
         registry = default_registry()
         run_id = registry.mint()
+        timeout_override = _resolve_timeout(timeout_seconds)
         with (
             _resolved_script(script) as script_path,
             _owned_workspace("astrodynamics-mcp-run-") as (workspace, mark_handed_off),
@@ -2143,7 +2199,7 @@ def _register_gmat_tools() -> None:
                 workspace=str(workspace),
             )
             t0 = time.perf_counter()
-            worker_result = await _dispatch_worker(spec)
+            worker_result = await _dispatch_worker(spec, timeout_override=timeout_override)
             wall_clock_s = time.perf_counter() - t0
 
             if worker_result.status == "run_error":

@@ -28,7 +28,9 @@ from astrodynamics_mcp.tools import _gmat_worker
 from astrodynamics_mcp.tools import gmat as gmat_tools
 
 
-async def _in_process_dispatch(spec: _gmat_worker.GmatSpec) -> _gmat_worker.WorkerResult:
+async def _in_process_dispatch(
+    spec: _gmat_worker.GmatSpec, *, timeout_override: float | None = None
+) -> _gmat_worker.WorkerResult:
     """Run the worker body in-process instead of spawning a subprocess.
 
     The three GMAT tools run gmatpy out-of-process in production. The unit
@@ -37,7 +39,11 @@ async def _in_process_dispatch(spec: _gmat_worker.GmatSpec) -> _gmat_worker.Work
     test flips the dispatch seam to call :func:`_gmat_worker.run_operation`
     directly — the worker body then imports the injected fake just as it would
     import the real engine in a worker interpreter.
+
+    ``timeout_override`` is accepted (the handlers pass it) but ignored: the
+    in-process path has no subprocess to time out.
     """
+    del timeout_override
     return _gmat_worker.run_operation(spec)
 
 

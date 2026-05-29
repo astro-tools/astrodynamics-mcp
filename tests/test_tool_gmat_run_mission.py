@@ -602,6 +602,49 @@ class TestToolThroughMcp:
 # ---------------------------------------------------------------------------
 
 
+class TestTimeoutParam:
+    """The ``timeout_seconds`` param resolves + reaches the dispatch seam."""
+
+    async def test_timeout_seconds_clamped_and_passed_to_dispatch(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from astrodynamics_mcp.tools import _gmat_worker
+
+        captured: dict[str, Any] = {}
+
+        async def _capture(
+            spec: Any, *, timeout_override: float | None = None
+        ) -> _gmat_worker.WorkerResult:
+            captured["timeout"] = timeout_override
+            return _gmat_worker.WorkerResult(
+                status="run_ok",
+                snapshot=_gmat_worker.ResultSnapshot(
+                    summary=_gmat_worker.SummaryData(script_name="x.script"),
+                    output_dir=str(tmp_path),
+                ),
+            )
+
+        monkeypatch.setenv("ASTRODYNAMICS_MCP_GMAT_TIMEOUT", "600")
+        fresh = _fresh_mcp(monkeypatch)
+        monkeypatch.setattr("astrodynamics_mcp.tools.gmat._dispatch_worker", _capture)
+
+        # 5000 > the 600s ceiling → clamped down to 600.
+        await fresh.call_tool(
+            "gmat_run_mission",
+            {"script": "% x\nCreate Spacecraft Sat\n", "timeout_seconds": 5000},
+        )
+        assert captured["timeout"] == 600.0
+
+    async def test_non_positive_timeout_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        fresh = _fresh_mcp(monkeypatch)
+        with pytest.raises(ToolError) as excinfo:
+            await fresh.call_tool(
+                "gmat_run_mission",
+                {"script": "% x\nCreate Spacecraft Sat\n", "timeout_seconds": 0},
+            )
+        assert "invalid_input.gmat_timeout_not_positive" in str(excinfo.value)
+
+
 class TestResponseSchema:
     """Round-trip the response through JSON to catch schema drift."""
 

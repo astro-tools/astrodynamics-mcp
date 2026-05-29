@@ -415,7 +415,9 @@ def _get_semaphore() -> asyncio.Semaphore:
     return _semaphore
 
 
-async def dispatch_subprocess(spec: GmatSpec) -> WorkerResult:
+async def dispatch_subprocess(
+    spec: GmatSpec, *, timeout_override: float | None = None
+) -> WorkerResult:
     """Run one spec in a fresh interpreter, bounded and wall-clock-capped.
 
     Spawns ``python -m astrodynamics_mcp.tools._gmat_worker`` so gmatpy loads
@@ -423,9 +425,13 @@ async def dispatch_subprocess(spec: GmatSpec) -> WorkerResult:
     the event loop stays free. A run that overruns the timeout is killed and
     reported as ``status="timeout"``; a crashed worker (segfault, nonzero exit)
     is reported as ``status="crashed"`` with its captured stderr.
+
+    ``timeout_override`` (already validated and clamped by the caller) sets the
+    wall-clock cap for this call; ``None`` falls back to the env-configured
+    default.
     """
     semaphore = _get_semaphore()
-    timeout = _timeout_seconds()
+    timeout = timeout_override if timeout_override is not None else _timeout_seconds()
     async with semaphore:
         with tempfile.TemporaryDirectory(prefix="astrodynamics-mcp-worker-") as tmp:
             spec_path = Path(tmp) / "spec.pkl"

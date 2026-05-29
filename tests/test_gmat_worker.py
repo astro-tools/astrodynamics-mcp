@@ -201,6 +201,31 @@ class TestWorkerMain:
         assert _gmat_worker.main(["only-one-arg"]) == 2
 
 
+class TestResolveTimeout:
+    """``_resolve_timeout`` validates and clamps a caller-supplied cap."""
+
+    def test_none_defers_to_env(self) -> None:
+        assert gmat_tools._resolve_timeout(None) is None
+
+    def test_positive_below_ceiling_is_honored(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ASTRODYNAMICS_MCP_GMAT_TIMEOUT", "600")
+        assert gmat_tools._resolve_timeout(120) == 120.0
+
+    def test_above_ceiling_is_clamped_down(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ASTRODYNAMICS_MCP_GMAT_TIMEOUT", "600")
+        assert gmat_tools._resolve_timeout(5000) == 600.0
+
+    def test_non_positive_is_rejected(self) -> None:
+        with pytest.raises(InvalidInputError) as excinfo:
+            gmat_tools._resolve_timeout(0)
+        assert excinfo.value.code == "invalid_input.gmat_timeout_not_positive"
+
+    def test_disabled_cap_honors_request(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Operator disabled the cap (<=0) → no ceiling → honor the request.
+        monkeypatch.setenv("ASTRODYNAMICS_MCP_GMAT_TIMEOUT", "0")
+        assert gmat_tools._resolve_timeout(5000) == 5000.0
+
+
 class TestConfig:
     """Env knobs parse with sensible fallbacks."""
 
