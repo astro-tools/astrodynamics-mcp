@@ -164,6 +164,18 @@ stdio + Streamable HTTP transports are first-class.
 - **Eval suite:** [eval/README.md](https://github.com/astro-tools/astrodynamics-mcp/tree/main/eval#readme)
   — the regression contract on tool-description quality.
 
+## Privacy
+
+`astrodynamics-mcp` runs entirely on your own machine and collects
+nothing — no telemetry, no analytics, no accounts. The only data that
+leaves your machine is the query parameters a tool sends to the data
+source it wraps (CelesTrak / JPL Horizons / IERS with no auth, and —
+only if you configure their credentials — Space-Track and ESA DISCOSweb).
+Credentials are read from local environment variables or the session
+`_meta` block and are sent only to their own service over HTTPS. See the
+[Privacy page](https://astro-tools.github.io/astrodynamics-mcp/privacy/)
+for the full breakdown.
+
 ## License
 
 MIT — see [LICENSE](https://github.com/astro-tools/astrodynamics-mcp/blob/main/LICENSE).

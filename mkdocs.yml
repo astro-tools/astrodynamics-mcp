@@ -63,6 +63,7 @@ nav:
   - Supported clients: supported-clients.md
   - FAQ: faq.md
   - Output shaping: output-shaping.md
+  - Privacy: privacy.md
 
 markdown_extensions:
   - admonition
