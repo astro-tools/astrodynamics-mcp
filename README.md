@@ -4,7 +4,8 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that
 gives any MCP-capable LLM client (Claude Code, Cursor, ChatGPT desktop,
 custom agents) authoritative astrodynamics tools: TLE/SGP4 propagation,
 Lambert solving, ground-station access, time-scale and coordinate-frame
-conversions, porkchop scans, B-plane targeting.
+conversions, porkchop scans, B-plane targeting, satellite metadata, and
+— with the optional `[gmat]` extra — full NASA GMAT mission execution.
 
 ## Why
 
@@ -22,7 +23,7 @@ arguments.
 
 | Tool              | What it does                                              | Backed by                |
 | ----------------- | --------------------------------------------------------- | ------------------------ |
-| `tle_lookup`      | Fetch current TLEs from CelesTrak by NORAD ID, name, or group. | CelesTrak `gp.php` API |
+| `tle_lookup`      | Fetch current TLEs by NORAD ID, name, or group — from CelesTrak (default) or Space-Track. | CelesTrak `gp.php` API · Space-Track † |
 | `sgp4_propagate`  | Propagate TLEs across UTC ISO 8601 epochs in TEME / ICRF / GCRS / ITRS / CIRS. | `sgp4`            |
 | `lambert_solve`   | Solve Lambert's problem; multi-rev solutions enumerated; two-impulse Δv on demand. | `lamberthub`     |
 | `access_windows`  | Ground-station / observer access intervals over a window, with AOS / LOS / peak elevation. | `skyfield`     |
@@ -30,6 +31,27 @@ arguments.
 | `frame_transform` | State-vector transforms across ICRF / ITRS / GCRS / TEME / CIRS / TIRS / IAU body-fixed frames. | `astropy.coordinates` |
 | `porkchop`        | (depart × arrive) Δv / C3 grid for interplanetary transfers, ASCII contour, summary or full output. | `lamberthub` + JPL Horizons |
 | `bplane_target`   | B-plane element calculation and impulsive targeting for hyperbolic flybys. | in-house, JPL Horizons fed |
+| `satellite_metadata` | Physical & provenance metadata (mass, dimensions, COSPAR ID, launch, operator, decay status) for a NORAD ID. | ESA DISCOSweb † |
+
+**†** Credentialed source. Pass credentials as environment variables for
+the stdio transport, or in the session-init `_meta` block for HTTP — see
+[Credentials](https://astro-tools.github.io/astrodynamics-mcp/credentials/).
+A tool called without its credential returns a typed
+`CredentialRequiredError`, never a silent failure.
+
+### GMAT tools (optional `[gmat]` extra)
+
+Install the `[gmat]` extra and have a local [NASA GMAT](https://sourceforge.net/projects/gmat/)
+install, and five more tools register for driving real GMAT missions
+(they stay hidden otherwise):
+
+| Tool                    | What it does                                              | Backed by      |
+| ----------------------- | --------------------------------------------------------- | -------------- |
+| `gmat_run_mission`      | Run a complete GMAT mission; returns a parsed summary, report data, and pointers to large outputs. | `gmat-run`   |
+| `gmat_sweep`            | Parameter sweeps and Monte Carlo (grid / samples / Monte Carlo / Latin hypercube) over a mission. | `gmat-sweep` |
+| `gmat_execute_script`   | Escape hatch — run raw GMAT script text and return its reports verbatim; engine errors come back as data. | `gmat-run` |
+| `gmat_validate_script`  | Parse-validate a script without running it; returns errors, warnings, and the resource/command structure. | `gmat-run` |
+| `gmat_read_run_artefact`| Read the raw text of a file produced by a prior run (ephemerides, reports too large to inline). | run registry |
 
 Full input / output JSON schemas live on the
 [Tool reference](https://astro-tools.github.io/astrodynamics-mcp/tool-reference/)
@@ -40,7 +62,8 @@ page of the docs site.
 Install:
 
 ```bash
-uv tool install astrodynamics-mcp     # or: pipx install astrodynamics-mcp
+uv tool install astrodynamics-mcp            # or: pipx install astrodynamics-mcp
+uv tool install "astrodynamics-mcp[gmat]"    # adds the GMAT mission tools (needs a local GMAT install)
 ```
 
 ### Claude Code
