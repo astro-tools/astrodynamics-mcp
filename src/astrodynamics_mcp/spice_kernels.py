@@ -185,6 +185,19 @@ class KernelCache:
             return None
         return path
 
+    def is_cached(self, url: str, *, ttl_s: float | None = None) -> bool:
+        """Whether *url* is in the cache and fresh — i.e. :meth:`fetch` would skip the network.
+
+        The load tool reports this as ``from_cache`` without changing
+        :meth:`fetch`'s return contract. Resolves the default TTL the same way
+        :meth:`fetch` does, so the answer matches what a subsequent fetch will
+        actually do. Always ``False`` when the cache is disabled.
+        """
+        if self._dir is None:
+            return False
+        ttl = _default_ttl_s() if ttl_s is None else ttl_s
+        return self.get(url, ttl_s=ttl) is not None
+
     async def fetch(
         self,
         url: str,

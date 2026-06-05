@@ -32,6 +32,19 @@ _EXPECTED_TOOL_NAMES = frozenset(
     }
 )
 
+# Slots still landing in follow-up work. Tools with real bodies are excluded from
+# the placeholder-body parametrize so this file stays accurate as each slot
+# graduates — the kernel-management trio (load / list / unload) now has real
+# bodies and is covered by tests/test_tool_spice_kernels.py instead.
+_PLACEHOLDER_TOOL_NAMES = frozenset(
+    {
+        "spice_state",
+        "spice_frame_transform",
+        "spice_body_parameters",
+        "spice_time_convert",
+    }
+)
+
 
 @pytest.mark.skipif(
     importlib.util.find_spec("spiceypy") is not None,
@@ -95,7 +108,7 @@ class TestPositiveCase:
             ann = by_name[query].annotations
             assert ann is not None and ann.readOnlyHint is True
 
-    @pytest.mark.parametrize("tool_name", sorted(_EXPECTED_TOOL_NAMES))
+    @pytest.mark.parametrize("tool_name", sorted(_PLACEHOLDER_TOOL_NAMES))
     async def test_placeholder_body_raises_not_implemented(
         self, _isolated_mcp: FastMCP, tool_name: str
     ) -> None:

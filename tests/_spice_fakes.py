@@ -1,0 +1,142 @@
+"""In-memory ``spiceypy`` stand-in for the SPICE kernel-management tests.
+
+The test environment does not install ``spiceypy`` (it ships only with the
+``[spice]`` extra), so the tool bodies and the :mod:`astrodynamics_mcp.spice_runtime`
+pool primitives — which ``import spiceypy`` lazily — are exercised against this
+fake, injected via ``sys.modules`` the way the GMAT tests inject a fake
+``gmat_run``. The fake maintains a real in-process pool so furnish / list /
+unload behave end-to-end, including meta-kernel fan-out and CSPICE's
+silently-additive furnish.
+
+The underscore prefix keeps pytest from collecting this module as a test file.
+"""
+
+from __future__ import annotations
+
+from pathlib import PurePath
+from typing import Any
+
+
+class FakeSpiceyError(Exception):
+    """Stand-in for ``spiceypy``'s ``SpiceyError`` — what CSPICE raises on failure."""
+
+
+# File-extension → CSPICE category, used when a test does not pin a furnish plan
+# explicitly. Binary kernels get a non-zero handle; text / meta kernels get 0,
+# matching CSPICE (text kernels load into the pool, not as DAF/DAS files).
+_EXT_TYPE: dict[str, str] = {
+    ".bsp": "SPK",
+    ".bc": "CK",
+    ".bpc": "PCK",
+    ".tpc": "PCK",
+    ".bes": "EK",
+    ".bds": "DSK",
+    ".tm": "META",
+    ".tls": "TEXT",
+    ".tf": "TEXT",
+    ".tsc": "TEXT",
+    ".ti": "TEXT",
+}
+_BINARY_TYPES = frozenset({"SPK", "CK", "DSK", "EK"})
+
+
+def _infer_type(path: str) -> str:
+    return _EXT_TYPE.get(PurePath(path).suffix.lower(), "TEXT")
+
+
+class FakeSpice:
+    """A behaviour-compatible subset of the ``spiceypy`` module surface.
+
+    Implements only what the SPICE kernel-management surface calls: ``furnsh`` /
+    ``unload`` / ``ktotal`` / ``kdata`` plus the three error-handling setters
+    (``erract`` / ``errdev`` / ``errprt``). Tests pin behaviour with
+    :meth:`plan_furnish` (e.g. a meta-kernel fanning out to several kernels) and
+    :meth:`fail_furnsh` (a corrupt kernel).
+    """
+
+    SpiceyError = FakeSpiceyError
+
+    def __init__(self) -> None:
+        self._pool: list[dict[str, Any]] = []
+        self._furnish_plan: dict[str, list[dict[str, Any]]] = {}
+        self._furnsh_error: dict[str, BaseException] = {}
+        self._next_handle = 1
+        self.calls: dict[str, list[Any]] = {
+            "erract": [],
+            "errdev": [],
+            "errprt": [],
+            "furnsh": [],
+            "unload": [],
+        }
+
+    # -- test configuration --------------------------------------------------
+
+    def plan_furnish(self, path: str, rows: list[dict[str, Any]]) -> None:
+        """Pin the exact pool rows a ``furnsh(path)`` should add (meta-kernel fan-out)."""
+        self._furnish_plan[path] = rows
+
+    def fail_furnsh(self, path: str, exc: BaseException | None = None) -> None:
+        """Make ``furnsh(path)`` raise — a corrupt / unreadable kernel."""
+        self._furnsh_error[path] = exc or FakeSpiceyError(f"could not load kernel {path!r}")
+
+    # -- error-handling setters (recorded, no behaviour) ---------------------
+
+    def erract(self, op: str, action: str | None = None) -> str:
+        self.calls["erract"].append((op, action))
+        return action or "RETURN"
+
+    def errdev(self, op: str, device: str | None = None) -> str:
+        self.calls["errdev"].append((op, device))
+        return device or "NULL"
+
+    def errprt(self, op: str, value: str | None = None) -> str:
+        self.calls["errprt"].append((op, value))
+        return value or "NONE"
+
+    # -- kernel pool ---------------------------------------------------------
+
+    def _default_row(self, path: str) -> dict[str, Any]:
+        ktype = _infer_type(path)
+        handle = 0
+        if ktype in _BINARY_TYPES:
+            handle = self._next_handle
+            self._next_handle += 1
+        return {"name": path, "type": ktype, "source": "", "handle": handle}
+
+    def furnsh(self, path: str) -> None:
+        self.calls["furnsh"].append(path)
+        if path in self._furnsh_error:
+            raise self._furnsh_error[path]
+        rows = self._furnish_plan.get(path)
+        if rows is None:
+            rows = [self._default_row(path)]
+        for row in rows:
+            if not any(entry["name"] == row["name"] for entry in self._pool):
+                self._pool.append(dict(row))
+
+    def unload(self, path: str) -> None:
+        self.calls["unload"].append(path)
+        self._pool = [entry for entry in self._pool if entry["name"] != path]
+
+    def _filtered(self, kind: str | None) -> list[dict[str, Any]]:
+        if not kind or kind == "ALL":
+            return list(self._pool)
+        wanted = set(kind.split())
+        return [entry for entry in self._pool if entry["type"] in wanted]
+
+    def ktotal(self, kind: str) -> int:
+        return len(self._filtered(kind))
+
+    def kdata(
+        self,
+        which: int,
+        kind: str,
+        fillen: int = 256,
+        typlen: int = 33,
+        srclen: int = 256,
+    ) -> tuple[str, str, str, int, bool]:
+        rows = self._filtered(kind)
+        if which < 0 or which >= len(rows):
+            return ("", "", "", 0, False)
+        entry = rows[which]
+        return (entry["name"], entry["type"], entry["source"], int(entry["handle"]), True)
