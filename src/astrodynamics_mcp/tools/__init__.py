@@ -12,5 +12,6 @@ from astrodynamics_mcp.tools import lambert as _lambert  # noqa: F401
 from astrodynamics_mcp.tools import porkchop as _porkchop  # noqa: F401
 from astrodynamics_mcp.tools import propagation as _propagation  # noqa: F401
 from astrodynamics_mcp.tools import satellite_metadata as _satellite_metadata  # noqa: F401
+from astrodynamics_mcp.tools import spice as _spice  # noqa: F401
 from astrodynamics_mcp.tools import time as _time  # noqa: F401
 from astrodynamics_mcp.tools import tle as _tle  # noqa: F401
