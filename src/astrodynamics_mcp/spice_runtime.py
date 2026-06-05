@@ -26,7 +26,7 @@ import asyncio
 import logging
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, TypeVar
@@ -94,6 +94,26 @@ class SpiceState:
     position: tuple[float, float, float]
     velocity: tuple[float, float, float]
     light_time: float
+
+
+@dataclass(frozen=True)
+class FrameRotation:
+    """A frame-to-frame rotation, as ``pxform`` / ``sxform`` report it.
+
+    ``rotation`` is the 3x3 orientation matrix (row-major, dimensionless) such
+    that ``v_to = rotation @ v_from`` for any vector expressed in the source
+    frame. ``rotated_position`` and ``rotated_velocity`` are the supplied state
+    rotated into the target frame; each is ``None`` when its input was not
+    given. The position is rotated by ``rotation``; the velocity, when present,
+    is rotated by the full 6x6 state transform (``sxform``), which additionally
+    carries the target frame's rotation rate into the velocity — so for a
+    rotating target frame the rotated velocity is not simply ``rotation`` times
+    the input velocity.
+    """
+
+    rotation: tuple[tuple[float, float, float], ...]
+    rotated_position: tuple[float, float, float] | None
+    rotated_velocity: tuple[float, float, float] | None
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +322,98 @@ def query_state(target: str, observer: str, utc_epoch: str, frame: str, abcorr: 
         position=(float(state[0]), float(state[1]), float(state[2])),
         velocity=(float(state[3]), float(state[4]), float(state[5])),
         light_time=float(light_time),
+    )
+
+
+def query_frame_transform(
+    from_frame: str,
+    to_frame: str,
+    utc_epoch: str,
+    position: Sequence[float] | None,
+    velocity: Sequence[float] | None,
+) -> FrameRotation:
+    """Return the *from_frame* → *to_frame* rotation at *utc_epoch*.
+
+    Resolves the UTC epoch to ephemeris time with ``str2et`` (which needs a
+    furnished leap-second kernel), reads the 3x3 orientation with ``pxform``
+    (which needs the FK / PCK defining any frame CSPICE does not build in), and
+    — when a velocity is supplied — the 6x6 state transform with ``sxform`` so
+    the rotated velocity carries the target frame's rotation rate. Every CSPICE
+    failure — a missing LSK / FK / PCK, an unrecognised frame name, an epoch the
+    frame data does not cover — surfaces as a typed
+    :class:`~astrodynamics_mcp.errors.UpstreamError` with a stable code rather
+    than a silent result, so the consumer never mistakes an unfurnished pool for
+    a degenerate rotation. Runs on the worker thread.
+
+    *utc_epoch* must already be a CSPICE-parseable UTC string (the tool layer
+    normalises the ISO 8601 input — stripping the ``Z`` / offset designator —
+    before handing it here). *position* / *velocity* are the source-frame
+    vectors to rotate, or ``None`` to request the rotation matrix alone.
+    """
+    sp = _spiceypy()
+    try:
+        et = sp.str2et(utc_epoch)
+    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+        raise UpstreamError(
+            f"CSPICE could not resolve the epoch {utc_epoch!r} to ephemeris time: {exc}. "
+            "A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
+            code="upstream.spice_frame_transform_failed",
+            original_exception=exc,
+            data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
+        ) from exc
+    try:
+        matrix = sp.pxform(from_frame, to_frame, et)
+    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+        raise UpstreamError(
+            f"CSPICE could not rotate from frame {from_frame!r} to {to_frame!r} at "
+            f"{utc_epoch!r}: {exc}. Confirm the FK / PCK defining the frame is furnished "
+            "(spice_load_kernel) and both frame names are recognised.",
+            code="upstream.spice_frame_transform_failed",
+            original_exception=exc,
+            data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
+        ) from exc
+    rotation = (
+        (float(matrix[0][0]), float(matrix[0][1]), float(matrix[0][2])),
+        (float(matrix[1][0]), float(matrix[1][1]), float(matrix[1][2])),
+        (float(matrix[2][0]), float(matrix[2][1]), float(matrix[2][2])),
+    )
+
+    rotated_position: tuple[float, float, float] | None = None
+    rotated_velocity: tuple[float, float, float] | None = None
+
+    if position is not None and velocity is not None:
+        try:
+            xform = sp.sxform(from_frame, to_frame, et)
+        except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+            raise UpstreamError(
+                f"CSPICE could not build the state transform from frame {from_frame!r} to "
+                f"{to_frame!r} at {utc_epoch!r}: {exc}. Confirm the FK / PCK defining the "
+                "frame is furnished (spice_load_kernel) and both frame names are recognised.",
+                code="upstream.spice_frame_transform_failed",
+                original_exception=exc,
+                data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
+            ) from exc
+        state: tuple[float, ...] = (*position, *velocity)
+        out = [sum((float(xform[i][j]) * state[j] for j in range(6)), 0.0) for i in range(6)]
+        rotated_position = (out[0], out[1], out[2])
+        rotated_velocity = (out[3], out[4], out[5])
+    elif position is not None:
+        rotated_position = (
+            rotation[0][0] * position[0]
+            + rotation[0][1] * position[1]
+            + rotation[0][2] * position[2],
+            rotation[1][0] * position[0]
+            + rotation[1][1] * position[1]
+            + rotation[1][2] * position[2],
+            rotation[2][0] * position[0]
+            + rotation[2][1] * position[1]
+            + rotation[2][2] * position[2],
+        )
+
+    return FrameRotation(
+        rotation=rotation,
+        rotated_position=rotated_position,
+        rotated_velocity=rotated_velocity,
     )
 
 

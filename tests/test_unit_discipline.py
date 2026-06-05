@@ -31,7 +31,7 @@ from astrodynamics_mcp.tools.gmat import GmatRunMissionResponse
 from astrodynamics_mcp.tools.lambert import LambertSolveResponse
 from astrodynamics_mcp.tools.porkchop import PorkchopResponse
 from astrodynamics_mcp.tools.propagation import Sgp4PropagateResponse
-from astrodynamics_mcp.tools.spice import SpiceStateResponse
+from astrodynamics_mcp.tools.spice import SpiceFrameTransformResponse, SpiceStateResponse
 from astrodynamics_mcp.tools.tle import TleLookupResponse
 
 # `time_convert`'s response carries `value: str | float` by design: the value
@@ -69,6 +69,7 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
     BplaneTargetResponse,
     GmatRunMissionResponse,
     SpiceStateResponse,
+    SpiceFrameTransformResponse,
     # TimeConvertResponse is deliberately excluded — see import-level note above.
 ]
 
