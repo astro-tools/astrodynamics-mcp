@@ -64,6 +64,9 @@ class FakeSpice:
         self._furnish_plan: dict[str, list[dict[str, Any]]] = {}
         self._furnsh_error: dict[str, BaseException] = {}
         self._state_plan: dict[tuple[str, str], tuple[list[float], float]] = {}
+        self._rotation_plan: dict[
+            tuple[str, str], tuple[list[list[float]], list[list[float]] | None, str | None]
+        ] = {}
         self._next_handle = 1
         self.calls: dict[str, list[Any]] = {
             "erract": [],
@@ -73,6 +76,8 @@ class FakeSpice:
             "unload": [],
             "str2et": [],
             "spkezr": [],
+            "pxform": [],
+            "sxform": [],
         }
 
     # -- test configuration --------------------------------------------------
@@ -93,6 +98,30 @@ class FakeSpice:
         reference state without modelling CSPICE's ephemeris math.
         """
         self._state_plan[(target.upper(), observer.upper())] = (list(state), float(light_time))
+
+    def plan_rotation(
+        self,
+        from_frame: str,
+        to_frame: str,
+        rotation: list[list[float]],
+        state_transform: list[list[float]] | None = None,
+        requires: str | None = None,
+    ) -> None:
+        """Pin the matrices a ``pxform`` / ``sxform`` for this frame pair returns.
+
+        ``rotation`` is the 3x3 pxform matrix; ``state_transform`` the optional
+        6x6 sxform matrix — an ``sxform`` with none pinned raises, mirroring a
+        request for a state transform a frame cannot provide. ``requires`` names
+        a kernel category (e.g. ``"PCK"``) that must be in the pool for either
+        call to succeed, mirroring CSPICE's dependence on a furnished FK / PCK
+        for a body-fixed frame; ``None`` needs no kernel (a built-in inertial
+        frame). Keyed case-insensitively on (from_frame, to_frame).
+        """
+        self._rotation_plan[(from_frame.upper(), to_frame.upper())] = (
+            rotation,
+            state_transform,
+            requires,
+        )
 
     # -- error-handling setters (recorded, no behaviour) ---------------------
 
@@ -194,3 +223,47 @@ class FakeSpice:
             state, light_time = planned
             return (list(state), light_time)
         return ([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 1.234)
+
+    # -- frame transforms ----------------------------------------------------
+
+    def pxform(self, frm: str, to: str, et: float) -> list[list[float]]:
+        """Return the pinned 3x3 rotation; mirror CSPICE's kernel / frame errors.
+
+        Without a rotation pinned for the pair, CSPICE raises
+        ``SPICE(NOFRAMECONNECT)`` (an unknown or unconnectable frame); when the
+        plan names a required kernel category that is not furnished, it raises a
+        no-data error (the FK / PCK defining the frame has not been loaded). We
+        mimic both so the tool's typed-error paths are exercised through real
+        pool state.
+        """
+        self.calls["pxform"].append((frm, to, et))
+        plan = self._rotation_plan.get((frm.upper(), to.upper()))
+        if plan is None:
+            raise FakeSpiceyError(
+                f"SPICE(NOFRAMECONNECT): no connection between frames {frm!r} and {to!r}"
+            )
+        rotation, _state_transform, requires = plan
+        if requires is not None and not self._has_type(requires):
+            raise FakeSpiceyError(
+                f"SPICE(NOFRAMEDATA): the kernel data defining frame {to!r} has not been loaded"
+            )
+        return [list(row) for row in rotation]
+
+    def sxform(self, frm: str, to: str, et: float) -> list[list[float]]:
+        """Return the pinned 6x6 state transform; mirror CSPICE's kernel / frame errors."""
+        self.calls["sxform"].append((frm, to, et))
+        plan = self._rotation_plan.get((frm.upper(), to.upper()))
+        if plan is None:
+            raise FakeSpiceyError(
+                f"SPICE(NOFRAMECONNECT): no connection between frames {frm!r} and {to!r}"
+            )
+        _rotation, state_transform, requires = plan
+        if state_transform is None:
+            raise FakeSpiceyError(
+                f"SPICE(NOFRAMECONNECT): no state transform between frames {frm!r} and {to!r}"
+            )
+        if requires is not None and not self._has_type(requires):
+            raise FakeSpiceyError(
+                f"SPICE(NOFRAMEDATA): the kernel data defining frame {to!r} has not been loaded"
+            )
+        return [list(row) for row in state_transform]

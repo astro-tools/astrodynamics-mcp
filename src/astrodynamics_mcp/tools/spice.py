@@ -30,7 +30,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from astrodynamics_mcp.errors import InvalidInputError
 from astrodynamics_mcp.schemas.base import Epoch, _epoch_to_instant
@@ -47,6 +47,7 @@ from astrodynamics_mcp.spice_runtime import (
     list_pool,
     normalize_aberration,
     normalize_kind_filter,
+    query_frame_transform,
     query_state,
     run_on_spice_thread,
     unload_kernel,
@@ -242,6 +243,121 @@ class SpiceStateResponse(BaseModel):
     )
 
 
+# Length / velocity unit sets a rotatable vector may carry on the wire. A frame
+# rotation is unit-agnostic, but the {value, unit} discipline still requires a
+# declared unit; these mirror the schemas.base StateVector conventions so the
+# rotated output can echo the input unit.
+_LENGTH_UNITS = frozenset({"km", "m", "AU"})
+_VELOCITY_UNITS = frozenset({"km/s", "m/s"})
+
+
+class RotatableState(BaseModel):
+    """A 3- or 6-vector to rotate between SPICE frames.
+
+    ``position`` alone is a 3-vector, rotated by ``pxform``; adding ``velocity``
+    makes it a 6-vector state, rotated by ``sxform`` (which carries the target
+    frame's rotation rate into the rotated velocity). Omit the whole object on
+    the tool call to request the rotation matrix alone — and to rotate any
+    vector that is not a position (a pointing direction, an angular-momentum
+    vector), request the matrix and apply it yourself.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    position: QuantityVector = Field(
+        ...,
+        description=(
+            "Cartesian position [x, y, z] in the source frame, length unit "
+            "(km / m / AU). Rotated into `to_frame`. e.g. "
+            "{value: [4000, 5000, 6000], unit: 'km'}."
+        ),
+        examples=[{"value": [4000.0, 5000.0, 6000.0], "unit": "km"}],
+    )
+    velocity: QuantityVector | None = Field(
+        default=None,
+        description=(
+            "Optional Cartesian velocity [vx, vy, vz] in the source frame, velocity "
+            "unit (km/s / m/s). When present the rotation uses the full state "
+            "transform (sxform), so the rotated velocity includes the target frame's "
+            "rotation rate; omit it to rotate position only (pxform). e.g. "
+            "{value: [-1.0, 2.0, 0.5], unit: 'km/s'}."
+        ),
+        examples=[{"value": [-1.0, 2.0, 0.5], "unit": "km/s"}],
+    )
+
+    @field_validator("position")
+    @classmethod
+    def _position_unit(cls, v: QuantityVector) -> QuantityVector:
+        if v.unit not in _LENGTH_UNITS:
+            raise InvalidInputError(
+                f"position unit must be a length ({sorted(_LENGTH_UNITS)}), got {v.unit!r}",
+                code="invalid_input.wrong_unit_category",
+            )
+        if len(v.value) != 3:
+            raise InvalidInputError(
+                f"position must have exactly 3 components, got {len(v.value)}",
+                code="invalid_input.wrong_vector_length",
+            )
+        return v
+
+    @field_validator("velocity")
+    @classmethod
+    def _velocity_unit(cls, v: QuantityVector | None) -> QuantityVector | None:
+        if v is None:
+            return v
+        if v.unit not in _VELOCITY_UNITS:
+            raise InvalidInputError(
+                f"velocity unit must be a velocity ({sorted(_VELOCITY_UNITS)}), got {v.unit!r}",
+                code="invalid_input.wrong_unit_category",
+            )
+        if len(v.value) != 3:
+            raise InvalidInputError(
+                f"velocity must have exactly 3 components, got {len(v.value)}",
+                code="invalid_input.wrong_vector_length",
+            )
+        return v
+
+
+class SpiceFrameTransformResponse(BaseModel):
+    """A frame-to-frame rotation, plus the rotated state when one was supplied."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    from_frame: str = Field(..., description="Source frame, echoed verbatim from the request.")
+    to_frame: str = Field(..., description="Target frame, echoed verbatim from the request.")
+    epoch: str = Field(
+        ...,
+        description=(
+            "The UTC ISO 8601 epoch the rotation is evaluated at, echoed verbatim from the request."
+        ),
+    )
+    rotation: list[QuantityVector] = Field(
+        ...,
+        description=(
+            "The 3x3 orientation matrix from pxform, as three row vectors: row i is "
+            "the i-th row of R, where a source-frame vector v maps to R @ v in the "
+            "target frame. Dimensionless (unit '1'). Always present, including for a "
+            "rotation-only request."
+        ),
+    )
+    position: QuantityVector | None = Field(
+        None,
+        description=(
+            "The input position rotated into `to_frame`, in the same length unit as "
+            "the input. Null when no state was supplied (a rotation-only request)."
+        ),
+    )
+    velocity: QuantityVector | None = Field(
+        None,
+        description=(
+            "The input velocity rotated into `to_frame` via the full state transform "
+            "(sxform), in the same velocity unit as the input. Null when no velocity "
+            "was supplied. For a rotating target frame this differs from rotation @ "
+            "velocity, because sxform also folds in the frame's rotation rate."
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tool-body implementations (module-level for direct testability; the
 # registered slots below are thin wrappers, mirroring the GMAT layout).
@@ -373,6 +489,55 @@ async def _do_state(
     )
 
 
+async def _do_frame_transform(
+    from_frame: str,
+    to_frame: str,
+    epoch: str,
+    state: RotatableState | None,
+) -> SpiceFrameTransformResponse:
+    """Rotate *state* (or just compute the matrix) from *from_frame* to *to_frame*.
+
+    Normalises the ISO 8601 epoch to a CSPICE-parseable UTC string, then runs
+    ``str2et`` + ``pxform`` (and ``sxform`` when a velocity is present) on the
+    worker thread. The rotated position / velocity echo the input units; the
+    3x3 orientation matrix is always returned, dimensionless.
+    """
+    position_unit = state.position.unit if state is not None else None
+    velocity_unit = (
+        state.velocity.unit if state is not None and state.velocity is not None else None
+    )
+    position = [float(x) for x in state.position.value] if state is not None else None
+    velocity = (
+        [float(x) for x in state.velocity.value]
+        if state is not None and state.velocity is not None
+        else None
+    )
+
+    result = await run_on_spice_thread(
+        query_frame_transform, from_frame, to_frame, _to_cspice_utc(epoch), position, velocity
+    )
+
+    rotation_rows = [QuantityVector(value=list(row), unit="1") for row in result.rotation]
+    rotated_position = (
+        QuantityVector(value=list(result.rotated_position), unit=position_unit)
+        if result.rotated_position is not None and position_unit is not None
+        else None
+    )
+    rotated_velocity = (
+        QuantityVector(value=list(result.rotated_velocity), unit=velocity_unit)
+        if result.rotated_velocity is not None and velocity_unit is not None
+        else None
+    )
+    return SpiceFrameTransformResponse(
+        from_frame=from_frame,
+        to_frame=to_frame,
+        epoch=epoch,
+        rotation=rotation_rows,
+        position=rotated_position,
+        velocity=rotated_velocity,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Placeholder slots — reserved output shape; bodies raise loudly
 # ---------------------------------------------------------------------------
@@ -451,9 +616,20 @@ _STATE_DESCRIPTION = (
 
 _FRAME_TRANSFORM_DESCRIPTION = (
     "Rotate a vector between SPICE reference frames defined by furnished FK / PCK "
-    "kernels at an epoch, e.g. into a non-Earth body-fixed frame the astropy "
-    "frame_transform tool cannot provide. Reserved slot — not yet implemented; "
-    "lands in follow-up work."
+    "kernels at an epoch — in particular the non-Earth body-fixed frames the "
+    "kernel-free frame_transform tool cannot provide. e.g. "
+    "spice_frame_transform(from_frame='J2000', to_frame='IAU_MARS', "
+    "epoch='2026-01-01T00:00:00Z', state={position: {value: [4000, 5000, 6000], "
+    "unit: 'km'}}) rotates a position into the Mars body-fixed frame (a Mars PCK "
+    "must be furnished first). Omit `state` to get just the 3x3 rotation matrix; "
+    "pass position only for a pxform rotation, or position+velocity for the full "
+    "sxform state rotation (which folds the target frame's rotation rate into the "
+    "rotated velocity). The FK / PCK defining the frame must be furnished first via "
+    "spice_load_kernel, plus a leap-second kernel (LSK) for the epoch — a missing "
+    "kernel or an unrecognised frame returns a typed error, never a silent result. "
+    "`epoch` is UTC ISO 8601 with a time component (e.g. '2026-01-01T00:00:00Z'). "
+    "Use this for body-fixed frames like IAU_MARS / IAU_MOON; for ICRF / ITRS / "
+    "GCRS / TEME prefer the kernel-free frame_transform."
 )
 
 _BODY_PARAMETERS_DESCRIPTION = (
@@ -618,8 +794,52 @@ def _register_spice_tools() -> None:
             title="SPICE Frame Transform", readOnlyHint=True, openWorldHint=False
         ),
     )
-    async def spice_frame_transform() -> SpicePlaceholderResult:
-        raise NotImplementedError("spice_frame_transform lands in follow-up work")
+    async def spice_frame_transform(
+        from_frame: Annotated[
+            str,
+            Field(
+                description=(
+                    "The source SPICE frame the input is currently expressed in — any "
+                    "frame name CSPICE recognises once the defining kernels are furnished "
+                    "(e.g. 'J2000', 'ECLIPJ2000', 'IAU_MARS'). An unrecognised frame "
+                    "returns a typed error."
+                ),
+            ),
+        ],
+        to_frame: Annotated[
+            str,
+            Field(
+                description=(
+                    "The target SPICE frame to rotate into (e.g. 'IAU_MARS', 'IAU_MOON', "
+                    "'ITRF93'). The FK / PCK defining a body-fixed target must be furnished "
+                    "first via spice_load_kernel."
+                ),
+            ),
+        ],
+        epoch: Annotated[
+            Epoch,
+            Field(
+                description=(
+                    "UTC ISO 8601 epoch with a mandatory time component "
+                    "(e.g. '2026-01-01T00:00:00Z') at which the rotation is evaluated; a "
+                    "bare date is rejected. A leap-second kernel (LSK) must be furnished to "
+                    "resolve it."
+                ),
+            ),
+        ],
+        state: Annotated[
+            RotatableState | None,
+            Field(
+                description=(
+                    "Optional 3- or 6-vector to rotate: {position} for a pxform rotation, "
+                    "or {position, velocity} for the full sxform state rotation. Omit "
+                    "entirely to return just the 3x3 rotation matrix. e.g. "
+                    "{position: {value: [4000, 5000, 6000], unit: 'km'}}."
+                ),
+            ),
+        ] = None,
+    ) -> SpiceFrameTransformResponse:
+        return await _do_frame_transform(from_frame, to_frame, epoch, state)
 
     @register_tool(
         name="spice_body_parameters",
