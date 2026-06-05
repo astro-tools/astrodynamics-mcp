@@ -110,6 +110,17 @@ def _resolve_cache_dir(explicit: Path | None) -> Path | None:
     return Path(platformdirs.user_cache_dir(_APP_NAME))
 
 
+def resolve_cache_dir(directory: Path | None = None) -> Path | None:
+    """Public XDG cache-root resolution, shared with the SPICE kernel cache.
+
+    The SPICE kernel cache (:mod:`astrodynamics_mcp.spice_kernels`) stores
+    its blobs under the *same* XDG root this module manages, so it reuses
+    this resolver rather than re-deriving the env-var / platformdirs
+    precedence (and the empty-string-disables convention) on its own.
+    """
+    return _resolve_cache_dir(directory)
+
+
 def _hash_key(key: str) -> str:
     """Hash an arbitrary key to a filesystem-safe, fixed-length filename."""
     return hashlib.sha256(key.encode("utf-8")).hexdigest()

@@ -50,10 +50,10 @@ dependencies = [
   "platformdirs>=4.0",
 ]
 
-# Placeholder extras — [spice] and [viz] are deferred until their tools land.
+# [viz] is a placeholder extra, deferred until its tools land.
 [project.optional-dependencies]
 gmat = ["gmat-run>=0.6", "gmat-sweep>=0.6"]
-spice = []
+spice = ["spiceypy>=6.0"]
 viz = []
 
 [project.scripts]
@@ -153,6 +153,14 @@ ignore_missing_imports = true
 # round-trips) as Any to keep the dependency surface lean.
 [[tool.mypy.overrides]]
 module = ["pandas", "pandas.*"]
+ignore_missing_imports = true
+
+# spiceypy ships with the [spice] extra only and carries no usable type stubs;
+# the unit-test environment doesn't install it. The tools/spice.py guard
+# tolerates the missing module, so mypy should treat the import as opaque
+# rather than failing strict mode.
+[[tool.mypy.overrides]]
+module = ["spiceypy", "spiceypy.*"]
 ignore_missing_imports = true
 
 # astropy ships partial type info but the surface we touch (utils.iers,

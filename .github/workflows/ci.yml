@@ -137,3 +137,40 @@ jobs:
           missing = expected - tools
           assert not missing, f"missing GMAT tool slots after [gmat] install: {missing}"
           PY
+
+  # Parallel smoke-check that `pip install astrodynamics-mcp[spice]` resolves
+  # (pulls spiceypy) and the seven SPICE placeholder tool slots register on
+  # import. The bodies are NotImplementedError placeholders and never execute
+  # here; per-tool issues add real kernels + bodies. The base install path is
+  # covered by `minimal-install` above, which confirms SPICE stays absent
+  # without the extra.
+  spice-extra-install:
+    name: "[spice] extra install smoke"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install '.[spice]'
+      - name: SPICE tool slots register
+        run: |
+          python - <<'PY'
+          import asyncio
+
+          from astrodynamics_mcp.server import mcp
+
+          tools = {t.name for t in asyncio.run(mcp.list_tools())}
+          expected = {
+              "spice_load_kernel",
+              "spice_list_kernels",
+              "spice_unload_kernel",
+              "spice_state",
+              "spice_frame_transform",
+              "spice_body_parameters",
+              "spice_time_convert",
+          }
+          missing = expected - tools
+          assert not missing, f"missing SPICE tool slots after [spice] install: {missing}"
+          PY
