@@ -96,6 +96,7 @@ class TestKernelCacheStorage:
         assert disabled.enabled is False
         assert disabled.directory is None
         assert disabled.get(_KERNEL_URL, ttl_s=10) is None
+        assert disabled.is_cached(_KERNEL_URL) is False
         with pytest.raises(RuntimeError):
             disabled.path_for(_KERNEL_URL)
 
@@ -120,6 +121,16 @@ class TestKernelCacheStorage:
         os.utime(path, (old, old))
         assert cache.get(_KERNEL_URL, ttl_s=50) is None  # stale
         assert cache.get(_KERNEL_URL, ttl_s=200) == path  # fresh
+
+    def test_is_cached_tracks_freshness(self, cache: KernelCache) -> None:
+        assert cache.is_cached(_KERNEL_URL, ttl_s=200) is False  # miss
+        path = cache.path_for(_KERNEL_URL)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"DAF/SPK")
+        assert cache.is_cached(_KERNEL_URL, ttl_s=200) is True  # fresh hit
+        old = time.time() - 100
+        os.utime(path, (old, old))
+        assert cache.is_cached(_KERNEL_URL, ttl_s=50) is False  # stale → miss
 
 
 # ---------------------------------------------------------------------------
