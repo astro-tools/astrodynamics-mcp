@@ -59,6 +59,7 @@ nav:
   - Data sources: data-sources.md
   - Credentials: credentials.md
   - GMAT integration: gmat-integration.md
+  - SPICE integration: spice-integration.md
   - Eval suite: eval-suite.md
   - Supported clients: supported-clients.md
   - FAQ: faq.md
