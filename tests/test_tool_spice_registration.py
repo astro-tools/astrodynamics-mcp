@@ -34,11 +34,11 @@ _EXPECTED_TOOL_NAMES = frozenset(
 
 # Slots still landing in follow-up work. Tools with real bodies are excluded from
 # the placeholder-body parametrize so this file stays accurate as each slot
-# graduates — the kernel-management trio (load / list / unload) now has real
-# bodies and is covered by tests/test_tool_spice_kernels.py instead.
+# graduates — the kernel-management trio (load / list / unload) and spice_state
+# now have real bodies, covered by tests/test_tool_spice_kernels.py and
+# tests/test_tool_spice_state.py respectively.
 _PLACEHOLDER_TOOL_NAMES = frozenset(
     {
-        "spice_state",
         "spice_frame_transform",
         "spice_body_parameters",
         "spice_time_convert",

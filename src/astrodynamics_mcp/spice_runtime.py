@@ -45,6 +45,24 @@ _T = TypeVar("_T")
 SPICE_KERNEL_CATEGORIES: tuple[str, ...] = ("SPK", "CK", "PCK", "EK", "DSK", "META", "TEXT")
 _ALL_CATEGORIES = "ALL"
 
+# The aberration-correction keywords CSPICE ``spkezr`` accepts. ``NONE`` is the
+# geometric (true relative) state; the remainder apply light-time (``LT``),
+# light-time + stellar aberration (``LT+S``), their converged-Newtonian
+# (``CN``) variants, and the transmission-side (``X``-prefixed) forms. CSPICE is
+# case-insensitive here; the tool surface upper-cases and validates against this
+# set so a malformed correction never reaches CSPICE.
+SPICE_ABERRATION_CORRECTIONS: tuple[str, ...] = (
+    "NONE",
+    "LT",
+    "LT+S",
+    "CN",
+    "CN+S",
+    "XLT",
+    "XLT+S",
+    "XCN",
+    "XCN+S",
+)
+
 
 @dataclass(frozen=True)
 class KernelRow:
@@ -60,6 +78,22 @@ class KernelRow:
     type: str
     source: str
     handle: int
+
+
+@dataclass(frozen=True)
+class SpiceState:
+    """A target's state relative to an observer, as ``spkezr`` reports it.
+
+    ``position`` is the Cartesian position in km and ``velocity`` the Cartesian
+    velocity in km/s, both in the requested reference frame. ``light_time`` is
+    the one-way light time in seconds CSPICE returned for the query; it is the
+    geometric light time when the aberration correction was ``NONE`` and the
+    corrected value otherwise. The tool layer decides whether to surface it.
+    """
+
+    position: tuple[float, float, float]
+    velocity: tuple[float, float, float]
+    light_time: float
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +252,75 @@ def unload_kernel(name: str) -> int:
             data={"name": name},
         ) from exc
     return int(sp.ktotal(_ALL_CATEGORIES))
+
+
+def query_state(target: str, observer: str, utc_epoch: str, frame: str, abcorr: str) -> SpiceState:
+    """Return *target*'s state relative to *observer* at *utc_epoch*.
+
+    Resolves the UTC epoch to ephemeris time with ``str2et`` (which needs a
+    furnished leap-second kernel), then reads the state with ``spkezr`` (which
+    needs the relevant SPK). Both CSPICE failures — a missing kernel, an
+    unrecognised body name, an epoch outside the SPK's coverage — surface as a
+    typed :class:`~astrodynamics_mcp.errors.UpstreamError` with a stable code
+    rather than a silent empty result, so the consumer never mistakes a
+    not-loaded pool for a degenerate state. Runs on the worker thread.
+
+    *utc_epoch* must already be a CSPICE-parseable UTC string (the tool layer
+    normalises the ISO 8601 input — stripping the ``Z`` / offset designator —
+    before handing it here). *abcorr* must be one of
+    :data:`SPICE_ABERRATION_CORRECTIONS`; the tool layer validates it first.
+    """
+    sp = _spiceypy()
+    try:
+        et = sp.str2et(utc_epoch)
+    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+        raise UpstreamError(
+            f"CSPICE could not resolve the epoch {utc_epoch!r} to ephemeris time: {exc}. "
+            "A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
+            code="upstream.spice_state_failed",
+            original_exception=exc,
+            data={"target": target, "observer": observer, "epoch": utc_epoch},
+        ) from exc
+    try:
+        state, light_time = sp.spkezr(target, et, frame, abcorr, observer)
+    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+        raise UpstreamError(
+            f"CSPICE could not compute the state of {target!r} relative to {observer!r} "
+            f"at {utc_epoch!r} in frame {frame!r}: {exc}. Confirm the relevant SPK is "
+            "furnished (spice_load_kernel) and the body names / NAIF IDs are valid.",
+            code="upstream.spice_state_failed",
+            original_exception=exc,
+            data={
+                "target": target,
+                "observer": observer,
+                "epoch": utc_epoch,
+                "frame": frame,
+                "aberration": abcorr,
+            },
+        ) from exc
+    return SpiceState(
+        position=(float(state[0]), float(state[1]), float(state[2])),
+        velocity=(float(state[3]), float(state[4]), float(state[5])),
+        light_time=float(light_time),
+    )
+
+
+def normalize_aberration(abcorr: str) -> str:
+    """Validate and upper-case an aberration-correction keyword for ``spkezr``.
+
+    CSPICE accepts the corrections case-insensitively; we upper-case so the
+    echoed value is canonical and reject anything outside
+    :data:`SPICE_ABERRATION_CORRECTIONS` as a typed input error, so a malformed
+    correction (``"light-time"``, ``"lt s"``) never reaches CSPICE.
+    """
+    upper = abcorr.upper()
+    if upper not in SPICE_ABERRATION_CORRECTIONS:
+        raise InvalidInputError(
+            f"unknown aberration correction {abcorr!r}; valid corrections are "
+            f"{list(SPICE_ABERRATION_CORRECTIONS)}",
+            code="invalid_input.spice_unknown_aberration",
+        )
+    return upper
 
 
 def normalize_kind_filter(kinds: list[str] | None) -> str | None:

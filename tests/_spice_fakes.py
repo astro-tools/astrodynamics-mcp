@@ -1,4 +1,4 @@
-"""In-memory ``spiceypy`` stand-in for the SPICE kernel-management tests.
+"""In-memory ``spiceypy`` stand-in for the SPICE tests.
 
 The test environment does not install ``spiceypy`` (it ships only with the
 ``[spice]`` extra), so the tool bodies and the :mod:`astrodynamics_mcp.spice_runtime`
@@ -47,11 +47,14 @@ def _infer_type(path: str) -> str:
 class FakeSpice:
     """A behaviour-compatible subset of the ``spiceypy`` module surface.
 
-    Implements only what the SPICE kernel-management surface calls: ``furnsh`` /
-    ``unload`` / ``ktotal`` / ``kdata`` plus the three error-handling setters
-    (``erract`` / ``errdev`` / ``errprt``). Tests pin behaviour with
-    :meth:`plan_furnish` (e.g. a meta-kernel fanning out to several kernels) and
-    :meth:`fail_furnsh` (a corrupt kernel).
+    Implements only what the SPICE surface calls: ``furnsh`` / ``unload`` /
+    ``ktotal`` / ``kdata`` for kernel management, ``str2et`` / ``spkezr`` for
+    state queries, plus the three error-handling setters (``erract`` /
+    ``errdev`` / ``errprt``). Tests pin behaviour with :meth:`plan_furnish`
+    (e.g. a meta-kernel fanning out to several kernels), :meth:`fail_furnsh` (a
+    corrupt kernel), and :meth:`plan_state` (a pinned spkezr result). To mirror
+    CSPICE's kernel dependence, ``str2et`` raises unless a leap-second (TEXT)
+    kernel is in the pool and ``spkezr`` raises unless an SPK is.
     """
 
     SpiceyError = FakeSpiceyError
@@ -60,6 +63,7 @@ class FakeSpice:
         self._pool: list[dict[str, Any]] = []
         self._furnish_plan: dict[str, list[dict[str, Any]]] = {}
         self._furnsh_error: dict[str, BaseException] = {}
+        self._state_plan: dict[tuple[str, str], tuple[list[float], float]] = {}
         self._next_handle = 1
         self.calls: dict[str, list[Any]] = {
             "erract": [],
@@ -67,6 +71,8 @@ class FakeSpice:
             "errprt": [],
             "furnsh": [],
             "unload": [],
+            "str2et": [],
+            "spkezr": [],
         }
 
     # -- test configuration --------------------------------------------------
@@ -78,6 +84,15 @@ class FakeSpice:
     def fail_furnsh(self, path: str, exc: BaseException | None = None) -> None:
         """Make ``furnsh(path)`` raise — a corrupt / unreadable kernel."""
         self._furnsh_error[path] = exc or FakeSpiceyError(f"could not load kernel {path!r}")
+
+    def plan_state(self, target: str, observer: str, state: list[float], light_time: float) -> None:
+        """Pin the ``(state, light_time)`` a ``spkezr(target, …, observer)`` returns.
+
+        ``state`` is the six-element [x, y, z, vx, vy, vz] vector in km / km/s.
+        Keyed case-insensitively on (target, observer) so a test can mimic a real
+        reference state without modelling CSPICE's ephemeris math.
+        """
+        self._state_plan[(target.upper(), observer.upper())] = (list(state), float(light_time))
 
     # -- error-handling setters (recorded, no behaviour) ---------------------
 
@@ -140,3 +155,42 @@ class FakeSpice:
             return ("", "", "", 0, False)
         entry = rows[which]
         return (entry["name"], entry["type"], entry["source"], int(entry["handle"]), True)
+
+    # -- state queries -------------------------------------------------------
+
+    def _has_type(self, ktype: str) -> bool:
+        return any(entry["type"] == ktype for entry in self._pool)
+
+    def str2et(self, time: str) -> float:
+        """Resolve a UTC string to ephemeris time; needs a leap-second kernel.
+
+        CSPICE ``str2et`` reads the loaded LSK to apply leap seconds, so without
+        one furnished it raises ``SPICE(NOLEAPSECONDS)``. The returned value is a
+        deterministic stand-in (the call is recorded so a test can assert the
+        offset-stripped UTC string the tool passed).
+        """
+        self.calls["str2et"].append(time)
+        if not self._has_type("TEXT"):
+            raise FakeSpiceyError("SPICE(NOLEAPSECONDS): no leapseconds kernel has been loaded")
+        return 0.0
+
+    def spkezr(
+        self, targ: str, et: float, ref: str, abcorr: str, obs: str
+    ) -> tuple[list[float], float]:
+        """Return the pinned state of *targ* relative to *obs*; needs an SPK.
+
+        Without an SPK furnished CSPICE raises ``SPICE(SPKINSUFFDATA)``; we mimic
+        that. With one loaded, a state pinned via :meth:`plan_state` is returned,
+        else a deterministic default so unplanned calls still round-trip.
+        """
+        self.calls["spkezr"].append((targ, et, ref, abcorr, obs))
+        if not self._has_type("SPK"):
+            raise FakeSpiceyError(
+                "SPICE(SPKINSUFFDATA): insufficient ephemeris data has been loaded "
+                f"to compute the state of {targ!r} relative to {obs!r}"
+            )
+        planned = self._state_plan.get((targ.upper(), obs.upper()))
+        if planned is not None:
+            state, light_time = planned
+            return (list(state), light_time)
+        return ([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 1.234)

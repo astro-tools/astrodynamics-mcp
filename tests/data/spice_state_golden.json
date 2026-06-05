@@ -1,0 +1,20 @@
+{
+  "target": "MOON",
+  "observer": "EARTH",
+  "frame": "J2000",
+  "aberration": "NONE",
+  "states": [
+    {
+      "epoch": "2026-01-01T00:00:00Z",
+      "position": {
+        "value": [-291800.0, 214600.0, 118300.0],
+        "unit": "km"
+      },
+      "velocity": {
+        "value": [-0.6062, -0.6779, -0.1067],
+        "unit": "km/s"
+      },
+      "light_time": null
+    }
+  ]
+}

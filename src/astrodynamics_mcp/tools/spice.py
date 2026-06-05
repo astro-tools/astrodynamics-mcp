@@ -5,11 +5,12 @@ The SPICE surface ships behind the optional ``[spice]`` extra. When
 ``spice_*`` tool slots register; on a bare install they are absent and the rest
 of the tool surface is unaffected — the same gate the ``[gmat]`` tools use.
 
-Three slots are implemented — the kernel-management trio
+Four slots are implemented — the kernel-management trio
 (``spice_load_kernel`` / ``spice_list_kernels`` / ``spice_unload_kernel``) that
-furnishes, enumerates, and unloads kernels in the process-global pool. The
-other four are ``NotImplementedError`` placeholders; each per-tool follow-up
-replaces one slot the way these three and the GMAT slots graduated.
+furnishes, enumerates, and unloads kernels in the process-global pool, plus
+``spice_state`` (SPK state / ephemeris queries). The other three are
+``NotImplementedError`` placeholders; each per-tool follow-up replaces one slot
+the way these and the GMAT slots graduated.
 
 Per the locked SPICE integration contract (``docs/spice-integration.md``) the
 slots register identically on stdio and Streamable HTTP — there is no
@@ -23,6 +24,7 @@ and URL loads route through the NAIF allowlist + XDG cache
 from __future__ import annotations
 
 import os
+from datetime import timezone
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
@@ -31,6 +33,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from astrodynamics_mcp.errors import InvalidInputError
+from astrodynamics_mcp.schemas.base import Epoch, _epoch_to_instant
 from astrodynamics_mcp.server import register_tool
 from astrodynamics_mcp.spice_kernels import (
     KernelCache,
@@ -38,13 +41,17 @@ from astrodynamics_mcp.spice_kernels import (
     validate_kernel_url,
 )
 from astrodynamics_mcp.spice_runtime import (
+    SPICE_ABERRATION_CORRECTIONS,
     SPICE_KERNEL_CATEGORIES,
     furnish_and_describe,
     list_pool,
+    normalize_aberration,
     normalize_kind_filter,
+    query_state,
     run_on_spice_thread,
     unload_kernel,
 )
+from astrodynamics_mcp.units import Quantity, QuantityVector
 
 try:
     import spiceypy  # noqa: F401  # availability probe; the symbol itself isn't used here
@@ -169,6 +176,72 @@ class SpiceUnloadKernelResponse(BaseModel):
     )
 
 
+class SpiceStateAtEpoch(BaseModel):
+    """A target's state relative to an observer at one epoch."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    epoch: str = Field(
+        ...,
+        description=(
+            "The UTC ISO 8601 epoch this state is for, echoed verbatim from the "
+            "requested `epochs` so each entry is self-describing regardless of order."
+        ),
+    )
+    position: QuantityVector = Field(
+        ...,
+        description=(
+            "Cartesian position [x, y, z] of the target relative to the observer, "
+            "in the requested frame (km)."
+        ),
+    )
+    velocity: QuantityVector = Field(
+        ...,
+        description=(
+            "Cartesian velocity [vx, vy, vz] of the target relative to the observer, "
+            "in the requested frame (km/s)."
+        ),
+    )
+    light_time: Quantity | None = Field(
+        None,
+        description=(
+            "One-way light time between target and observer (s). Present only when "
+            "the aberration correction is not 'NONE'; a geometric ('NONE') query "
+            "returns null here because no light-time correction was requested."
+        ),
+    )
+
+
+class SpiceStateResponse(BaseModel):
+    """States of a target relative to an observer at one or more epochs."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    target: str = Field(
+        ...,
+        description="The target body, echoed from the request (name or NAIF ID as supplied).",
+    )
+    observer: str = Field(
+        ...,
+        description="The observer body, echoed from the request (name or NAIF ID as supplied).",
+    )
+    frame: str = Field(
+        ...,
+        description="The reference frame the states are expressed in, echoed from the request.",
+    )
+    aberration: str = Field(
+        ...,
+        description=(
+            "The aberration correction applied, upper-cased and echoed from the request "
+            "(e.g. 'NONE', 'LT', 'LT+S')."
+        ),
+    )
+    states: list[SpiceStateAtEpoch] = Field(
+        ...,
+        description=("One state per requested epoch, in the same order as the `epochs` input."),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tool-body implementations (module-level for direct testability; the
 # registered slots below are thin wrappers, mirroring the GMAT layout).
@@ -245,6 +318,61 @@ async def _do_unload_kernel(name: str) -> SpiceUnloadKernelResponse:
     return SpiceUnloadKernelResponse(unloaded=name, remaining_count=remaining)
 
 
+def _to_cspice_utc(epoch: str) -> str:
+    """Render a validated ISO 8601 epoch as a CSPICE-parseable UTC string.
+
+    CSPICE ``str2et`` reads an ISO calendar string as UTC but does not parse a
+    trailing ``Z`` or a ``±HH:MM`` offset designator. The epoch has already
+    passed the :data:`~astrodynamics_mcp.schemas.base.Epoch` shape check, so we
+    convert it to a timezone-aware instant (honouring whatever offset it
+    carried), shift to UTC, and emit an offset-free ISO string CSPICE accepts.
+    """
+    instant = _epoch_to_instant(epoch).astimezone(timezone.utc)
+    return instant.strftime("%Y-%m-%dT%H:%M:%S.%f")
+
+
+async def _do_state(
+    target: str,
+    observer: str,
+    epochs: list[str],
+    frame: str,
+    aberration: str,
+) -> SpiceStateResponse:
+    """Query the state of *target* relative to *observer* at each of *epochs*.
+
+    Validates the aberration correction up front (a malformed one never reaches
+    CSPICE), then runs one ``str2et`` + ``spkezr`` per epoch on the worker
+    thread. Light time is surfaced only for a non-``NONE`` correction, per the
+    tool contract; a geometric query reports null light time.
+    """
+    abcorr = normalize_aberration(aberration)
+    report_light_time = abcorr != "NONE"
+
+    states: list[SpiceStateAtEpoch] = []
+    for epoch in epochs:
+        result = await run_on_spice_thread(
+            query_state, target, observer, _to_cspice_utc(epoch), frame, abcorr
+        )
+        states.append(
+            SpiceStateAtEpoch(
+                epoch=epoch,
+                position=QuantityVector(value=list(result.position), unit="km"),
+                velocity=QuantityVector(value=list(result.velocity), unit="km/s"),
+                light_time=(
+                    Quantity(value=result.light_time, unit="s") if report_light_time else None
+                ),
+            )
+        )
+
+    return SpiceStateResponse(
+        target=target,
+        observer=observer,
+        frame=frame,
+        aberration=abcorr,
+        states=states,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Placeholder slots — reserved output shape; bodies raise loudly
 # ---------------------------------------------------------------------------
@@ -305,10 +433,20 @@ _UNLOAD_KERNEL_DESCRIPTION = (
 )
 
 _STATE_DESCRIPTION = (
-    "Query the state — position and velocity — of one body relative to another "
-    "at an epoch from furnished SPK kernels, e.g. Mars relative to the Solar "
-    "System barycentre. Reserved slot — not yet implemented; lands in follow-up "
-    "work."
+    "Query the state — position (km) and velocity (km/s) — of a target body relative to "
+    "an observer body at one or more epochs, read from furnished SPK kernels, e.g. "
+    "spice_state(target='MOON', observer='EARTH', epochs=['2026-01-01T00:00:00Z']) returns "
+    "the Moon's geocentric state in J2000 (CSPICE's name for the Earth-mean-equator/equinox-"
+    "of-J2000 inertial frame, aligned with ICRF to milliarcsecond level). Requires the "
+    "relevant SPK *and* a leap-second kernel (LSK) furnished first via spice_load_kernel — a "
+    "missing kernel returns a typed error, never a silent empty state. Each epoch must be UTC "
+    "ISO 8601 with a time component (e.g. '2026-01-01T00:00:00Z'), not a bare date. `target` "
+    "and `observer` accept body names ('MOON', 'MARS') or NAIF integer IDs as strings ('301', "
+    "'499'), not arbitrary labels. `aberration` selects the correction (NONE for the geometric "
+    "state, or LT / LT+S / CN / CN+S and their X-prefixed forms for light-time and stellar-"
+    "aberration corrections); light time is returned only when a correction other than NONE is "
+    "requested. Use the kernel-free frame_transform tool for Earth-centred frame changes; this "
+    "tool is for SPK-backed ephemeris states."
 )
 
 _FRAME_TRANSFORM_DESCRIPTION = (
@@ -417,8 +555,61 @@ def _register_spice_tools() -> None:
         description=_STATE_DESCRIPTION,
         annotations=ToolAnnotations(title="SPICE State", readOnlyHint=True, openWorldHint=False),
     )
-    async def spice_state() -> SpicePlaceholderResult:
-        raise NotImplementedError("spice_state lands in follow-up work")
+    async def spice_state(
+        target: Annotated[
+            str,
+            Field(
+                description=(
+                    "The body whose state to query — a body name ('MOON', 'MARS') or a "
+                    "NAIF integer ID as a string ('301', '499'). Resolved by CSPICE against "
+                    "the furnished kernels; an unrecognised name returns a typed error."
+                ),
+            ),
+        ],
+        observer: Annotated[
+            str,
+            Field(
+                description=(
+                    "The body the state is measured relative to — a body name ('EARTH', "
+                    "'SOLAR SYSTEM BARYCENTER') or a NAIF integer ID as a string ('399', "
+                    "'0'). Same name/ID resolution as `target`."
+                ),
+            ),
+        ],
+        epochs: Annotated[
+            list[Epoch],
+            Field(
+                description=(
+                    "One or more UTC ISO 8601 epochs with a mandatory time component "
+                    "(e.g. ['2026-01-01T00:00:00Z']); a bare date is rejected. Each is "
+                    "queried independently and returned in the same order."
+                ),
+            ),
+        ],
+        frame: Annotated[
+            str,
+            Field(
+                description=(
+                    "Reference frame the state is expressed in. Defaults to 'J2000' (CSPICE's "
+                    "Earth-mean-equator/equinox-of-J2000 inertial frame, aligned with ICRF). "
+                    "Any frame the furnished kernels define is accepted (e.g. 'ECLIPJ2000', "
+                    "'IAU_MARS')."
+                ),
+            ),
+        ] = "J2000",
+        aberration: Annotated[
+            str,
+            Field(
+                description=(
+                    "Aberration correction: 'NONE' for the geometric state, or 'LT' / 'LT+S' "
+                    "/ 'CN' / 'CN+S' (and the X-prefixed transmission forms) for light-time "
+                    "and stellar-aberration corrections. Light time is returned only for a "
+                    f"non-NONE correction. Valid values: {list(SPICE_ABERRATION_CORRECTIONS)}."
+                ),
+            ),
+        ] = "NONE",
+    ) -> SpiceStateResponse:
+        return await _do_state(target, observer, epochs, frame, aberration)
 
     @register_tool(
         name="spice_frame_transform",
