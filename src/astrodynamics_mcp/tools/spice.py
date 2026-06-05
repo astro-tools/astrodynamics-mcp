@@ -22,6 +22,7 @@ and URL loads route through the NAIF allowlist + XDG cache
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
@@ -180,11 +181,17 @@ def _looks_like_url(source: str) -> bool:
 
 
 def _resolve_local_kernel(source: str) -> str:
-    """Confirm *source* is a readable local kernel file; return it unchanged.
+    """Confirm *source* is a readable local kernel file; return its absolute path.
 
-    CSPICE furnishes the path as given, so an existence/readability check here
-    turns a missing or non-file path into a typed input error instead of a
-    CSPICE abort.
+    CSPICE keys the kernel pool on the literal path string furnished and does not
+    canonicalise it, so a relative path would make the kernel's name — and thus
+    the unload key — depend on the process working directory, and two distinct
+    files furnished under the same relative name would collide on one pool entry.
+    Absolutising here makes the name working-directory-independent; the
+    existence check turns a missing or non-file path into a typed input error
+    rather than a CSPICE abort. ``abspath``, deliberately not ``realpath``: it
+    must not resolve symlinks, or the name would diverge from the caller's path
+    on platforms whose temp dirs live under a symlinked root.
     """
     if not Path(source).is_file():
         raise InvalidInputError(
@@ -193,7 +200,7 @@ def _resolve_local_kernel(source: str) -> str:
             code="invalid_input.spice_kernel_not_found",
             data={"source": source},
         )
-    return source
+    return os.path.abspath(source)
 
 
 async def _do_load_kernel(

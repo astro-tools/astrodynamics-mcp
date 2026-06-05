@@ -13,6 +13,7 @@ round-trip per the v0.1 pattern.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -107,6 +108,40 @@ class TestLoadLocalKernel:
         with pytest.raises(UpstreamError) as excinfo:
             await _do_load_kernel(source)
         assert excinfo.value.code == "upstream.spice_furnish_failed"
+
+    async def test_relative_path_furnished_as_absolute(
+        self, fake_spice: FakeSpice, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # CSPICE keys the pool on the literal furnished string, so a relative
+        # path is absolutised first to keep the name working-directory-independent.
+        _local_kernel(tmp_path, "de440.bsp")
+        monkeypatch.chdir(tmp_path)
+        response = await _do_load_kernel("de440.bsp")
+        name = response.loaded[0].name
+        assert os.path.isabs(name)
+        assert name != "de440.bsp"
+        assert name.endswith("de440.bsp")
+
+    async def test_same_relative_name_in_two_dirs_does_not_collide(
+        self, fake_spice: FakeSpice, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The clash case: two distinct files share the basename `de440.bsp`.
+        # Absolutising keeps them as two distinct pool entries, not one.
+        d1 = tmp_path / "v1"
+        d2 = tmp_path / "v2"
+        d1.mkdir()
+        d2.mkdir()
+        (d1 / "de440.bsp").write_bytes(b"DAF/SPK v1")
+        (d2 / "de440.bsp").write_bytes(b"DAF/SPK v2")
+
+        monkeypatch.chdir(d1)
+        first = await _do_load_kernel("de440.bsp")
+        monkeypatch.chdir(d2)
+        second = await _do_load_kernel("de440.bsp")
+
+        assert first.loaded[0].name != second.loaded[0].name
+        listed = await _do_list_kernels(None)
+        assert len(listed.kernels) == 2
 
     async def test_meta_kernel_fans_out(self, fake_spice: FakeSpice, tmp_path: Path) -> None:
         meta = tmp_path / "mission.tm"
