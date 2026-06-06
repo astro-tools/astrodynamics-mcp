@@ -190,8 +190,11 @@ class TestStateRotation:
         assert response.velocity is not None
         assert response.velocity.value == _ROTATED_VELOCITY
         assert response.velocity.unit == "km/s"
-        # The 6-vector rotation goes through the state transform.
+        # The 6-vector rotation goes through the state transform — and only that:
+        # the 3x3 orientation is read from sxform's upper-left block, so no
+        # separate pxform call is made.
         assert fake_spice.calls["sxform"]
+        assert fake_spice.calls["pxform"] == []
         # The 3x3 orientation is still reported alongside the rotated state.
         assert [row.value for row in response.rotation] == _ROTATION_Z90
 

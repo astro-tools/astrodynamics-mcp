@@ -423,12 +423,14 @@ def query_frame_transform(
     """Return the *from_frame* → *to_frame* rotation at *utc_epoch*.
 
     Resolves the UTC epoch to ephemeris time with ``str2et`` (which needs a
-    furnished leap-second kernel), reads the 3x3 orientation with ``pxform``
-    (which needs the FK / PCK defining any frame CSPICE does not build in), and
-    — when a velocity is supplied — the 6x6 state transform with ``sxform`` so
-    the rotated velocity carries the target frame's rotation rate. Every CSPICE
-    failure — a missing LSK / FK / PCK, an unrecognised frame name, an epoch the
-    frame data does not cover — surfaces as a typed
+    furnished leap-second kernel), then reads the orientation in a single CSPICE
+    rotation call: ``pxform`` (the 3x3) for a rotation-only or position-only
+    request, or — when a velocity is supplied — the 6x6 state transform
+    ``sxform``, whose upper-left block is that same 3x3 orientation, so the
+    rotated velocity carries the target frame's rotation rate without a second
+    ``pxform`` call. Both need the FK / PCK defining any frame CSPICE does not
+    build in. Every CSPICE failure — a missing LSK / FK / PCK, an unrecognised
+    frame name, an epoch the frame data does not cover — surfaces as a typed
     :class:`~astrodynamics_mcp.errors.UpstreamError` with a stable code rather
     than a silent result, so the consumer never mistakes an unfurnished pool for
     a degenerate rotation. Runs on the worker thread.
@@ -446,28 +448,13 @@ def query_frame_transform(
         data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
     ):
         et = sp.str2et(utc_epoch)
-    with _cspice_call(
-        code="upstream.spice_frame_transform_failed",
-        action=(
-            f"CSPICE could not rotate from frame {from_frame!r} to {to_frame!r} at {utc_epoch!r}"
-        ),
-        hint=(
-            "Confirm the FK / PCK defining the frame is furnished (spice_load_kernel) "
-            "and both frame names are recognised."
-        ),
-        data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
-    ):
-        matrix = sp.pxform(from_frame, to_frame, et)
-    rotation = (
-        (float(matrix[0][0]), float(matrix[0][1]), float(matrix[0][2])),
-        (float(matrix[1][0]), float(matrix[1][1]), float(matrix[1][2])),
-        (float(matrix[2][0]), float(matrix[2][1]), float(matrix[2][2])),
-    )
-
     rotated_position: tuple[float, float, float] | None = None
     rotated_velocity: tuple[float, float, float] | None = None
 
     if position is not None and velocity is not None:
+        # The state path: sxform yields both the rotated 6-vector and the 3x3
+        # orientation (its upper-left block), so read the matrix from here rather
+        # than making a separate pxform call.
         with _cspice_call(
             code="upstream.spice_frame_transform_failed",
             action=(
@@ -481,22 +468,47 @@ def query_frame_transform(
             data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
         ):
             xform = sp.sxform(from_frame, to_frame, et)
+        rotation = (
+            (float(xform[0][0]), float(xform[0][1]), float(xform[0][2])),
+            (float(xform[1][0]), float(xform[1][1]), float(xform[1][2])),
+            (float(xform[2][0]), float(xform[2][1]), float(xform[2][2])),
+        )
         state: tuple[float, ...] = (*position, *velocity)
         out = [sum((float(xform[i][j]) * state[j] for j in range(6)), 0.0) for i in range(6)]
         rotated_position = (out[0], out[1], out[2])
         rotated_velocity = (out[3], out[4], out[5])
-    elif position is not None:
-        rotated_position = (
-            rotation[0][0] * position[0]
-            + rotation[0][1] * position[1]
-            + rotation[0][2] * position[2],
-            rotation[1][0] * position[0]
-            + rotation[1][1] * position[1]
-            + rotation[1][2] * position[2],
-            rotation[2][0] * position[0]
-            + rotation[2][1] * position[1]
-            + rotation[2][2] * position[2],
+    else:
+        # Rotation-only or position-only: pxform yields the 3x3 orientation.
+        with _cspice_call(
+            code="upstream.spice_frame_transform_failed",
+            action=(
+                f"CSPICE could not rotate from frame {from_frame!r} to {to_frame!r} "
+                f"at {utc_epoch!r}"
+            ),
+            hint=(
+                "Confirm the FK / PCK defining the frame is furnished (spice_load_kernel) "
+                "and both frame names are recognised."
+            ),
+            data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
+        ):
+            matrix = sp.pxform(from_frame, to_frame, et)
+        rotation = (
+            (float(matrix[0][0]), float(matrix[0][1]), float(matrix[0][2])),
+            (float(matrix[1][0]), float(matrix[1][1]), float(matrix[1][2])),
+            (float(matrix[2][0]), float(matrix[2][1]), float(matrix[2][2])),
         )
+        if position is not None:
+            rotated_position = (
+                rotation[0][0] * position[0]
+                + rotation[0][1] * position[1]
+                + rotation[0][2] * position[2],
+                rotation[1][0] * position[0]
+                + rotation[1][1] * position[1]
+                + rotation[1][2] * position[2],
+                rotation[2][0] * position[0]
+                + rotation[2][1] * position[1]
+                + rotation[2][2] * position[2],
+            )
 
     return FrameRotation(
         rotation=rotation,
