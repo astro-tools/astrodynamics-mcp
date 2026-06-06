@@ -35,8 +35,14 @@ class TestRealServerCapabilityMetadata:
         tools = await real_mcp.list_tools()
         for t in tools:
             assert t.annotations is not None, f"{t.name}: missing ToolAnnotations"
-            assert t.annotations.readOnlyHint is True, (
-                f"{t.name}: readOnlyHint must be True (none of the v0.1 tools mutate state)"
+            # readOnlyHint must be explicitly set so a client sees the tool's
+            # read-only stance — but not necessarily True: the pool-mutating
+            # spice_load_kernel / spice_unload_kernel slots are correctly False.
+            # The specific value per tool is pinned by the per-tool registration
+            # tests; this lint only enforces that the hint is present.
+            assert t.annotations.readOnlyHint is not None, (
+                f"{t.name}: readOnlyHint must be set (True or False) so the tool's "
+                "read-only stance is on the wire"
             )
 
     async def test_every_tool_has_output_schema(self) -> None:
