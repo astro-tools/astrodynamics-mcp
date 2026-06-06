@@ -38,6 +38,11 @@ from astrodynamics_mcp.tools.spice import (
     SpiceTimeConvertResponse,
 )
 from astrodynamics_mcp.tools.tle import TleLookupResponse
+from astrodynamics_mcp.tools.viz import (
+    GroundTrackResponse,
+    PorkchopPlotResponse,
+    TrajectoryResponse,
+)
 
 # `time_convert`'s response carries `value: str | float` by design: the value
 # is either an ISO 8601 string or a float in a time-format whose "unit" is
@@ -89,10 +94,19 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
 # non-physical cardinality (a pixel count, a CZML packet count) that has no
 # {value, unit} envelope, so each entry pairs the model with the exact set of
 # field paths exempt from the bare-numeric rule. Every physical quantity in the
-# same model is still policed — the exemption is per-path, never blanket. Empty
-# until the visualisation tools land their real response models; the self-test
-# fixtures below exercise the relaxation mechanism in the meantime.
-ATTACHMENT_OUTPUT_SCHEMAS: list[tuple[type[BaseModel], frozenset[str]]] = []
+# same model is still policed — the exemption is per-path, never blanket. The
+# static-plot tools' summaries carry the PNG pixel dimensions (and, for
+# porkchop, grid cardinalities) outside the {value, unit} envelope; every
+# physical field in the same model is still policed.
+_IMAGE_EXEMPT: frozenset[str] = frozenset({"image.width_px", "image.height_px"})
+ATTACHMENT_OUTPUT_SCHEMAS: list[tuple[type[BaseModel], frozenset[str]]] = [
+    (GroundTrackResponse, _IMAGE_EXEMPT),
+    (TrajectoryResponse, _IMAGE_EXEMPT),
+    (
+        PorkchopPlotResponse,
+        _IMAGE_EXEMPT | frozenset({"feasible_cells", "n_depart_samples", "n_arrive_samples"}),
+    ),
+]
 
 
 class _GoodSchema(BaseModel):
