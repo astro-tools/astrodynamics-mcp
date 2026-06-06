@@ -1,0 +1,21 @@
+prompt: |
+  Export this short orbit ephemeris as a CZML document for a Cesium 3D view.
+  States (TEME):
+    1. epoch 2024-01-01T00:00:00Z, r=[6778, 0, 0] km, v=[0, 7.5, 0] km/s
+    2. epoch 2024-01-01T00:30:00Z, r=[0, 6778, 0] km, v=[-7.5, 0, 0] km/s
+    3. epoch 2024-01-01T01:00:00Z, r=[-6778, 0, 0] km, v=[0, -7.5, 0] km/s
+tier: single_tool
+tools_required: [czml_trajectory]
+requires_viz: true
+permitted_traces:
+  - - tool: czml_trajectory
+      arg_constraints:
+        trajectory: {length: {min: 2}}
+expected_attachment: resource
+notes: |
+  Primary single-tool path for czml_trajectory. A short single-frame (TEME)
+  series is supplied inline with velocity. The golden is trace + attachment, but
+  here the attachment is a CZML EmbeddedResource (not a PNG) — Inspect collapses
+  an EmbeddedResource(text) to a trailing text block, so expected_attachment is
+  'resource'. No functional_answer: the structured summary is an ASCII text
+  block, not JSON.

@@ -1,0 +1,24 @@
+prompt: |
+  Propagate the ISS TLE below over 90 minutes from 2024-01-01T00:00:00Z,
+  sampling every 10 minutes in the Earth-fixed (ITRS) frame, then plot the
+  ground track of the resulting ephemeris. TLE lines:
+    line1='1 25544U 98067A   24001.50000000  .00010000  00000-0  18000-3 0  9990'
+    line2='2 25544  51.6400  90.0000 0001000  90.0000 270.0000 15.50000000000000'
+tier: sequential
+tools_required: [sgp4_propagate, plot_ground_track]
+requires_viz: true
+permitted_traces:
+  - - tool: sgp4_propagate
+      arg_constraints:
+        frame: {one_of: ["ITRS"]}
+        epochs: {length: {min: 2}}
+    - tool: plot_ground_track
+expected_attachment: image
+notes: |
+  Canonical sgp4_propagate -> plot_ground_track chain (the sequential viz
+  prompt). sgp4 propagates to the Earth-fixed ITRS frame the ground track wants;
+  its states feed plot_ground_track. The plot step's `states` come from the
+  prior tool's output, so they are not arg-constrained — the golden is the chain
+  (trace) plus the terminal PNG ImageContent (attachment). requires_viz skips
+  the whole prompt when the [viz] extra is absent. No functional_answer: the
+  final tool response is the plot's ASCII summary, not JSON.

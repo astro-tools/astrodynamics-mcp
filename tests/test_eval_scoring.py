@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 from eval.scoring import (
+    extract_attachment_kinds,
     extract_errored_call_ids,
     extract_final_tool_response,
     extract_trace,
@@ -27,6 +28,8 @@ from inspect_ai.model import (
     ChatMessageAssistant,
     ChatMessageTool,
     ChatMessageUser,
+    ContentImage,
+    ContentText,
     ModelOutput,
 )
 from inspect_ai.model._model import ModelName
@@ -358,3 +361,179 @@ class TestErroredCallGuard:
         score, meta = await _score(state)
         assert score.value == 1.0
         assert meta["trace_passed"] is True
+
+
+# A short fake PNG data URI — the scorer only checks the block *type*, not the
+# bytes, so a placeholder is enough to stand in for a rendered ImageContent.
+_FAKE_IMAGE_URI = "data:image/png;base64,iVBORw0KGgo="
+_FAKE_CZML = '[{"id": "document", "version": "1.0", "name": "trajectory"}]'
+
+
+def _viz_metadata(tool: str, expected_attachment: str) -> dict[str, Any]:
+    return {
+        "tier": "single_tool",
+        "tools_required": [tool],
+        "permitted_traces": [[{"tool": tool, "arg_constraints": {}}]],
+        "functional_answer": [],
+        "expected_attachment": expected_attachment,
+        "notes": None,
+    }
+
+
+def _build_viz_state(
+    *,
+    tool: str,
+    tool_content: Any,
+    metadata: dict[str, Any],
+) -> TaskState:
+    """Assemble a ``TaskState`` whose single viz tool message carries *tool_content*.
+
+    ``tool_content`` is whatever a viz tool's :class:`ChatMessageTool` would carry
+    — a ``list[Content]`` leading with the ASCII summary text block followed by an
+    attachment (an :class:`ContentImage` for a PNG, a second :class:`ContentText`
+    for a CZML embedded resource), mirroring Inspect AI's MCP bridge.
+    """
+    call = _tool_call(tool, {}, "v1")
+    sample = Sample(input="please visualise", metadata=metadata)
+    messages: list[Any] = [
+        ChatMessageUser(content="please visualise"),
+        ChatMessageAssistant(content="", tool_calls=[call]),
+        ChatMessageTool(content=tool_content, tool_call_id="v1"),
+    ]
+    return TaskState(
+        model=ModelName("test/model"),
+        sample_id=sample.id or 0,
+        epoch=0,
+        input="please visualise",
+        messages=messages,
+        output=ModelOutput.from_content(model="test/model", content=""),
+        metadata=metadata,
+    )
+
+
+class TestAttachmentExtraction:
+    """``extract_attachment_kinds`` reads the structural shape Inspect's bridge produces."""
+
+    def test_image_block_is_an_image_attachment(self) -> None:
+        msgs: list[Any] = [
+            ChatMessageTool(
+                content=[
+                    ContentText(text="Ground track summary. PNG attached."),
+                    ContentImage(image=_FAKE_IMAGE_URI),
+                ],
+                tool_call_id="v1",
+            )
+        ]
+        assert extract_attachment_kinds(msgs) == {"image"}
+
+    def test_trailing_text_block_is_a_resource_attachment(self) -> None:
+        msgs: list[Any] = [
+            ChatMessageTool(
+                content=[
+                    ContentText(text="CZML summary. document attached."),
+                    ContentText(text=_FAKE_CZML),
+                ],
+                tool_call_id="v1",
+            )
+        ]
+        assert extract_attachment_kinds(msgs) == {"resource"}
+
+    def test_single_text_block_has_no_attachment(self) -> None:
+        msgs: list[Any] = [
+            ChatMessageTool(content=[ContentText(text='{"states": []}')], tool_call_id="c1")
+        ]
+        assert extract_attachment_kinds(msgs) == set()
+
+    def test_string_content_has_no_attachment(self) -> None:
+        msgs: list[Any] = [ChatMessageTool(content='{"states": []}', tool_call_id="c1")]
+        assert extract_attachment_kinds(msgs) == set()
+
+
+@pytest.mark.asyncio
+class TestAttachmentScorer:
+    """The attachment check gates the viz prompts on attachment presence + type."""
+
+    async def test_image_attachment_present_passes(self) -> None:
+        metadata = _viz_metadata("plot_ground_track", "image")
+        state = _build_viz_state(
+            tool="plot_ground_track",
+            tool_content=[
+                ContentText(text="Ground track summary. PNG attached."),
+                ContentImage(image=_FAKE_IMAGE_URI),
+            ],
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 1.0
+        assert meta["attachment_passed"] is True
+
+    async def test_resource_attachment_present_passes(self) -> None:
+        metadata = _viz_metadata("czml_trajectory", "resource")
+        state = _build_viz_state(
+            tool="czml_trajectory",
+            tool_content=[
+                ContentText(text="CZML summary. document attached."),
+                ContentText(text=_FAKE_CZML),
+            ],
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 1.0
+        assert meta["attachment_passed"] is True
+
+    async def test_missing_attachment_fails(self) -> None:
+        """Trace matches but no attachment came back — the PNG never rendered."""
+        metadata = _viz_metadata("plot_ground_track", "image")
+        state = _build_viz_state(
+            tool="plot_ground_track",
+            tool_content=[ContentText(text="Ground track summary (no image).")],
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 0.0
+        assert meta["trace_passed"] is True
+        assert meta["attachment_passed"] is False
+        assert any("image" in r for r in meta["attachment_failure_reasons"])
+
+    async def test_wrong_attachment_type_fails(self) -> None:
+        """A CZML resource does not satisfy a golden expecting a PNG image."""
+        metadata = _viz_metadata("plot_ground_track", "image")
+        state = _build_viz_state(
+            tool="plot_ground_track",
+            tool_content=[
+                ContentText(text="Summary."),
+                ContentText(text=_FAKE_CZML),
+            ],
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 0.0
+        assert meta["attachment_passed"] is False
+
+    async def test_non_viz_prompt_attachment_vacuously_passes(self) -> None:
+        """A prompt with no expected_attachment never fails the attachment check."""
+        metadata = _good_prompt_metadata()
+        assert "expected_attachment" not in metadata  # the default (None) path
+        state = _build_state(
+            user_prompt="Fetch the ISS TLE.",
+            assistant_calls=[_tool_call("tle_lookup", {"query": "25544"})],
+            tool_responses=[("c1", _good_response())],
+            metadata=metadata,
+        )
+        score, meta = await _score(state)
+        assert score.value == 1.0
+        assert meta["attachment_passed"] is True
+
+    async def test_explanation_lists_attachment_check(self) -> None:
+        metadata = _viz_metadata("plot_trajectory", "image")
+        state = _build_viz_state(
+            tool="plot_trajectory",
+            tool_content=[
+                ContentText(text="Trajectory summary. PNG attached."),
+                ContentImage(image=_FAKE_IMAGE_URI),
+            ],
+            metadata=metadata,
+        )
+        score, _meta = await _score(state)
+        assert score.explanation is not None
+        assert "attachment_check: PASS" in score.explanation

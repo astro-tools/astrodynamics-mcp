@@ -17,7 +17,7 @@ checkout.
 | `server_lint` (in `pytest`) | Static description-discipline (length, examples, common-mistake warnings). |
 | **Eval suite** (this directory) | Does the LLM *actually* call the right tool with the right arguments under prompt variation, and does the response shape let the LLM read the answer back. |
 
-The hybrid scorer combines two checks per prompt:
+The hybrid scorer combines up to three checks per prompt:
 
 - **Permitted-trace check.** The model's tool-call sequence must match one of
   the prompt's `permitted_traces`. Catches tool-selection regressions
@@ -27,9 +27,16 @@ The hybrid scorer combines two checks per prompt:
 - **Functional-answer check.** A set of predicates over the final tool
   response's JSON. Catches the right-tool-wrong-call and
   wrong-tool-right-number-by-coincidence cases the trace check cannot.
+- **Attachment check.** Only for prompts that declare an `expected_attachment`
+  (the visualisation tools). Asserts a tool message carried an attachment of
+  the declared kind — `image` for a PNG `ImageContent` (the static-plot
+  tools) or `resource` for a CZML `EmbeddedResource` (`czml_trajectory`).
+  The viz tools' structured summary rides as an ASCII text block rather than
+  JSON, so the functional check does not apply to them; trace + attachment is
+  their golden. Vacuously passes for every non-viz prompt.
 
-Neither check alone catches what the other catches; both must pass for
-the prompt to score 1.
+Each check catches what the others cannot; every applicable check must pass
+for the prompt to score 1.
 
 ## Layout
 
@@ -39,7 +46,7 @@ eval/
 ├── _constraints.py       ← argument-constraint matcher (permitted_traces)
 ├── _functional.py        ← functional-answer predicates over response JSON
 ├── _prompts.py           ← pydantic models + YAML loader for prompts/
-├── scoring.py            ← Inspect AI Scorer combining the two checks
+├── scoring.py            ← Inspect AI Scorer combining trace + functional + attachment checks
 ├── tasks.py              ← Inspect AI Task wiring stdio server + react() agent
 └── prompts/
     └── *.yaml            ← one prompt per file (single-tool, sequential, and planning tiers)
@@ -50,8 +57,10 @@ The suite covers the core read-only tools plus the GMAT tools
 `gmat_read_run_artefact`), the SPICE tools (`spice_load_kernel`,
 `spice_list_kernels`, `spice_unload_kernel`, `spice_state`,
 `spice_frame_transform`, `spice_body_parameters`, `spice_time_convert`),
-the DISCOSweb `satellite_metadata` cross-reference, and the Space-Track
-passthrough.
+the DISCOSweb `satellite_metadata` cross-reference, the Space-Track
+passthrough, and the visualisation tools (`plot_ground_track`,
+`plot_trajectory`, `plot_porkchop`, `czml_trajectory`) behind the
+`requires_viz` skip-gate.
 
 ## Running locally
 
@@ -99,6 +108,7 @@ tools_required: [<tool names that must be available>]
 requires_credential: [<source>, ...]     # optional; skip-gate, see below
 requires_gmat: true | false               # optional; skip-gate, see below
 requires_spice: true | false              # optional; skip-gate, see below
+requires_viz: true | false                # optional; skip-gate, see below
 permitted_traces:
   - - tool: <tool_name>
       arg_constraints:
@@ -112,6 +122,7 @@ functional_answer:
   - path: "$.<jsonpath>"                  # JSON-path-lite over the final tool response
     <predicate>: <value>                  # see _functional.py for the vocabulary
   ...
+expected_attachment: image | resource     # optional; viz tools only — see below
 notes: "<optional human-only note: known model quirks, related prompts, etc.>"
 ```
 
@@ -119,7 +130,26 @@ A trace step matches a tool call only when the call did *not* error, so a
 tool that failed silently before a retry is skipped over in favour of the
 later successful call.
 
-### Skip discipline (`requires_credential` / `requires_gmat` / `requires_spice`)
+### Attachment goldens (`expected_attachment`)
+
+The visualisation tools return a structured summary *plus* an additive
+attachment. `expected_attachment` is the golden for that attachment:
+
+- `image` — a PNG `ImageContent` block (`plot_ground_track`,
+  `plot_trajectory`, `plot_porkchop`).
+- `resource` — a CZML `EmbeddedResource` (`czml_trajectory`).
+
+The scorer reads the structural shape Inspect AI's MCP bridge produces:
+the tool message leads with the ASCII summary text block, then carries the
+attachment, so an `ImageContent` surfaces as a `ContentImage` and an
+`EmbeddedResource(text)` as a *trailing* `ContentText`. Because that summary
+is ASCII (not JSON), viz prompts carry **no** `functional_answer` — the
+trace + attachment pair is the whole golden. Per the issue contract, the
+attachment check asserts *presence and declared type*, never rendered image
+content (no pixel-diffing). Set `expected_attachment` only on viz prompts;
+leave it unset everywhere else.
+
+### Skip discipline (`requires_credential` / `requires_gmat` / `requires_spice` / `requires_viz`)
 
 Some prompts only run where their prerequisites exist:
 
@@ -134,6 +164,12 @@ Some prompts only run where their prerequisites exist:
   furnish those kernels by URL, so pre-seeding the cache (see below) is
   what lets `spice_load_kernel` resolve `from_cache` instead of hitting
   the network mid-run.
+- `requires_viz: true` — the visualisation prompts. Skipped when the `[viz]`
+  extra is absent (matplotlib or gmat-czml not importable), the same gate the
+  viz tools themselves register behind. The default per-PR run installs no
+  `[viz]` extra, so these skip cleanly there and exercise their goldens only
+  where the extra is installed (a local `--extra viz` run or a
+  `workflow_dispatch` job that syncs it).
 
 Skipped prompts are filtered out of the dataset — they neither run nor
 count for or against the gate. `eval/_ci_report.py` re-derives the
@@ -290,12 +326,16 @@ CI policy:
 
 `.github/workflows/eval.yml` runs the suite against
 `openai-api/github/openai/gpt-4.1-mini` and uploads the Inspect log as a
-workflow artefact. The full 40-prompt suite is the default (minus any
-skipped credentialed/GMAT prompts); the `workflow_dispatch` trigger
+workflow artefact. The full suite is the default (minus any skipped
+credentialed/GMAT/SPICE/viz prompts); the `workflow_dispatch` trigger
 accepts an optional `tier` filter that delegates to
 `astrodynamics_mcp_eval_subset` for tier-scoped runs. The workflow
 provisions a real GMAT install (`astro-tools/setup-gmat@v0` + the `gmat`
-extra) so the GMAT-backed prompts execute rather than skip.
+extra) so the GMAT-backed prompts execute rather than skip. It installs
+neither the `[spice]` nor the `[viz]` extra, so the SPICE and
+visualisation prompts skip cleanly — their goldens are exercised by the
+unit tests (`tests/test_eval_scoring.py`) and, for viz, the `[viz]`
+example sessions in the `[viz] extra install` CI job.
 
 **Trigger:** the workflow is `workflow_dispatch`-only — fire it
 manually from the Actions tab. Automatic triggers (push to main, cron)

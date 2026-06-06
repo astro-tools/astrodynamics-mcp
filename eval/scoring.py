@@ -1,4 +1,4 @@
-"""Hybrid trace + functional-answer scorer.
+"""Hybrid trace + functional-answer + attachment scorer.
 
 For each sample, the scorer reconstructs the LLM's tool-call trace from
 ``state.messages`` and parses the final tool response. A prompt scores 1
@@ -11,8 +11,16 @@ iff:
    retries) are tolerated.
 2. **Functional check.** Every entry in ``functional_answer`` evaluates
    to true against the final ``ChatMessageTool``'s parsed JSON.
+3. **Attachment check.** When the prompt declares an
+   ``expected_attachment`` (the viz tools), a tool message must carry an
+   attachment of that kind — ``"image"`` for a PNG ``ImageContent``,
+   ``"resource"`` for a CZML ``EmbeddedResource``. Vacuously passes for
+   the prompts that declare none (everything non-viz). The viz tools'
+   structured summary is an ASCII text block, not JSON, so the functional
+   check does not apply to them; the trace + attachment pair is their
+   golden (presence and type, not rendered content).
 
-The two checks catch genuinely different failure modes — see
+The checks catch genuinely different failure modes — see
 ``eval/README.md`` for the rationale. Sub-scores and per-step failure
 reasons are surfaced via the :class:`Score` ``metadata`` and
 ``explanation`` so the PR-comment workflow can show why a prompt failed
@@ -25,7 +33,12 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from inspect_ai.model import ChatMessageAssistant, ChatMessageTool
+from inspect_ai.model import (
+    ChatMessageAssistant,
+    ChatMessageTool,
+    ContentImage,
+    ContentText,
+)
 from inspect_ai.scorer import Score, Scorer, Target, accuracy, scorer, stderr
 from inspect_ai.solver import TaskState
 from inspect_ai.tool import ToolCall
@@ -79,6 +92,63 @@ def extract_final_tool_response(messages: list[Any]) -> tuple[Any | None, str | 
         return json.loads(text), None
     except json.JSONDecodeError as exc:
         return None, f"final tool message is not valid JSON: {exc}"
+
+
+def extract_attachment_kinds(messages: list[Any]) -> set[str]:
+    """Return the set of attachment kinds carried by the tool messages.
+
+    The viz tools return their structured summary as a *leading* ASCII text
+    block followed by an additive attachment (see
+    :func:`astrodynamics_mcp.attachments.tool_result_with_attachments`).
+    Inspect AI's MCP bridge maps an MCP ``ImageContent`` to a
+    :class:`ContentImage` and an ``EmbeddedResource`` (text resource) to a
+    :class:`ContentText`, preserving block order onto
+    ``ChatMessageTool.content``. So a tool message contributes:
+
+    * ``"image"`` — when it carries a :class:`ContentImage` block (the PNG
+      static-plot tools).
+    * ``"resource"`` — when it carries a :class:`ContentText` block beyond
+      index 0. Because the summary always leads, any *later* text block is an
+      embedded text resource (the CZML tool). No non-viz tool emits a
+      multi-block result, so this never false-positives on an ordinary
+      single-block tool response.
+
+    A tool message whose ``content`` is a plain string (an ordinary
+    single-text result) contributes nothing.
+    """
+    kinds: set[str] = set()
+    for msg in messages:
+        if not isinstance(msg, ChatMessageTool):
+            continue
+        content = msg.content
+        if isinstance(content, str):
+            continue
+        for index, block in enumerate(content):
+            if isinstance(block, ContentImage):
+                kinds.add("image")
+            elif isinstance(block, ContentText) and index >= 1:
+                kinds.add("resource")
+    return kinds
+
+
+def _attachment_check(
+    messages: list[Any], expected_attachment: str | None
+) -> tuple[bool, list[str]]:
+    """Assert the trace produced the golden's declared attachment kind.
+
+    Vacuously passes when the prompt declares no ``expected_attachment``
+    (every non-viz prompt) — the check only bites the viz prompts, whose
+    goldens assert an attachment is produced and of the declared type.
+    """
+    if not expected_attachment:
+        return True, []
+    produced = extract_attachment_kinds(messages)
+    if expected_attachment in produced:
+        return True, []
+    return False, [
+        f"expected a {expected_attachment!r} attachment, but the trace produced "
+        f"{sorted(produced) if produced else 'no attachments'}"
+    ]
 
 
 def _match_trace(
@@ -170,6 +240,7 @@ def hybrid_scorer() -> Scorer:
 
         permitted_traces = state.metadata.get("permitted_traces") or []
         functional_answer = state.metadata.get("functional_answer") or []
+        expected_attachment = state.metadata.get("expected_attachment")
 
         trace = extract_trace(state.messages)
         errored_ids = extract_errored_call_ids(state.messages)
@@ -182,12 +253,18 @@ def hybrid_scorer() -> Scorer:
         else:
             functional_passed, functional_reasons = evaluate_checks(response, functional_answer)
 
-        overall = trace_passed and functional_passed
+        attachment_passed, attachment_reasons = _attachment_check(
+            state.messages, expected_attachment
+        )
+
+        overall = trace_passed and functional_passed and attachment_passed
         explanation_lines = [
             f"trace_check: {'PASS' if trace_passed else 'FAIL'}",
             *(f"  - {r}" for r in trace_reasons),
             f"functional_check: {'PASS' if functional_passed else 'FAIL'}",
             *(f"  - {r}" for r in functional_reasons),
+            f"attachment_check: {'PASS' if attachment_passed else 'FAIL'}",
+            *(f"  - {r}" for r in attachment_reasons),
         ]
         return Score(
             value=1.0 if overall else 0.0,
@@ -196,8 +273,10 @@ def hybrid_scorer() -> Scorer:
             metadata={
                 "trace_passed": trace_passed,
                 "functional_passed": functional_passed,
+                "attachment_passed": attachment_passed,
                 "trace_failure_reasons": trace_reasons,
                 "functional_failure_reasons": functional_reasons,
+                "attachment_failure_reasons": attachment_reasons,
                 "actual_trace": [{"tool": c.function, "arguments": c.arguments} for c in trace],
             },
         )

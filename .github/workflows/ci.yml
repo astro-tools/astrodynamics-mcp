@@ -238,3 +238,9 @@ jobs:
         run: |
           pip install pytest pytest-asyncio
           pytest tests/test_tool_viz_plots.py tests/test_viz_render.py tests/test_tool_czml_trajectory.py
+      # Run the [viz]-gated example sessions (05 / 06) end-to-end — they need
+      # matplotlib + gmat-czml to register the plot / czml tools, so they only
+      # run here. They are integration-marked (subprocess smoke tests), so
+      # enable that marker explicitly.
+      - name: viz example sessions run end-to-end
+        run: pytest tests/test_examples_viz.py -m "integration or not integration"
