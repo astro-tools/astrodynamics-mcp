@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "astrodynamics-mcp"
-version = "0.2.2"
+version = "0.3.0"
 description = "Model Context Protocol server giving any LLM client authoritative astrodynamics tools — TLE/SGP4, Lambert, ground-station access, time/frame conversions, porkchop, B-plane."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -53,7 +53,9 @@ dependencies = [
 # [viz] is a placeholder extra, deferred until its tools land.
 [project.optional-dependencies]
 gmat = ["gmat-run>=0.6", "gmat-sweep>=0.6"]
-spice = ["spiceypy>=6.0"]
+# Pin the spiceypy minor: a minor bump can swap the bundled CSPICE toolkit
+# under the numeric goldens, so allow 8.1.x patch fixes but not 8.2.
+spice = ["spiceypy>=8.1,<8.2"]
 viz = []
 
 [project.scripts]
