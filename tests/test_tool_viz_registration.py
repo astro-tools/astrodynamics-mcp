@@ -33,11 +33,10 @@ _VIZ_FULLY_INSTALLED = (
     and importlib.util.find_spec("gmat_czml") is not None
 )
 
-# plot_ground_track / plot_trajectory / plot_porkchop now carry real bodies
-# (their behaviour is covered in test_tool_viz_plots.py); czml_trajectory is
-# still a NotImplementedError placeholder until the CZML follow-up. This file
-# only asserts the registration mechanism and the per-slot list_tools metadata;
-# the generic register_tool exception-wrapping contract is covered by
+# All four slots now carry real bodies (plot_* behaviour in
+# test_tool_viz_plots.py, czml_trajectory in test_tool_czml_trajectory.py). This
+# file only asserts the registration mechanism and the per-slot list_tools
+# metadata; the generic register_tool exception-wrapping contract is covered by
 # tests/test_server.py::TestRegisterToolAsync.
 
 

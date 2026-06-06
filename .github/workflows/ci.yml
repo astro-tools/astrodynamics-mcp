@@ -176,13 +176,13 @@ jobs:
           PY
 
   # Parallel smoke-check that `pip install astrodynamics-mcp[viz]` resolves
-  # (pulls matplotlib + gmat-czml) and the four viz placeholder tool slots
-  # register on import. The bodies are NotImplementedError placeholders and
-  # never execute here. matplotlib isn't in the standard test env, so this is
-  # also where the PNG-determinism guarantee is exercised: the same figure must
-  # render to byte-identical bytes (what the transport-equivalence contract
-  # relies on). The base install path stays viz-free — `minimal-install` above
-  # confirms the viz slots are absent without the extra.
+  # (pulls matplotlib + gmat-czml) and the four viz tool slots register on
+  # import. matplotlib and gmat-czml aren't in the standard test env, so this is
+  # where the PNG-determinism guarantee and the gmat-czml-backed tool bodies are
+  # exercised: the static-plot and czml_trajectory tests run here, and the same
+  # figure must render to byte-identical bytes (what the transport-equivalence
+  # contract relies on). The base install path stays viz-free — `minimal-install`
+  # above confirms the viz slots are absent without the extra.
   viz-extra-install:
     name: "[viz] extra install smoke"
     runs-on: ubuntu-latest
@@ -237,4 +237,4 @@ jobs:
       - name: viz static-plot tool tests
         run: |
           pip install pytest pytest-asyncio
-          pytest tests/test_tool_viz_plots.py tests/test_viz_render.py
+          pytest tests/test_tool_viz_plots.py tests/test_viz_render.py tests/test_tool_czml_trajectory.py

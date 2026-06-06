@@ -39,6 +39,7 @@ from astrodynamics_mcp.tools.spice import (
 )
 from astrodynamics_mcp.tools.tle import TleLookupResponse
 from astrodynamics_mcp.tools.viz import (
+    CzmlTrajectoryResponse,
     GroundTrackResponse,
     PorkchopPlotResponse,
     TrajectoryResponse,
@@ -99,6 +100,12 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
 # porkchop, grid cardinalities) outside the {value, unit} envelope; every
 # physical field in the same model is still policed.
 _IMAGE_EXEMPT: frozenset[str] = frozenset({"image.width_px", "image.height_px"})
+# The CZML tool's summary carries the emitted document's packet / object / contact
+# cardinalities (counts, not physical quantities) on its `resource` block, outside
+# the {value, unit} envelope; `time_span` in the same model is still policed.
+_CZML_EXEMPT: frozenset[str] = frozenset(
+    {"resource.packet_count", "resource.object_count", "resource.contact_count"}
+)
 ATTACHMENT_OUTPUT_SCHEMAS: list[tuple[type[BaseModel], frozenset[str]]] = [
     (GroundTrackResponse, _IMAGE_EXEMPT),
     (TrajectoryResponse, _IMAGE_EXEMPT),
@@ -106,6 +113,7 @@ ATTACHMENT_OUTPUT_SCHEMAS: list[tuple[type[BaseModel], frozenset[str]]] = [
         PorkchopPlotResponse,
         _IMAGE_EXEMPT | frozenset({"feasible_cells", "n_depart_samples", "n_arrive_samples"}),
     ),
+    (CzmlTrajectoryResponse, _CZML_EXEMPT),
 ]
 
 
