@@ -14,9 +14,7 @@ import importlib.util
 
 import pytest
 from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
 
-from astrodynamics_mcp import server as server_module
 from astrodynamics_mcp.server import mcp as real_mcp
 from astrodynamics_mcp.tools import spice as spice_tools
 
@@ -32,19 +30,15 @@ _EXPECTED_TOOL_NAMES = frozenset(
     }
 )
 
-# Slots still landing in follow-up work. Tools with real bodies are excluded from
-# the placeholder-body parametrize so this file stays accurate as each slot
-# graduates — the kernel-management trio (load / list / unload), spice_state,
-# spice_frame_transform, and spice_body_parameters now have real bodies, covered
-# by tests/test_tool_spice_kernels.py, tests/test_tool_spice_state.py,
-# tests/test_tool_spice_frame_transform.py, and
-# tests/test_tool_spice_body_parameters.py respectively. spice_time_convert is the
-# last placeholder.
-_PLACEHOLDER_TOOL_NAMES = frozenset(
-    {
-        "spice_time_convert",
-    }
-)
+# Every slot now has a real body: the kernel-management trio (load / list /
+# unload), spice_state, spice_frame_transform, spice_body_parameters, and
+# spice_time_convert — covered by tests/test_tool_spice_kernels.py,
+# tests/test_tool_spice_state.py, tests/test_tool_spice_frame_transform.py,
+# tests/test_tool_spice_body_parameters.py, and
+# tests/test_tool_spice_time_convert.py respectively. There are no placeholder
+# slots left, so this file no longer asserts a NotImplementedError path (the
+# generic register_tool exception-wrapping contract is covered by
+# tests/test_server.py::TestRegisterToolAsync).
 
 
 @pytest.mark.skipif(
@@ -82,8 +76,8 @@ class TestPositiveCase:
         )
 
     async def test_every_slot_carries_lint_metadata(self, _isolated_mcp: FastMCP) -> None:
-        """Mirror the real-surface lint guarantees on the placeholder slots so a
-        future ``[spice]``-installed CI run gets a clean ``list_tools`` payload."""
+        """Mirror the real-surface lint guarantees on every slot so a future
+        ``[spice]``-installed CI run gets a clean ``list_tools`` payload."""
         from astrodynamics_mcp.server_lint import check_tool_descriptions
 
         spice_tools._register_spice_tools()
@@ -113,19 +107,3 @@ class TestPositiveCase:
         ):
             ann = by_name[query].annotations
             assert ann is not None and ann.readOnlyHint is True
-
-    @pytest.mark.parametrize("tool_name", sorted(_PLACEHOLDER_TOOL_NAMES))
-    async def test_placeholder_body_raises_not_implemented(
-        self, _isolated_mcp: FastMCP, tool_name: str
-    ) -> None:
-        """Placeholder bodies must error loudly — never silently return None or an
-        empty payload. ``register_tool`` wraps the ``NotImplementedError`` in an
-        :class:`UpstreamError` with the canonical ``upstream.unexpected_exception``
-        code (see ``tests/test_server.py::TestRegisterToolAsync``). The slots take
-        no arguments, so an empty payload reaches the body."""
-        spice_tools._register_spice_tools()
-        with pytest.raises(ToolError) as excinfo:
-            await server_module.mcp.call_tool(tool_name, {})
-        raw = str(excinfo.value)
-        assert "upstream.unexpected_exception" in raw
-        assert "NotImplementedError" in raw

@@ -5,12 +5,12 @@ The SPICE surface ships behind the optional ``[spice]`` extra. When
 ``spice_*`` tool slots register; on a bare install they are absent and the rest
 of the tool surface is unaffected — the same gate the ``[gmat]`` tools use.
 
-Four slots are implemented — the kernel-management trio
+All seven slots are implemented — the kernel-management trio
 (``spice_load_kernel`` / ``spice_list_kernels`` / ``spice_unload_kernel``) that
-furnishes, enumerates, and unloads kernels in the process-global pool, plus
-``spice_state`` (SPK state / ephemeris queries). The other three are
-``NotImplementedError`` placeholders; each per-tool follow-up replaces one slot
-the way these and the GMAT slots graduated.
+furnishes, enumerates, and unloads kernels in the process-global pool, plus the
+four query tools (``spice_state`` SPK ephemeris, ``spice_frame_transform``
+FK/PCK frame rotations, ``spice_body_parameters`` PCK constants, and
+``spice_time_convert`` LSK/SCLK time systems).
 
 Per the locked SPICE integration contract (``docs/spice-integration.md``) the
 slots register identically on stdio and Streamable HTTP — there is no
@@ -23,6 +23,7 @@ and URL loads route through the NAIF allowlist + XDG cache
 
 from __future__ import annotations
 
+import math
 import os
 from datetime import timezone
 from pathlib import Path
@@ -33,7 +34,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from astrodynamics_mcp.errors import InvalidInputError
-from astrodynamics_mcp.schemas.base import Epoch, _epoch_to_instant
+from astrodynamics_mcp.schemas.base import Epoch, _epoch_to_instant, _validate_epoch
 from astrodynamics_mcp.server import register_tool
 from astrodynamics_mcp.spice_kernels import (
     KernelCache,
@@ -43,6 +44,7 @@ from astrodynamics_mcp.spice_kernels import (
 from astrodynamics_mcp.spice_runtime import (
     SPICE_ABERRATION_CORRECTIONS,
     SPICE_KERNEL_CATEGORIES,
+    SPICE_TIME_SYSTEMS,
     furnish_and_describe,
     list_pool,
     normalize_aberration,
@@ -50,6 +52,7 @@ from astrodynamics_mcp.spice_runtime import (
     query_body_constant,
     query_frame_transform,
     query_state,
+    query_time_convert,
     run_on_spice_thread,
     unload_kernel,
 )
@@ -71,6 +74,16 @@ _URL_SCHEMES = frozenset({"http", "https"})
 # The category literals exposed on the wire — the CSPICE pool keywords, kept in
 # lockstep with the runtime's authoritative tuple.
 SpiceKernelCategory = Literal["SPK", "CK", "PCK", "EK", "DSK", "META", "TEXT"]
+
+# The kernel-defined time systems spice_time_convert bridges, exposed on the
+# wire as an enum so the LLM picks an exact value; kept in lockstep with the
+# runtime's SPICE_TIME_SYSTEMS tuple.
+SpiceTimeScale = Literal["ET", "UTC", "SCLK"]
+
+# The unit string ET output carries — seconds past the J2000 TDB epoch. Distinct
+# from a plain `s` interval (see units.ALLOWED_UNITS); the only place this tool
+# emits a numeric value, so the only place it appears.
+_ET_UNIT = "s past J2000 TDB"
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +421,39 @@ class SpiceBodyParametersResponse(BaseModel):
     )
 
 
+class SpiceTimeConvertResponse(BaseModel):
+    """A time converted between the SPICE kernel-defined systems ET / UTC / SCLK."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    value: Quantity | str = Field(
+        ...,
+        description=(
+            "The converted time. For an ET target a {value, unit} quantity in "
+            "'s past J2000 TDB' (seconds past the J2000 TDB epoch); for a UTC target an "
+            "ISO 8601 calendar string (e.g. '2026-01-01T00:00:00.000000' — no zone suffix, "
+            "the scale is UTC by `to_scale`); for an SCLK target the spacecraft-clock string."
+        ),
+    )
+    from_scale: SpiceTimeScale = Field(
+        ...,
+        description="The input time system, echoed from the request (ET / UTC / SCLK).",
+    )
+    to_scale: SpiceTimeScale = Field(
+        ...,
+        description=(
+            "The output time system the `value` is expressed in, echoed from the request."
+        ),
+    )
+    spacecraft: str | None = Field(
+        None,
+        description=(
+            "The spacecraft whose clock was used, echoed as a string when either scale is "
+            "SCLK; null for a conversion that does not touch SCLK."
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tool-body implementations (module-level for direct testability; the
 # registered slots below are thin wrappers, mirroring the GMAT layout).
@@ -690,25 +736,94 @@ async def _do_body_parameters(
     return SpiceBodyParametersResponse(body=body, parameters=results)
 
 
-# ---------------------------------------------------------------------------
-# Placeholder slots — reserved output shape; bodies raise loudly
-# ---------------------------------------------------------------------------
+def _parse_et_seconds(value: str | float) -> float:
+    """Coerce an ET input (a number or a numeric string) to finite seconds.
 
-
-class SpicePlaceholderResult(BaseModel):
-    """Reserved output shape for the not-yet-implemented SPICE tool slots.
-
-    Each placeholder slot declares this return type only so the server can
-    derive an output schema for it; the bodies raise ``NotImplementedError`` and
-    never construct one. Per-tool follow-up work replaces this with the tool's
-    real response model.
+    ET arrives as ``str | float`` on the wire; a non-numeric string, a boolean,
+    or a non-finite value is a typed
+    :class:`~astrodynamics_mcp.errors.InvalidInputError` raised before any CSPICE
+    call rather than a confusing downstream failure.
     """
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise InvalidInputError(
+            f"an ET value must be a number of seconds past J2000 TDB, got {type(value).__name__}",
+            code="invalid_input.spice_invalid_et_value",
+        )
+    try:
+        seconds = float(value)
+    except (ValueError, TypeError) as exc:
+        raise InvalidInputError(
+            f"an ET value must be a number of seconds past J2000 TDB, got {value!r}",
+            code="invalid_input.spice_invalid_et_value",
+        ) from exc
+    if not math.isfinite(seconds):
+        raise InvalidInputError(
+            f"an ET value must be a finite number of seconds past J2000 TDB, got {value!r}",
+            code="invalid_input.spice_invalid_et_value",
+        )
+    return seconds
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
-    detail: str = Field(
-        ...,
-        description="Placeholder marker; never populated at runtime.",
+def _prepare_time_value(value: str | float, from_scale: str) -> str | float:
+    """Normalise the raw input for its scale before the CSPICE conversion.
+
+    UTC is validated as an ISO 8601 epoch and rendered offset-free for
+    ``str2et``; ET is parsed to a finite float; SCLK is passed through as the raw
+    clock string (CSPICE owns its grammar). Each wrong-type or malformed input is
+    a typed :class:`~astrodynamics_mcp.errors.InvalidInputError` raised before any
+    CSPICE call.
+    """
+    if from_scale == "UTC":
+        return _to_cspice_utc(_validate_epoch(value))
+    if from_scale == "ET":
+        return _parse_et_seconds(value)
+    # SCLK
+    if not isinstance(value, str):
+        raise InvalidInputError(
+            f"a SCLK value must be a spacecraft-clock string, got {type(value).__name__}",
+            code="invalid_input.spice_invalid_sclk_value",
+        )
+    return value
+
+
+async def _do_time_convert(
+    value: str | float,
+    from_scale: SpiceTimeScale,
+    to_scale: SpiceTimeScale,
+    spacecraft: str | int | None,
+) -> SpiceTimeConvertResponse:
+    """Convert *value* between the kernel-defined systems ET / UTC / SCLK.
+
+    Validates the SCLK-needs-a-spacecraft precondition up front (so a malformed
+    request never reaches CSPICE), normalises the input for its scale, then runs
+    the conversion through ephemeris time on the worker thread. ET output is
+    wrapped as a ``{value, unit}`` seconds quantity; UTC and SCLK output are
+    strings. The spacecraft is echoed (as a string) only for an SCLK conversion.
+    """
+    needs_spacecraft = from_scale == "SCLK" or to_scale == "SCLK"
+    if needs_spacecraft and spacecraft is None:
+        raise InvalidInputError(
+            "a spacecraft is required to convert to or from SCLK (spacecraft clock); pass "
+            "its NAIF ID (e.g. -82 for Cassini) or a name a furnished kernel maps",
+            code="invalid_input.spice_sclk_requires_spacecraft",
+        )
+
+    prepared = _prepare_time_value(value, from_scale)
+    converted = await run_on_spice_thread(
+        query_time_convert, prepared, from_scale, to_scale, spacecraft
+    )
+
+    out_value: Quantity | str
+    if to_scale == "ET":
+        out_value = Quantity(value=float(converted), unit=_ET_UNIT)
+    else:
+        out_value = str(converted)
+
+    return SpiceTimeConvertResponse(
+        value=out_value,
+        from_scale=from_scale,
+        to_scale=to_scale,
+        spacecraft=str(spacecraft) if needs_spacecraft and spacecraft is not None else None,
     )
 
 
@@ -802,10 +917,21 @@ _BODY_PARAMETERS_DESCRIPTION = (
 )
 
 _TIME_CONVERT_DESCRIPTION = (
-    "Convert between SPICE kernel-defined time systems — ephemeris time (ET / "
-    "TDB), UTC, and spacecraft clock (SCLK) — using a furnished leap-second "
-    "kernel, e.g. an ET seconds-past-J2000 value to a UTC calendar string. "
-    "Reserved slot — not yet implemented; lands in follow-up work."
+    "Convert a time between SPICE kernel-defined systems — ET (TDB seconds past J2000), UTC, "
+    "and SCLK (spacecraft clock) — using the furnished leap-second and spacecraft-clock "
+    "kernels. e.g. spice_time_convert(value='2026-01-01T00:00:00Z', from_scale='UTC', "
+    "to_scale='ET') returns {value: 820497669.184, unit: 's past J2000 TDB'}, the ephemeris "
+    "time for that UTC epoch; spice_time_convert(value='2026-01-01T00:00:00Z', "
+    "from_scale='UTC', to_scale='SCLK', spacecraft=-82) returns the Cassini spacecraft-clock "
+    "string for it. ET output is a {value, unit} quantity in 's past J2000 TDB'; UTC output is "
+    "an ISO 8601 calendar string; SCLK output is the raw clock string. `spacecraft` (a NAIF ID "
+    "like -82, or a name a furnished kernel maps) is required for any conversion to or from "
+    "SCLK. A leap-second kernel (LSK) must be furnished first (spice_load_kernel) for any "
+    "ET<->UTC conversion, and an SCLK kernel for any SCLK conversion — a missing kernel returns "
+    "a typed error, never a silent result. This is the kernel-backed counterpart to "
+    "time_convert: prefer the kernel-free time_convert for plain UTC / TAI / TT / TDB / UT1 / "
+    "GPS without a loaded kernel; reach for this tool only for ET's kernel-defined zero and for "
+    "SCLK."
 )
 
 
@@ -1042,8 +1168,49 @@ def _register_spice_tools() -> None:
             title="SPICE Time Convert", readOnlyHint=True, openWorldHint=False
         ),
     )
-    async def spice_time_convert() -> SpicePlaceholderResult:
-        raise NotImplementedError("spice_time_convert lands in follow-up work")
+    async def spice_time_convert(
+        value: Annotated[
+            str | float,
+            Field(
+                description=(
+                    "The time to convert. For from_scale='UTC' an ISO 8601 string with a time "
+                    "component ('2026-01-01T00:00:00Z'); for 'ET' a number of seconds past "
+                    "J2000 TDB (820497669.184, as a number or a numeric string); for 'SCLK' "
+                    "the spacecraft-clock string ('1/1465644281.171')."
+                ),
+            ),
+        ],
+        from_scale: Annotated[
+            SpiceTimeScale,
+            Field(
+                description=(
+                    "The input time system: 'ET' (TDB seconds past J2000), 'UTC' (calendar "
+                    f"string), or 'SCLK' (spacecraft clock). One of {list(SPICE_TIME_SYSTEMS)}. "
+                    "SCLK requires `spacecraft`."
+                ),
+            ),
+        ],
+        to_scale: Annotated[
+            SpiceTimeScale,
+            Field(
+                description=(
+                    "The output time system, same three values as `from_scale`. An 'ET' target "
+                    "returns a {value, unit} seconds quantity; 'UTC' and 'SCLK' return a string."
+                ),
+            ),
+        ],
+        spacecraft: Annotated[
+            str | int | None,
+            Field(
+                description=(
+                    "The spacecraft whose clock to use — required for any SCLK conversion, "
+                    "ignored otherwise. A NAIF spacecraft ID (-82 or '-82' for Cassini) or a "
+                    "name a furnished SCLK kernel maps. e.g. -82."
+                ),
+            ),
+        ] = None,
+    ) -> SpiceTimeConvertResponse:
+        return await _do_time_convert(value, from_scale, to_scale, spacecraft)
 
 
 if _SPICEYPY_AVAILABLE:

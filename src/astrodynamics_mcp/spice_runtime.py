@@ -69,6 +69,21 @@ SPICE_ABERRATION_CORRECTIONS: tuple[str, ...] = (
 # still bounding the CSPICE call.
 _MAX_BODY_CONSTANT_VALUES = 256
 
+# The kernel-defined time systems ``spice_time_convert`` bridges. ``ET`` is TDB
+# seconds past J2000 (the leap-second-kernel-defined zero), ``UTC`` a calendar
+# string, and ``SCLK`` a spacecraft-clock string — each meaningful only with the
+# relevant kernel furnished. The tool surface exposes exactly these; the
+# normaliser upper-cases and validates against the set so a malformed system
+# never reaches CSPICE.
+SPICE_TIME_SYSTEMS: tuple[str, ...] = ("ET", "UTC", "SCLK")
+
+# CSPICE ``et2utc`` output format and precision. ``ISOC`` is the ISO 8601
+# calendar form (``YYYY-MM-DDTHH:MM:SS.ffffff``); six fractional digits mirror
+# the microsecond precision the tool layer feeds ``str2et`` on the way in, so a
+# UTC round-trip neither gains nor loses resolution.
+_ET2UTC_FORMAT = "ISOC"
+_ET2UTC_PRECISION = 6
+
 
 @dataclass(frozen=True)
 class KernelRow:
@@ -475,6 +490,127 @@ def query_body_constant(body: str, item: str) -> BodyConstant:
         source=f"BODY{int(code)}_{item}",
         values=tuple(float(v) for v in values),
     )
+
+
+def _resolve_spacecraft_id(sp: Any, spacecraft: str | int) -> int:
+    """Resolve a spacecraft name or NAIF ID to the integer code SCLK calls need.
+
+    An ``int`` is taken as the NAIF spacecraft ID directly (SCLK IDs are
+    negative integers, e.g. ``-82`` for Cassini). A string is resolved with
+    ``bods2c`` — which accepts both a NAIF-ID digit string and a body name a
+    furnished kernel maps — so an unresolvable spacecraft is a typed
+    :class:`~astrodynamics_mcp.errors.InvalidInputError`, distinct from a missing
+    SCLK kernel. Runs on the worker thread.
+    """
+    if isinstance(spacecraft, bool):  # pragma: no cover - defensive; bool is an int subclass
+        raise InvalidInputError(
+            "spacecraft must be a NAIF spacecraft ID or name, not a boolean",
+            code="invalid_input.spice_unknown_spacecraft",
+        )
+    if isinstance(spacecraft, int):
+        return spacecraft
+    code, found = sp.bods2c(spacecraft)
+    if not found:
+        raise InvalidInputError(
+            f"unknown spacecraft {spacecraft!r}; pass a NAIF spacecraft ID "
+            "(e.g. '-82' for Cassini) or a name a furnished kernel maps",
+            code="invalid_input.spice_unknown_spacecraft",
+            data={"spacecraft": spacecraft},
+        )
+    return int(code)
+
+
+def _input_to_et(sp: Any, value: str | float, from_system: str, sc_id: int | None) -> float:
+    """Resolve a *from_system* input to ephemeris time (TDB seconds past J2000)."""
+    if from_system == "ET":
+        return float(value)
+    if from_system == "UTC":
+        try:
+            return float(sp.str2et(value))
+        except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+            raise UpstreamError(
+                f"CSPICE could not resolve the UTC epoch {value!r} to ephemeris time: {exc}. "
+                "A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
+                code="upstream.spice_time_convert_failed",
+                original_exception=exc,
+                data={"value": value, "from_system": from_system},
+            ) from exc
+    # SCLK — sc_id is guaranteed non-None by the tool layer for any SCLK leg.
+    try:
+        return float(sp.scs2e(sc_id, value))
+    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+        raise UpstreamError(
+            f"CSPICE could not resolve the spacecraft-clock string {value!r} to ephemeris "
+            f"time for spacecraft {sc_id}: {exc}. An SCLK kernel for that spacecraft must be "
+            "furnished first (spice_load_kernel).",
+            code="upstream.spice_time_convert_failed",
+            original_exception=exc,
+            data={"value": value, "from_system": from_system, "spacecraft": sc_id},
+        ) from exc
+
+
+def _et_to_output(sp: Any, et: float, to_system: str, sc_id: int | None) -> str | float:
+    """Render ephemeris time *et* into the *to_system* representation."""
+    if to_system == "ET":
+        return et
+    if to_system == "UTC":
+        try:
+            return str(sp.et2utc(et, _ET2UTC_FORMAT, _ET2UTC_PRECISION))
+        except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+            raise UpstreamError(
+                f"CSPICE could not render ephemeris time {et!r} as a UTC calendar string: "
+                f"{exc}. A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
+                code="upstream.spice_time_convert_failed",
+                original_exception=exc,
+                data={"et": et, "to_system": to_system},
+            ) from exc
+    # SCLK — sc_id is guaranteed non-None by the tool layer for any SCLK leg.
+    try:
+        return str(sp.sce2s(sc_id, et))
+    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+        raise UpstreamError(
+            f"CSPICE could not render ephemeris time {et!r} as a spacecraft-clock string for "
+            f"spacecraft {sc_id}: {exc}. An SCLK kernel for that spacecraft must be furnished "
+            "first (spice_load_kernel).",
+            code="upstream.spice_time_convert_failed",
+            original_exception=exc,
+            data={"et": et, "to_system": to_system, "spacecraft": sc_id},
+        ) from exc
+
+
+def query_time_convert(
+    value: str | float,
+    from_system: str,
+    to_system: str,
+    spacecraft: str | int | None,
+) -> str | float:
+    """Convert *value* from *from_system* to *to_system* through ephemeris time.
+
+    ET (TDB seconds past J2000) is the canonical intermediate: the input is
+    resolved to ET with the routine its system needs — ``str2et`` for UTC (needs
+    a furnished LSK), ``scs2e`` for SCLK (needs a furnished SCLK kernel), or a
+    passthrough for an ET input — then ET is rendered into the target system with
+    ``et2utc`` / ``sce2s`` / a passthrough. Every CSPICE failure (a missing LSK
+    or SCLK kernel, an unparseable SCLK string, an epoch outside an SCLK's
+    coverage) surfaces as a typed
+    :class:`~astrodynamics_mcp.errors.UpstreamError` with a stable code rather
+    than a silent result. Runs on the worker thread.
+
+    *value* arrives normalised by the tool layer: an offset-free UTC string for
+    ``UTC``, a float for ``ET``, the raw clock string for ``SCLK``. *spacecraft*
+    is required (non-``None``) whenever either system is ``SCLK``; the tool layer
+    enforces that before dispatching here, so the SCLK legs always have a
+    spacecraft to resolve.
+    """
+    sp = _spiceypy()
+    needs_spacecraft = from_system == "SCLK" or to_system == "SCLK"
+    sc_id = (
+        _resolve_spacecraft_id(sp, spacecraft)
+        if needs_spacecraft and spacecraft is not None
+        else None
+    )
+    et = _input_to_et(sp, value, from_system, sc_id)
+    return _et_to_output(sp, et, to_system, sc_id)
 
 
 def normalize_aberration(abcorr: str) -> str:
