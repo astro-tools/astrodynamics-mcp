@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from astrodynamics_mcp.errors import InvalidInputError
 
-# Closed registry of unit strings the v0.1 surface may emit. Tool issues
+# Closed registry of unit strings the tool surface may emit. Tool issues
 # extend this when they introduce a new physical quantity (the meta-test
 # would otherwise reject the new field, forcing the addition to be
 # deliberate). Keep grouped by physical dimension; comments are the

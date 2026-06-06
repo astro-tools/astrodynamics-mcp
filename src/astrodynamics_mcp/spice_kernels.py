@@ -20,8 +20,9 @@ stores raw kernel blobs under a ``kernels/`` subdirectory rather than the
 JSON-per-entry layout the response cache uses.
 
 A local path is furnished as-is: the caller already has filesystem access, so
-no allowlist applies there. The tool that calls :meth:`KernelCache.fetch` for
-a URL load lands in follow-up work; this module is the wiring it builds on.
+no allowlist applies there. The ``spice_load_kernel`` tool
+(:mod:`astrodynamics_mcp.tools.spice`) routes a URL load through
+:meth:`KernelCache.fetch` and furnishes the cache path it returns.
 """
 
 from __future__ import annotations
