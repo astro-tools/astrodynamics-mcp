@@ -1,0 +1,35 @@
+prompt: |
+  What are Mars's triaxial radii and GM? Use SPICE. Furnish the
+  planetary-constants kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc
+  and the gravity kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/gm_de440.tpc
+  first, then read the constants for Mars.
+tier: single_tool
+tools_required: [spice_load_kernel, spice_body_parameters]
+requires_spice: true
+permitted_traces:
+  - - tool: spice_load_kernel
+    - tool: spice_body_parameters
+      arg_constraints:
+        body: {case_insensitive_equals: "MARS"}
+functional_answer:
+  - path: "$.parameters[0].name"
+    equals: "radii"
+  - path: "$.parameters[0].values"
+    length: 3
+  - path: "$.parameters[0].values[0].unit"
+    equals: "km"
+  - path: "$.parameters[0].values[0].value"
+    numeric_tolerance: {expected: 3396.19, abs: 5}
+  - path: "$.parameters[1].name"
+    equals: "gm"
+  - path: "$.parameters[1].values[0].value"
+    numeric_tolerance: {expected: 42828.4, abs: 5}
+notes: |
+  SPICE single-tool primary: read body constants from furnished PCKs. The
+  default parameter set is [radii, gm] in that order, so the model can omit
+  `parameters` entirely. Radii equatorial ~3396.19 km and GM ~42828.4
+  km^3/s^2 are stable IAU/DE values; the abs tolerances absorb the small
+  spread across pck/gm_de440 revisions. requires_spice — skipped without the
+  extra or the cached kernels.

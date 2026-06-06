@@ -158,6 +158,10 @@ class TestRequirementSchema:
         assert _spec().requires_gmat is False
         assert _spec(requires_gmat=True).requires_gmat is True
 
+    def test_requires_spice_defaults_false(self) -> None:
+        assert _spec().requires_spice is False
+        assert _spec(requires_spice=True).requires_spice is True
+
 
 class TestRequirementsMet:
     def test_no_requirements_always_met(self) -> None:
@@ -192,3 +196,21 @@ class TestRequirementsMet:
         assert unmet_requirements(spec, env={}) == ["gmat"]
         monkeypatch.setattr("eval._prompts._gmat_available", lambda: True)
         assert requirements_met(spec, env={}) is True
+
+    def test_spice_requirement_uses_availability_probe(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        spec = _spec(requires_spice=True)
+        monkeypatch.setattr("eval._prompts._spice_available", lambda: False)
+        assert requirements_met(spec, env={}) is False
+        assert unmet_requirements(spec, env={}) == ["spice"]
+        monkeypatch.setattr("eval._prompts._spice_available", lambda: True)
+        assert requirements_met(spec, env={}) is True
+
+    def test_spice_and_gmat_both_unmet_listed_together(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        spec = _spec(requires_gmat=True, requires_spice=True)
+        monkeypatch.setattr("eval._prompts._gmat_available", lambda: False)
+        monkeypatch.setattr("eval._prompts._spice_available", lambda: False)
+        assert unmet_requirements(spec, env={}) == ["gmat", "spice"]

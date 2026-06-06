@@ -1,0 +1,38 @@
+prompt: |
+  I want to cross-check Mars's ephemeris two ways. First, with SPICE, get
+  Mars's heliocentric state (relative to the Sun) at 2026-11-01T00:00:00Z in
+  the ECLIPJ2000 frame — furnish the leap-second kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls
+  and the planetary ephemeris
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp
+  for it. Then run a Mars porkchop (which sources Mars from JPL Horizons) for a
+  departure window of 2026-10-01 through 2026-12-01 and an arrival window of
+  2027-06-01 through 2027-11-01, so I can confirm the two ephemerides agree.
+tier: sequential
+tools_required: [spice_load_kernel, spice_state, porkchop]
+requires_spice: true
+permitted_traces:
+  - - tool: spice_load_kernel
+    - tool: spice_state
+      arg_constraints:
+        target: {case_insensitive_equals: "MARS"}
+        observer: {case_insensitive_equals: "SUN"}
+    - tool: porkchop
+      arg_constraints:
+        departure_body: {case_insensitive_equals: "earth"}
+        arrival_body: {case_insensitive_equals: "mars"}
+functional_answer:
+  - path: "$.best.c3.unit"
+    equals: "km^2/s^2"
+  - path: "$.best.total_dv.unit"
+    equals: "km/s"
+  - path: "$.top_cells"
+    length: {min: 1}
+notes: |
+  The SPICE-vs-Horizons agreement prompt — the deep-query pattern behind
+  example session (e): a SPICE SPK Mars state and a Horizons-backed
+  porkchop describe the same planet. The chain ends on porkchop, so the
+  functional checks are porkchop's; the SPICE leg is pinned by the trace
+  (target=MARS, observer=SUN). porkchop touches live Horizons, mirroring the
+  existing porkchop prompts. requires_spice — skipped without the extra or the
+  cached kernels.

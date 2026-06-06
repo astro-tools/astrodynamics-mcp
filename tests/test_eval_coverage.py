@@ -2,16 +2,19 @@
 
 Asserts the suite stays populated (≥40 prompts) and within the
 tier-distribution discipline, that every *core* tool has a single-tool
-prompt and a sequential-or-planning prompt, and that each extended tool
+prompt and a sequential-or-planning prompt, that every *SPICE* tool has
+a single-tool prompt and a sequential prompt, and that each extended tool
 the suite covers is referenced by at least one prompt. A failing
 assertion here means a prompt got added or removed without rebalancing —
 the regression catches it before merge.
 
-The strict per-tool tier matrix applies to the core read-only tools
-only. The extended tools (GMAT + DISCOSweb metadata) are covered more
-loosely: GMAT prompts skip where no install exists and the credentialed
-prompts skip without secrets, so forcing each onto every tier would not
-buy real signal in the default gate.
+The strict per-tool tier matrix applies to the core read-only tools and
+the SPICE tools. The extended tools (GMAT + DISCOSweb metadata) are
+covered more loosely: GMAT prompts skip where no install exists and the
+credentialed prompts skip without secrets, so forcing each onto every
+tier would not buy real signal in the default gate. The SPICE prompts
+likewise skip without the [spice] extra and cached kernels, but the
+acceptance contract still pins both tiers per tool.
 
 These also double as the test that the live suite is *populated* — an
 empty ``eval/prompts/`` directory would fail loudly here rather than
@@ -56,7 +59,22 @@ EXTENDED_TOOLS: frozenset[str] = frozenset(
 # Extended tools the suite is expected to exercise with at least one prompt.
 EXTENDED_COVERED_TOOLS: frozenset[str] = EXTENDED_TOOLS
 
-ALL_TOOLS: frozenset[str] = CORE_TOOLS | EXTENDED_TOOLS
+# The SPICE tools the suite covers behind the requires_spice skip-gate. Held to
+# their own per-tier matrix below (single-tool *and* sequential each), per the
+# v0.3 acceptance contract, but skipped in the default no-[spice] run.
+SPICE_TOOLS: frozenset[str] = frozenset(
+    {
+        "spice_load_kernel",
+        "spice_list_kernels",
+        "spice_unload_kernel",
+        "spice_state",
+        "spice_frame_transform",
+        "spice_body_parameters",
+        "spice_time_convert",
+    }
+)
+
+ALL_TOOLS: frozenset[str] = CORE_TOOLS | EXTENDED_TOOLS | SPICE_TOOLS
 
 MIN_PROMPTS = 40
 MIN_SINGLE_TOOL = 20
@@ -172,6 +190,41 @@ def test_credentialed_prompts_declare_requirements() -> None:
             assert "spacetrack" in prompt.requires_credential, (
                 f"{prompt.id!r} uses source='space-track' but does not require the "
                 f"spacetrack credential"
+            )
+
+
+def test_every_spice_tool_has_a_single_tool_prompt() -> None:
+    """Each SPICE tool appears in at least one single-tool-tier prompt."""
+    prompts = load_prompts()
+    covered = {
+        tool for prompt in prompts if prompt.tier == "single_tool" for tool in prompt.tools_required
+    }
+    missing = SPICE_TOOLS - covered
+    assert not missing, (
+        f"SPICE tools without a single_tool prompt: {sorted(missing)}; "
+        f"every SPICE tool must be covered at the single-tool tier"
+    )
+
+
+def test_every_spice_tool_has_a_sequential_prompt() -> None:
+    """Each SPICE tool appears in at least one sequential-tier prompt."""
+    prompts = load_prompts()
+    covered = {
+        tool for prompt in prompts if prompt.tier == "sequential" for tool in prompt.tools_required
+    }
+    missing = SPICE_TOOLS - covered
+    assert not missing, (
+        f"SPICE tools without a sequential prompt: {sorted(missing)}; "
+        f"every SPICE tool must be covered at the sequential tier"
+    )
+
+
+def test_spice_prompts_declare_requires_spice() -> None:
+    prompts = load_prompts()
+    for prompt in prompts:
+        if SPICE_TOOLS & set(prompt.tools_required):
+            assert prompt.requires_spice, (
+                f"{prompt.id!r} drives a SPICE tool but does not set requires_spice: true"
             )
 
 

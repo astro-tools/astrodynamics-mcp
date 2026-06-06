@@ -101,6 +101,16 @@ class PromptSpec(BaseModel):
             "Skipped, not failed, when GMAT is absent."
         ),
     )
+    requires_spice: bool = Field(
+        default=False,
+        description=(
+            "When true the prompt drives the SPICE tools and only runs where the "
+            "[spice] extra is installed (spiceypy importable) *and* the canonical "
+            "generic kernels are pre-seeded in the on-disk cache (see "
+            "eval/_spice_kernels.py). Skipped, not failed, when either the extra or "
+            "the kernels are absent."
+        ),
+    )
     notes: str | None = Field(
         default=None,
         description=(
@@ -213,6 +223,24 @@ def _gmat_available() -> bool:
     return True
 
 
+def _spice_available() -> bool:
+    """True when the SPICE prompts can actually run in the current process.
+
+    Two conditions, mirroring the issue contract "skip when the extra *or* the
+    kernels are absent": ``spiceypy`` must be importable (the ``[spice]`` extra
+    is installed) and the canonical generic kernels must be pre-seeded in the
+    on-disk kernel cache. Either missing means the SPICE prompts are skipped,
+    not failed. The kernel check is stat-only (no network).
+    """
+    try:
+        import spiceypy  # noqa: F401
+    except Exception:
+        return False
+    from eval._spice_kernels import kernels_cached
+
+    return kernels_cached()
+
+
 def _credential_available(source: str, env: Mapping[str, str]) -> bool:
     spec = SOURCES.get(source)
     if spec is None:
@@ -223,13 +251,15 @@ def _credential_available(source: str, env: Mapping[str, str]) -> bool:
 def unmet_requirements(prompt: PromptSpec, env: Mapping[str, str] | None = None) -> list[str]:
     """Return the requirement tokens *prompt* does not satisfy in *env*.
 
-    Tokens are human-readable for the CI report: ``"gmat"`` and
+    Tokens are human-readable for the CI report: ``"gmat"``, ``"spice"``, and
     ``"credential:<source>"``. An empty list means the prompt can run.
     """
     resolved_env = os.environ if env is None else env
     unmet: list[str] = []
     if prompt.requires_gmat and not _gmat_available():
         unmet.append("gmat")
+    if prompt.requires_spice and not _spice_available():
+        unmet.append("spice")
     for source in prompt.requires_credential:
         if not _credential_available(source, resolved_env):
             unmet.append(f"credential:{source}")

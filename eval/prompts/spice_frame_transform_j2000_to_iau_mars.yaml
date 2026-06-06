@@ -1,0 +1,35 @@
+prompt: |
+  Rotate the position [4000, 5000, 6000] km from the J2000 frame into the
+  Mars body-fixed frame IAU_MARS at 2026-01-01T00:00:00Z using SPICE. Furnish
+  the leap-second kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls
+  and the planetary-constants kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc
+  first.
+tier: single_tool
+tools_required: [spice_load_kernel, spice_frame_transform]
+requires_spice: true
+permitted_traces:
+  - - tool: spice_load_kernel
+    - tool: spice_frame_transform
+      arg_constraints:
+        from_frame: {case_insensitive_equals: "J2000"}
+        to_frame: {case_insensitive_equals: "IAU_MARS"}
+functional_answer:
+  - path: "$.to_frame"
+    equals: "IAU_MARS"
+  - path: "$.rotation"
+    length: 3
+  - path: "$.rotation[0]"
+    length: 3
+  - path: "$.position.unit"
+    equals: "km"
+  - path: "$.position.value"
+    l2_in_range: [8774, 8776]
+notes: |
+  SPICE single-tool primary: a body-fixed-frame rotation the kernel-free
+  frame_transform cannot provide (IAU_MARS needs a Mars PCK). A frame rotation
+  preserves vector magnitude, so the rotated position's norm equals the input
+  |[4000,5000,6000]| = 8774.96 km regardless of epoch — a frame-agnostic,
+  golden-stable check. requires_spice — skipped without the extra or the
+  cached LSK + PCK.
