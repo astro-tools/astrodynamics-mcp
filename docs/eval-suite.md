@@ -1,7 +1,7 @@
 # Eval suite
 
 The eval suite is the live regression contract on tool-description quality.
-It runs roughly 30 prompts against the local `astrodynamics-mcp stdio`
+It runs the prompt suite against the local `astrodynamics-mcp stdio`
 binary, scores each one against a hybrid (trace + functional) check, and
 posts a pass / fail back to every PR.
 
@@ -47,16 +47,33 @@ and
 
 ## Tier structure
 
-The ~30 prompts split across three tiers:
+The prompts split across three tiers, each held to a floor by the
+coverage gate (`tests/test_eval_coverage.py`):
 
-| Tier | Count | Shape |
+| Tier | Floor | Shape |
 | --- | --- | --- |
-| `single_tool` | 20 | Direct one-tool questions (e.g. "convert 2026-05-23T12:00:00Z from UTC to TT"). |
-| `sequential` | 8 | Chained calls (e.g. "fetch the ISS TLE, then propagate it to ..."). |
-| `planning` | 2 | Multi-step questions where the tool sequence is non-obvious from the prompt. |
+| `single_tool` | ≥20 | Direct one-tool questions (e.g. "convert 2026-05-23T12:00:00Z from UTC to TT"). |
+| `sequential` | ≥8 | Chained calls (e.g. "fetch the ISS TLE, then propagate it to ..."). |
+| `planning` | ≥2 | Multi-step questions where the tool sequence is non-obvious from the prompt. |
 
-Every tool has at least one single-tool prompt and at least one
-sequential-or-planning prompt.
+Every core and SPICE tool has at least one single-tool prompt and at
+least one sequential prompt.
+
+## Skip-gated prompts
+
+Some prompts only run where their prerequisites exist, and are *skipped*
+(not failed, not scored) otherwise:
+
+- **Credentialed** prompts (Space-Track, DISCOSweb) skip without their
+  secrets.
+- **GMAT** prompts skip without a locatable GMAT install — CI provisions
+  one, so they run there.
+- **SPICE** prompts skip without the `[spice]` extra and the cached NAIF
+  generic kernels. The default run installs neither, so they skip; they
+  exercise their goldens only where both are provisioned.
+
+The skipped set is re-derived in the CI report and listed explicitly, so
+the omission is visible rather than silent.
 
 ## Run it locally
 

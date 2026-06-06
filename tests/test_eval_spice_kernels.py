@@ -14,8 +14,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import pytest
-from astrodynamics_mcp.spice_kernels import NAIF_KERNEL_HOSTS, KernelCache
 from eval._spice_kernels import CANONICAL_KERNEL_URLS, ensure_cached, kernels_cached
+
+from astrodynamics_mcp.spice_kernels import NAIF_KERNEL_HOSTS, KernelCache
 
 
 def _seed(cache: KernelCache, url: str) -> None:

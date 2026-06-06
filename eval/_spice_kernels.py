@@ -24,7 +24,7 @@ This module is the single source of truth for that kernel set:
 The kernels are the smallest generic set that covers the prompts' needs: a
 leap-second kernel (time), a planetary-constants PCK (radii / pole / PM), a
 gravity PCK (GM), and the compact ``de440s`` planetary SPK (states, ~32 MB,
-1849–2150). All four live on the NAIF allowlist
+1849-2150). All four live on the NAIF allowlist
 (:data:`astrodynamics_mcp.spice_kernels.NAIF_KERNEL_HOSTS`).
 """
 
@@ -42,7 +42,7 @@ LSK_URL = f"{_NAIF_GENERIC}/lsk/naif0012.tls"
 PCK_URL = f"{_NAIF_GENERIC}/pck/pck00011.tpc"
 # Gravity PCK — the GM constants pck00011 does not carry.
 GM_PCK_URL = f"{_NAIF_GENERIC}/pck/gm_de440.tpc"
-# Compact planetary SPK — body states over 1849–2150 at ~32 MB, vs. de440's
+# Compact planetary SPK — body states over 1849-2150 at ~32 MB, vs. de440's
 # ~114 MB. Enough for every state / agreement prompt in the suite.
 SPK_URL = f"{_NAIF_GENERIC}/spk/planets/de440s.bsp"
 

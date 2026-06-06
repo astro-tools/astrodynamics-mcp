@@ -42,13 +42,16 @@ eval/
 ├── scoring.py            ← Inspect AI Scorer combining the two checks
 ├── tasks.py              ← Inspect AI Task wiring stdio server + react() agent
 └── prompts/
-    └── *.yaml            ← one prompt per file (40 prompts spanning single-tool, sequential, and planning tiers)
+    └── *.yaml            ← one prompt per file (single-tool, sequential, and planning tiers)
 ```
 
 The suite covers the core read-only tools plus the GMAT tools
 (`gmat_run_mission`, `gmat_sweep`, `gmat_execute_script`,
-`gmat_read_run_artefact`), the DISCOSweb `satellite_metadata`
-cross-reference, and the Space-Track passthrough.
+`gmat_read_run_artefact`), the SPICE tools (`spice_load_kernel`,
+`spice_list_kernels`, `spice_unload_kernel`, `spice_state`,
+`spice_frame_transform`, `spice_body_parameters`, `spice_time_convert`),
+the DISCOSweb `satellite_metadata` cross-reference, and the Space-Track
+passthrough.
 
 ## Running locally
 
@@ -63,6 +66,12 @@ To run the GMAT-backed prompts you also need the `gmat` extra and a
 locatable GMAT install (`uv sync --all-groups --extra gmat`, plus
 `GMAT_ROOT` or a default-path install — see the main GMAT docs). Without
 it those prompts are *skipped*, not failed (see "Skip discipline" below).
+
+To run the SPICE prompts you need the `spice` extra
+(`uv sync --all-groups --extra spice`) **and** the canonical NAIF generic
+kernels pre-seeded in the cache (`python -c 'import asyncio; from
+eval._spice_kernels import ensure_cached; asyncio.run(ensure_cached())'`).
+Without both, those prompts are *skipped*, not failed.
 
 Then run the suite against GitHub Models with the configuration the CI
 gate uses (see "Model and provider" below):
@@ -89,6 +98,7 @@ tier: single_tool | sequential | planning
 tools_required: [<tool names that must be available>]
 requires_credential: [<source>, ...]     # optional; skip-gate, see below
 requires_gmat: true | false               # optional; skip-gate, see below
+requires_spice: true | false              # optional; skip-gate, see below
 permitted_traces:
   - - tool: <tool_name>
       arg_constraints:
@@ -109,7 +119,7 @@ A trace step matches a tool call only when the call did *not* error, so a
 tool that failed silently before a retry is skipped over in favour of the
 later successful call.
 
-### Skip discipline (`requires_credential` / `requires_gmat`)
+### Skip discipline (`requires_credential` / `requires_gmat` / `requires_spice`)
 
 Some prompts only run where their prerequisites exist:
 
@@ -118,6 +128,12 @@ Some prompts only run where their prerequisites exist:
   `ASTRODYNAMICS_MCP_<SOURCE>_<FIELD>` env vars are absent.
 - `requires_gmat: true` — the GMAT-backed prompts. Skipped when no GMAT
   install is locatable.
+- `requires_spice: true` — the SPICE prompts. Skipped when the `[spice]`
+  extra is absent (`spiceypy` not importable) **or** the canonical NAIF
+  generic kernels are not pre-seeded in the on-disk cache. The prompts
+  furnish those kernels by URL, so pre-seeding the cache (see below) is
+  what lets `spice_load_kernel` resolve `from_cache` instead of hitting
+  the network mid-run.
 
 Skipped prompts are filtered out of the dataset — they neither run nor
 count for or against the gate. `eval/_ci_report.py` re-derives the
@@ -127,7 +143,18 @@ prompts" so the omission is visible rather than silent.
 GMAT prompts run in CI because `.github/workflows/eval.yml` provisions a
 real install via `astro-tools/setup-gmat@v0` and syncs the `gmat` extra.
 The credentialed happy-path prompts run only when the corresponding
-repo secrets are provisioned; until then they skip cleanly.
+repo secrets are provisioned; until then they skip cleanly. The SPICE
+prompts likewise skip in the default run — the workflow installs neither
+the `[spice]` extra nor the kernels — so they exercise their goldens only
+where someone provisions both. `eval/_spice_kernels.py` owns the
+canonical kernel set and its `ensure_cached()` helper is what a
+provisioning step (or a local `[spice]` run) calls to seed the cache:
+
+```python
+import asyncio
+from eval._spice_kernels import ensure_cached
+asyncio.run(ensure_cached())   # downloads ~32 MB of NAIF generic kernels once
+```
 
 The constraint vocabulary is defined in `eval/_constraints.py`
 (`equals`, `one_of`, `case_insensitive_equals`, `case_insensitive_contains`,

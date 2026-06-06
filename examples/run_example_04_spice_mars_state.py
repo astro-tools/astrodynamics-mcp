@@ -145,16 +145,20 @@ async def main() -> int:
         return 1
     total_dv = float(best["total_dv"]["value"])
     if not _BEST_DV_RANGE_KMS[0] <= total_dv <= _BEST_DV_RANGE_KMS[1]:
-        print(f"FAIL: best total_dv {total_dv:.2f} km/s outside {_BEST_DV_RANGE_KMS}", file=sys.stderr)
+        print(
+            f"FAIL: best total_dv {total_dv:.2f} km/s outside {_BEST_DV_RANGE_KMS}",
+            file=sys.stderr,
+        )
         return 1
 
     print("SPICE / Horizons deep query — Mars ephemeris cross-check:")
     print(f"  spice_state MARS rel SUN ({_FRAME}) at {_EPOCH}:")
     print(f"    |r| = {spice_r_au:.4f} AU ({np.linalg.norm(position):.0f} km)")
-    print(f"  porkchop EARTH->MARS best cell: depart {best['depart_epoch']}, "
-          f"total Δv {total_dv:.3f} km/s")
-    print(f"  agreement: SPICE and the Horizons-fed grid both place Mars at "
-          f"{spice_r_au:.4f} AU.")
+    print(
+        f"  porkchop EARTH->MARS best cell: depart {best['depart_epoch']}, "
+        f"total Δv {total_dv:.3f} km/s"
+    )
+    print(f"  agreement: SPICE and the Horizons-fed grid both place Mars at {spice_r_au:.4f} AU.")
     return 0
 
 
