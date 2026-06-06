@@ -296,7 +296,7 @@ wheels = [
 
 [[package]]
 name = "astrodynamics-mcp"
-version = "0.2.2"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "astropy", version = "6.1.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -349,7 +349,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.6" },
     { name = "sgp4", specifier = ">=2.25" },
     { name = "skyfield", specifier = ">=1.54" },
-    { name = "spiceypy", marker = "extra == 'spice'", specifier = ">=6.0" },
+    { name = "spiceypy", marker = "extra == 'spice'", specifier = ">=8.1,<8.2" },
 ]
 provides-extras = ["gmat", "spice", "viz"]
 

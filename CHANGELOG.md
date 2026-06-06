@@ -5,6 +5,39 @@ All notable changes to astrodynamics-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-06-06
+
+The SPICE / NAIF release. Adds seven SPICE tools behind an optional
+`[spice]` extra — kernel furnishing, SPK ephemeris state, frame
+rotations, body parameters, and kernel-defined time conversions — backed
+by NASA NAIF's CSPICE through `spiceypy`. The tools register only when
+`spiceypy` is importable (`pip install astrodynamics-mcp[spice]`), so the
+base install stays SPICE-free.
+
+### Added
+
+- SPICE tools behind an optional `[spice]` extra — the kernel-management
+  trio (`spice_load_kernel`, `spice_list_kernels`, `spice_unload_kernel`)
+  plus four query tools: `spice_state` (SPK position / velocity with
+  light-time), `spice_frame_transform` (FK / PCK / TF frame rotations),
+  `spice_body_parameters` (PCK radii / GM / pole and prime-meridian
+  constants), and `spice_time_convert` (ET / UTC / SCLK via LSK / SCLK
+  kernels). The tools furnish kernels into a process-global pool and
+  query whatever the pool holds; every CSPICE call is serialised onto one
+  dedicated worker thread, and `https` loads route through a NAIF-host
+  allowlist and the XDG kernel cache. The slots register identically on
+  stdio and Streamable HTTP (#120, #121, #122, #123, #124, #125, #126).
+- Eval-suite SPICE coverage plus a fourth runnable example session — a
+  Mars-state query that furnishes NAIF kernels and reads an SPK state —
+  shipping a markdown transcript and a Python script that drives the same
+  sequence against an in-process MCP server and asserts numerical
+  tolerance (#127).
+- Documentation for the v0.3 surface: a SPICE-integration design page
+  covering the kernel model, the NAIF furnish-from-URL allowlist, and the
+  process-global pool's trust boundary; tool-reference entries for all
+  seven tools; and the `[spice]` install line and tools table in the
+  README (#120, #129).
+
 ## [0.2.2] — 2026-05-29
 
 Repository packaging only; no change to the installed package, tool
@@ -303,6 +336,7 @@ GitHub Models on every workflow dispatch.
   trusted publishing, and creates the GitHub Release on every `v*` tag.
   macOS is deferred to v0.2 (#1, #2).
 
+[0.3.0]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.1.5...v0.2.0
