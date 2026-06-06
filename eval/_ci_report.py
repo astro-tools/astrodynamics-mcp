@@ -55,6 +55,8 @@ class FailingPrompt:
     trace_reasons: tuple[str, ...]
     functional_reasons: tuple[str, ...]
     error: str | None = None
+    attachment_passed: bool = True
+    attachment_reasons: tuple[str, ...] = ()
 
     @property
     def short_reason(self) -> str:
@@ -65,6 +67,8 @@ class FailingPrompt:
             flags.append("trace fail")
         if not self.functional_passed:
             flags.append("functional fail")
+        if not self.attachment_passed:
+            flags.append("attachment fail")
         return ", ".join(flags) if flags else "unknown failure mode"
 
 
@@ -141,6 +145,8 @@ def collect_failures(log: Any) -> tuple[float, int, int, tuple[FailingPrompt, ..
                 functional_passed=bool(meta.get("functional_passed", False)),
                 trace_reasons=tuple(meta.get("trace_failure_reasons") or ()),
                 functional_reasons=tuple(meta.get("functional_failure_reasons") or ()),
+                attachment_passed=bool(meta.get("attachment_passed", True)),
+                attachment_reasons=tuple(meta.get("attachment_failure_reasons") or ()),
             )
         )
 
@@ -188,7 +194,7 @@ def render_markdown(summary: EvalSummary, threshold: float) -> str:
     if summary.skipped:
         lines.append(
             f"- **Skipped:** {len(summary.skipped)} "
-            "(credentialed / GMAT / SPICE prompts whose prerequisites are absent — "
+            "(credentialed / GMAT / SPICE / viz prompts whose prerequisites are absent — "
             "not counted for or against the gate)"
         )
     lines.append("")
@@ -204,12 +210,14 @@ def render_markdown(summary: EvalSummary, threshold: float) -> str:
                 lines.append(f"  - trace: {reason}")
             for reason in fp.functional_reasons[:1]:
                 lines.append(f"  - functional: {reason}")
+            for reason in fp.attachment_reasons[:1]:
+                lines.append(f"  - attachment: {reason}")
         omitted = len(summary.failing) - _MAX_FAILURES_LISTED
         if omitted > 0:
             lines.append(f"- … and {omitted} more (see workflow artefact for full log)")
         lines.append("")
     else:
-        lines.append("Every prompt that ran passed both the trace and functional checks.")
+        lines.append("Every prompt that ran passed the trace, functional, and attachment checks.")
         lines.append("")
 
     if summary.skipped:

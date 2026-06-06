@@ -162,6 +162,21 @@ class TestRequirementSchema:
         assert _spec().requires_spice is False
         assert _spec(requires_spice=True).requires_spice is True
 
+    def test_requires_viz_defaults_false(self) -> None:
+        assert _spec().requires_viz is False
+        assert _spec(requires_viz=True).requires_viz is True
+
+    def test_expected_attachment_defaults_none(self) -> None:
+        assert _spec().expected_attachment is None
+
+    def test_expected_attachment_accepts_known_kinds(self) -> None:
+        assert _spec(expected_attachment="image").expected_attachment == "image"
+        assert _spec(expected_attachment="resource").expected_attachment == "resource"
+
+    def test_expected_attachment_rejects_unknown_kind(self) -> None:
+        with pytest.raises(Exception, match=r"(?i)expected_attachment|image|resource"):
+            _spec(expected_attachment="video")
+
 
 class TestRequirementsMet:
     def test_no_requirements_always_met(self) -> None:
@@ -207,6 +222,14 @@ class TestRequirementsMet:
         monkeypatch.setattr("eval._prompts._spice_available", lambda: True)
         assert requirements_met(spec, env={}) is True
 
+    def test_viz_requirement_uses_availability_probe(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        spec = _spec(requires_viz=True)
+        monkeypatch.setattr("eval._prompts._viz_available", lambda: False)
+        assert requirements_met(spec, env={}) is False
+        assert unmet_requirements(spec, env={}) == ["viz"]
+        monkeypatch.setattr("eval._prompts._viz_available", lambda: True)
+        assert requirements_met(spec, env={}) is True
+
     def test_spice_and_gmat_both_unmet_listed_together(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -214,3 +237,12 @@ class TestRequirementsMet:
         monkeypatch.setattr("eval._prompts._gmat_available", lambda: False)
         monkeypatch.setattr("eval._prompts._spice_available", lambda: False)
         assert unmet_requirements(spec, env={}) == ["gmat", "spice"]
+
+    def test_gmat_spice_viz_all_unmet_listed_in_order(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        spec = _spec(requires_gmat=True, requires_spice=True, requires_viz=True)
+        monkeypatch.setattr("eval._prompts._gmat_available", lambda: False)
+        monkeypatch.setattr("eval._prompts._spice_available", lambda: False)
+        monkeypatch.setattr("eval._prompts._viz_available", lambda: False)
+        assert unmet_requirements(spec, env={}) == ["gmat", "spice", "viz"]

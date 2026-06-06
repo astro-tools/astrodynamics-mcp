@@ -83,6 +83,19 @@ class PromptSpec(BaseModel):
             "eval/_functional.py for the predicate vocabulary."
         ),
     )
+    expected_attachment: Literal["image", "resource"] | None = Field(
+        default=None,
+        description=(
+            "Attachment golden for the visualisation tools. When set, the scorer "
+            "asserts a tool message carried an attachment of this kind: 'image' for "
+            "a PNG ImageContent (the static-plot tools) or 'resource' for a CZML "
+            "EmbeddedResource (czml_trajectory). Leave unset for every non-viz "
+            "prompt. The viz tools' structured summary is an ASCII text block rather "
+            "than JSON, so the functional_answer check does not apply to them — the "
+            "trace + attachment pair is their golden (presence and declared type, "
+            "not rendered image content)."
+        ),
+    )
     requires_credential: list[str] = Field(
         default_factory=list,
         description=(
@@ -109,6 +122,15 @@ class PromptSpec(BaseModel):
             "generic kernels are pre-seeded in the on-disk cache (see "
             "eval/_spice_kernels.py). Skipped, not failed, when either the extra or "
             "the kernels are absent."
+        ),
+    )
+    requires_viz: bool = Field(
+        default=False,
+        description=(
+            "When true the prompt drives a visualisation tool and only runs where "
+            "the [viz] extra is installed (matplotlib and gmat-czml importable). "
+            "Skipped, not failed, when the extra is absent — the same skip-gate the "
+            "requires_spice / requires_gmat prompts use."
         ),
     )
     notes: str | None = Field(
@@ -241,6 +263,23 @@ def _spice_available() -> bool:
     return kernels_cached()
 
 
+def _viz_available() -> bool:
+    """True when the viz prompts can run — both [viz] dependencies importable.
+
+    Mirrors the viz tool registration gate in
+    ``astrodynamics_mcp.tools.viz``: the static-plot tools need matplotlib and
+    czml_trajectory needs gmat-czml, so both must import for the viz prompts to
+    exercise a real tool. Either missing means the viz prompts are skipped, not
+    failed.
+    """
+    try:
+        import gmat_czml  # noqa: F401
+        import matplotlib  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
 def _credential_available(source: str, env: Mapping[str, str]) -> bool:
     spec = SOURCES.get(source)
     if spec is None:
@@ -251,8 +290,9 @@ def _credential_available(source: str, env: Mapping[str, str]) -> bool:
 def unmet_requirements(prompt: PromptSpec, env: Mapping[str, str] | None = None) -> list[str]:
     """Return the requirement tokens *prompt* does not satisfy in *env*.
 
-    Tokens are human-readable for the CI report: ``"gmat"``, ``"spice"``, and
-    ``"credential:<source>"``. An empty list means the prompt can run.
+    Tokens are human-readable for the CI report: ``"gmat"``, ``"spice"``,
+    ``"viz"``, and ``"credential:<source>"``. An empty list means the prompt
+    can run.
     """
     resolved_env = os.environ if env is None else env
     unmet: list[str] = []
@@ -260,6 +300,8 @@ def unmet_requirements(prompt: PromptSpec, env: Mapping[str, str] | None = None)
         unmet.append("gmat")
     if prompt.requires_spice and not _spice_available():
         unmet.append("spice")
+    if prompt.requires_viz and not _viz_available():
+        unmet.append("viz")
     for source in prompt.requires_credential:
         if not _credential_available(source, resolved_env):
             unmet.append(f"credential:{source}")

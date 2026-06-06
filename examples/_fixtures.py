@@ -379,6 +379,11 @@ def first_text_content(call_tool_result: Any) -> dict[str, Any]:
     ``TextContent`` whose ``.text`` is the JSON dump. The example
     scripts only ever care about the structured response, so we collapse
     that layer at one spot.
+
+    This does *not* apply to the visualisation tools: they lead the content
+    list with an ASCII summary text block (not JSON) followed by an
+    attachment, and carry the structured model on ``structuredContent`` —
+    read those with :func:`structured_content` / :func:`attachment_kinds`.
     """
     if not getattr(call_tool_result, "content", None):
         raise AssertionError("tool call returned no content")
@@ -390,3 +395,43 @@ def first_text_content(call_tool_result: Any) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise AssertionError(f"expected a JSON object, got {type(parsed).__name__}")
     return parsed
+
+
+def structured_content(call_tool_result: Any) -> dict[str, Any]:
+    """Return a tool result's ``structuredContent`` as a dict.
+
+    The visualisation tools carry their summary model on ``structuredContent``
+    and lead the content list with an ASCII text block, so
+    :func:`first_text_content` (which parses ``content[0]`` as JSON) does not
+    apply to them. The PNG / CZML attachment rides as a separate content block;
+    classify those with :func:`attachment_kinds`.
+    """
+    structured = getattr(call_tool_result, "structuredContent", None)
+    if not isinstance(structured, dict):
+        raise AssertionError(
+            f"tool result has no structuredContent dict (got {type(structured).__name__})"
+        )
+    return structured
+
+
+def attachment_kinds(call_tool_result: Any) -> list[str]:
+    """Classify a tool result's content blocks as 'text' / 'image' / 'resource'.
+
+    Mirrors the eval scorer's attachment check at the MCP-client layer: an
+    ``ImageContent`` block is an 'image' (a PNG plot), an ``EmbeddedResource``
+    is a 'resource' (a CZML document), and a ``TextContent`` is the leading
+    ASCII summary. Anything else is reported by its type name.
+    """
+    from mcp.types import EmbeddedResource, ImageContent, TextContent
+
+    kinds: list[str] = []
+    for block in getattr(call_tool_result, "content", None) or []:
+        if isinstance(block, ImageContent):
+            kinds.append("image")
+        elif isinstance(block, EmbeddedResource):
+            kinds.append("resource")
+        elif isinstance(block, TextContent):
+            kinds.append("text")
+        else:
+            kinds.append(type(block).__name__)
+    return kinds

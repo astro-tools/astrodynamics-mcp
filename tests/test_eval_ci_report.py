@@ -193,6 +193,27 @@ class TestRenderMarkdown:
         assert "step 0 (tle_lookup): no matching call" in md
         assert "expected l2_in_range" in md
 
+    def test_attachment_failure_renders(self) -> None:
+        """A viz prompt that called the tool but produced no attachment is flagged."""
+        failing = (
+            FailingPrompt(
+                sample_id="plot_ground_track_inline_states",
+                trace_passed=True,
+                functional_passed=True,
+                trace_reasons=(),
+                functional_reasons=(),
+                attachment_passed=False,
+                attachment_reasons=(
+                    "expected a 'image' attachment, but the trace produced no attachments",
+                ),
+            ),
+        )
+        summary = self._summary(accuracy=29 / 30, n_passed=29, failing=failing)
+        md = render_markdown(summary, threshold=0.80)
+        assert "plot_ground_track_inline_states" in md
+        assert "attachment fail" in md
+        assert "expected a 'image' attachment" in md
+
     def test_below_threshold_marks_fail(self) -> None:
         failing = tuple(
             FailingPrompt(

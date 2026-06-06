@@ -70,6 +70,7 @@ def _sample_from_prompt(prompt: PromptSpec) -> Sample:
                 [step.model_dump() for step in trace] for trace in prompt.permitted_traces
             ],
             "functional_answer": list(prompt.functional_answer),
+            "expected_attachment": prompt.expected_attachment,
             "notes": prompt.notes,
         },
     )

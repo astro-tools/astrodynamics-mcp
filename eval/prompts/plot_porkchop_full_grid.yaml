@@ -1,0 +1,35 @@
+prompt: |
+  Plot the porkchop contour for this porkchop scan result. Pass the object
+  through to plot_porkchop exactly as given (it already carries the full grid).
+  porkchop_result:
+  {
+    "best": {"depart_epoch": "2026-10-01T00:00:00Z", "arrive_epoch": "2027-06-15T00:00:00Z", "tof": {"value": 257, "unit": "days"}, "c3": {"value": 11.5, "unit": "km^2/s^2"}, "v_inf_arrival": {"value": 2.7, "unit": "km/s"}, "dec_dep_asymptote": {"value": -9.0, "unit": "deg"}, "total_dv": {"value": 5.0, "unit": "km/s"}},
+    "top_cells": [
+      {"depart_epoch": "2026-10-01T00:00:00Z", "arrive_epoch": "2027-06-15T00:00:00Z", "tof": {"value": 257, "unit": "days"}, "c3": {"value": 11.5, "unit": "km^2/s^2"}, "v_inf_arrival": {"value": 2.7, "unit": "km/s"}, "dec_dep_asymptote": {"value": -9.0, "unit": "deg"}, "total_dv": {"value": 5.0, "unit": "km/s"}},
+      {"depart_epoch": "2026-10-01T00:00:00Z", "arrive_epoch": "2027-06-01T00:00:00Z", "tof": {"value": 243, "unit": "days"}, "c3": {"value": 12.0, "unit": "km^2/s^2"}, "v_inf_arrival": {"value": 2.6, "unit": "km/s"}, "dec_dep_asymptote": {"value": -10.0, "unit": "deg"}, "total_dv": {"value": 5.2, "unit": "km/s"}},
+      {"depart_epoch": "2026-10-15T00:00:00Z", "arrive_epoch": "2027-06-15T00:00:00Z", "tof": {"value": 243, "unit": "days"}, "c3": {"value": 12.4, "unit": "km^2/s^2"}, "v_inf_arrival": {"value": 2.8, "unit": "km/s"}, "dec_dep_asymptote": {"value": -10.0, "unit": "deg"}, "total_dv": {"value": 5.4, "unit": "km/s"}},
+      {"depart_epoch": "2026-10-15T00:00:00Z", "arrive_epoch": "2027-06-01T00:00:00Z", "tof": {"value": 229, "unit": "days"}, "c3": {"value": 13.0, "unit": "km^2/s^2"}, "v_inf_arrival": {"value": 2.9, "unit": "km/s"}, "dec_dep_asymptote": {"value": -11.0, "unit": "deg"}, "total_dv": {"value": 5.6, "unit": "km/s"}}
+    ],
+    "grid": [
+      {"depart_epoch": "2026-10-01T00:00:00Z", "arrive_epoch": "2027-06-01T00:00:00Z", "tof": {"value": 243, "unit": "days"}, "c3": {"value": 12.0, "unit": "km^2/s^2"}, "v_inf_arrival": {"value": 2.6, "unit": "km/s"}, "dec_dep_asymptote": {"value": -10.0, "unit": "deg"}, "total_dv": {"value": 5.2, "unit": "km/s"}},
+      {"depart_epoch": "2026-10-01T00:00:00Z", "arrive_epoch": "2027-06-15T00:00:00Z", "tof": {"value": 257, "unit": "days"}, "c3": {"value": 11.5, "unit": "km^2/s^2"}, "v_inf_arrival": {"value": 2.7, "unit": "km/s"}, "dec_dep_asymptote": {"value": -9.0, "unit": "deg"}, "total_dv": {"value": 5.0, "unit": "km/s"}},
+      {"depart_epoch": "2026-10-15T00:00:00Z", "arrive_epoch": "2027-06-01T00:00:00Z", "tof": {"value": 229, "unit": "days"}, "c3": {"value": 13.0, "unit": "km^2/s^2"}, "v_inf_arrival": {"value": 2.9, "unit": "km/s"}, "dec_dep_asymptote": {"value": -11.0, "unit": "deg"}, "total_dv": {"value": 5.6, "unit": "km/s"}},
+      {"depart_epoch": "2026-10-15T00:00:00Z", "arrive_epoch": "2027-06-15T00:00:00Z", "tof": {"value": 243, "unit": "days"}, "c3": {"value": 12.4, "unit": "km^2/s^2"}, "v_inf_arrival": {"value": 2.8, "unit": "km/s"}, "dec_dep_asymptote": {"value": -10.0, "unit": "deg"}, "total_dv": {"value": 5.4, "unit": "km/s"}}
+    ],
+    "ascii_summary": "(precomputed C3 grid)"
+  }
+tier: single_tool
+tools_required: [plot_porkchop]
+requires_viz: true
+permitted_traces:
+  - - tool: plot_porkchop
+      arg_constraints:
+        porkchop_result: {has_fields: ["best", "grid"]}
+expected_attachment: image
+notes: |
+  Single-tool path for plot_porkchop. Unlike the other plot tools its input is
+  itself a tool's output, so a minimal full grid (2 depart x 2 arrive = 4
+  feasible cells — the smallest a filled contour can render) is supplied inline
+  and passed through verbatim; has_fields asserts the call carried the grid
+  rather than a summary-only result. The golden is trace + attachment (a PNG
+  ImageContent); no functional_answer (the summary is ASCII text, not JSON).

@@ -1,0 +1,24 @@
+prompt: |
+  Plot the ground track for this short Earth-fixed (ITRS) ephemeris of a
+  satellite. States:
+    1. epoch 2024-01-01T00:00:00Z, r=[6778, 0, 0] km, v=[0, 7.5, 0] km/s
+    2. epoch 2024-01-01T00:15:00Z, r=[0, 5320, 4200] km, v=[-7.5, 0, 0] km/s
+    3. epoch 2024-01-01T00:30:00Z, r=[-6778, 0, 0] km, v=[0, -7.5, 0] km/s
+    4. epoch 2024-01-01T00:45:00Z, r=[0, -5320, -4200] km, v=[7.5, 0, 0] km/s
+tier: single_tool
+tools_required: [plot_ground_track]
+requires_viz: true
+permitted_traces:
+  - - tool: plot_ground_track
+      arg_constraints:
+        states: {length: {min: 2}}
+expected_attachment: image
+notes: |
+  Primary single-tool path for plot_ground_track. The ITRS series is supplied
+  inline so the model passes it straight through — only plot_ground_track is
+  exposed at this tier, so it cannot detour through sgp4_propagate — and the
+  Earth-fixed frame needs no inertial->ITRS rotation. The golden is the trace
+  plus the attachment: a PNG ImageContent must come back. There is no
+  functional_answer because the viz tools' structured summary rides as an ASCII
+  text block, not JSON (the attachment check, not the functional check, is what
+  asserts the PNG was produced).

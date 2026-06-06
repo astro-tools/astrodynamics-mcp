@@ -1,0 +1,22 @@
+prompt: |
+  Plot the 3D trajectory about Earth for this short ICRF ephemeris arc.
+  States:
+    1. epoch 2024-01-01T00:00:00Z, r=[6778, 0, 0] km, v=[0, 6.5, 4.0] km/s
+    2. epoch 2024-01-01T00:20:00Z, r=[0, 5320, 4200] km, v=[-7.0, 0, 1.0] km/s
+    3. epoch 2024-01-01T00:40:00Z, r=[-6778, 0, 0] km, v=[0, -6.5, -4.0] km/s
+tier: single_tool
+tools_required: [plot_trajectory]
+requires_viz: true
+permitted_traces:
+  - - tool: plot_trajectory
+      arg_constraints:
+        states: {length: {min: 2}}
+        projection: {one_of: ["3D"]}
+expected_attachment: image
+notes: |
+  Primary single-tool path for plot_trajectory. The ICRF arc is supplied inline
+  (plotted in the states' own frame, no rotation) and the prompt asks for the
+  3D projection so the call's `projection` argument carries signal. central_body
+  defaults to 'earth' and is left unconstrained. The golden is trace +
+  attachment (a PNG ImageContent); the structured summary is ASCII text, not
+  JSON, so there is no functional_answer.
