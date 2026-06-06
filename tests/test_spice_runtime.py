@@ -22,6 +22,8 @@ from astrodynamics_mcp.spice_runtime import (
     furnish_and_describe,
     list_pool,
     normalize_kind_filter,
+    query_body_constants,
+    query_states,
     run_on_spice_thread,
     unload_kernel,
 )
@@ -242,6 +244,17 @@ class TestUnloadKernel:
         assert excinfo.value.code == "invalid_input.spice_kernel_not_loaded"
         assert excinfo.value.data["name"] == "/k/never-loaded.bsp"
 
+    def test_normpath_equal_name_actually_unloads(self, fake_spice: FakeSpice) -> None:
+        # The membership check matches by _same_path (normalised), but CSPICE
+        # unload keys on the literal furnished string. A normpath-equal-but-not-
+        # identical name must therefore unload the *matched* pool entry, not no-op
+        # on the caller's variant and report a false success.
+        furnish_and_describe("/k/de440.bsp")
+        remaining = unload_kernel("/k/./de440.bsp")  # same file, non-canonical form
+        assert remaining == 0
+        assert list_pool() == []  # the kernel is actually gone, not just claimed gone
+        assert fake_spice.calls["unload"] == ["/k/de440.bsp"]  # the stored name reached CSPICE
+
     def test_unload_does_not_touch_cspice_when_missing(self, fake_spice: FakeSpice) -> None:
         with pytest.raises(InvalidInputError):
             unload_kernel("/k/never-loaded.bsp")
@@ -259,3 +272,47 @@ class TestUnloadKernel:
         with pytest.raises(UpstreamError) as excinfo:
             unload_kernel("/k/de440.bsp")
         assert excinfo.value.code == "upstream.spice_unload_failed"
+
+
+# ---------------------------------------------------------------------------
+# Batch helpers — query_states / query_body_constants run the whole batch
+# inside one worker call so a multi-epoch / multi-parameter query is atomic.
+# ---------------------------------------------------------------------------
+
+
+class TestQueryStates:
+    def test_returns_one_state_per_epoch_in_order(self, fake_spice: FakeSpice) -> None:
+        furnish_and_describe("/k/naif0012.tls")  # LSK for str2et
+        furnish_and_describe("/k/de440.bsp")  # SPK for spkezr
+        fake_spice.plan_state("MOON", "EARTH", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 1.5)
+        epochs = ["2026-01-01T00:00:00.000000", "2026-01-02T00:00:00.000000"]
+        states = query_states("MOON", "EARTH", epochs, "J2000", "NONE")
+        assert len(states) == len(epochs)
+        assert all(s.position == (1.0, 2.0, 3.0) for s in states)
+        assert all(s.velocity == (4.0, 5.0, 6.0) for s in states)
+
+    def test_empty_epoch_list_returns_empty(self, fake_spice: FakeSpice) -> None:
+        assert query_states("MOON", "EARTH", [], "J2000", "NONE") == []
+
+    def test_propagates_typed_error_from_a_member_call(self, fake_spice: FakeSpice) -> None:
+        # No SPK furnished → the per-epoch spkezr raises, surfaced as the same
+        # typed error a single query_state would raise.
+        furnish_and_describe("/k/naif0012.tls")
+        with pytest.raises(UpstreamError) as excinfo:
+            query_states("MOON", "EARTH", ["2026-01-01T00:00:00.000000"], "J2000", "NONE")
+        assert excinfo.value.code == "upstream.spice_state_failed"
+
+
+class TestQueryBodyConstants:
+    def test_returns_one_constant_per_item_in_order(self, fake_spice: FakeSpice) -> None:
+        furnish_and_describe("/k/pck00011.tpc")
+        fake_spice.plan_body_code("MARS", 499)
+        fake_spice.plan_body_constant(499, "RADII", [3396.19, 3396.19, 3376.2], requires="PCK")
+        fake_spice.plan_body_constant(499, "GM", [42828.375214], requires="PCK")
+        constants = query_body_constants("MARS", ["RADII", "GM"])
+        assert [c.source for c in constants] == ["BODY499_RADII", "BODY499_GM"]
+        assert constants[0].values == (3396.19, 3396.19, 3376.2)
+        assert constants[1].values == (42828.375214,)
+
+    def test_empty_item_list_returns_empty(self, fake_spice: FakeSpice) -> None:
+        assert query_body_constants("MARS", []) == []

@@ -160,6 +160,26 @@ class TestParameterNormalisation:
         response = await _do_body_parameters(body="MARS", parameters=["pm", "radii", "pm", "radii"])
         assert [p.name for p in response.parameters] == ["pm", "radii"]
 
+    async def test_multi_parameter_lookup_is_a_single_worker_dispatch(
+        self, fake_spice: FakeSpice, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # All requested constants are read in one worker call
+        # (query_body_constants), so a multi-parameter lookup is one atomic
+        # CSPICE interaction — not one dispatch per parameter.
+        from astrodynamics_mcp.spice_runtime import run_on_spice_thread as real
+
+        await _furnish_pck(tmp_path)
+        _plan_mars(fake_spice)
+        dispatched: list[str] = []
+
+        async def counting(fn: object, *args: object, **kwargs: object) -> object:
+            dispatched.append(fn.__name__)  # type: ignore[attr-defined]
+            return await real(fn, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(spice_tools, "run_on_spice_thread", counting)
+        await _do_body_parameters(body="MARS", parameters=["radii", "gm", "pole_ra"])
+        assert dispatched == ["query_body_constants"]
+
 
 # ---------------------------------------------------------------------------
 # Typed errors

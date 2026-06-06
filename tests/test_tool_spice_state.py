@@ -168,6 +168,30 @@ class TestStateQuery:
         )
         assert [s.epoch for s in response.states] == epochs
 
+    async def test_multi_epoch_query_is_a_single_worker_dispatch(
+        self, fake_spice: FakeSpice, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # All epochs run in one worker call (query_states), so the multi-epoch
+        # query is one atomic CSPICE interaction — not one dispatch per epoch.
+        from astrodynamics_mcp.spice_runtime import run_on_spice_thread as real
+
+        await _furnish_lsk_and_spk(tmp_path)
+        dispatched: list[str] = []
+
+        async def counting(fn: object, *args: object, **kwargs: object) -> object:
+            dispatched.append(fn.__name__)  # type: ignore[attr-defined]
+            return await real(fn, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(spice_tools, "run_on_spice_thread", counting)
+        await _do_state(
+            target="MOON",
+            observer="EARTH",
+            epochs=["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", "2026-01-03T00:00:00Z"],
+            frame="J2000",
+            aberration="NONE",
+        )
+        assert dispatched == ["query_states"]
+
 
 # ---------------------------------------------------------------------------
 # Typed errors
