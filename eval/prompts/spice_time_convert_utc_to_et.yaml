@@ -1,0 +1,29 @@
+prompt: |
+  Convert 2026-01-01T00:00:00Z (UTC) to SPICE ephemeris time (ET, seconds
+  past J2000 TDB). Furnish the leap-second kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls
+  first, then do the conversion.
+tier: single_tool
+tools_required: [spice_load_kernel, spice_time_convert]
+requires_spice: true
+permitted_traces:
+  - - tool: spice_load_kernel
+    - tool: spice_time_convert
+      arg_constraints:
+        from_scale: {equals: "UTC"}
+        to_scale: {equals: "ET"}
+functional_answer:
+  - path: "$.from_scale"
+    equals: "UTC"
+  - path: "$.to_scale"
+    equals: "ET"
+  - path: "$.value.unit"
+    equals: "s past J2000 TDB"
+  - path: "$.value.value"
+    numeric_tolerance: {expected: 820497669.184, abs: 1}
+notes: |
+  SPICE single-tool primary: the kernel-backed counterpart to time_convert,
+  owning ET's leap-second-defined zero. 2026-01-01T00:00:00Z -> ~820497669.184
+  s past J2000 TDB (the value in the tool's own contract); abs:1 s absorbs
+  leap-second-table revisions. requires_spice — the LSK must be furnished, so
+  the prompt skips without the extra or the cached kernels.

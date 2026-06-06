@@ -1,0 +1,26 @@
+prompt: |
+  Furnish the leap-second kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls
+  and the planetary ephemeris
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp
+  with SPICE, then list every kernel currently loaded in the pool so I can
+  confirm both are present.
+tier: single_tool
+tools_required: [spice_load_kernel, spice_list_kernels]
+requires_spice: true
+permitted_traces:
+  - - tool: spice_load_kernel
+    - tool: spice_list_kernels
+functional_answer:
+  - path: "$.kernels"
+    length: {min: 2}
+  - path: "$.kernels[*].name"
+    present: true
+  - path: "$.kernels[*].type"
+    present: true
+notes: |
+  SPICE single-tool primary: pool introspection after a furnish. At least two
+  kernels (the LSK and the SPK) must be present; each row carries a name and a
+  CSPICE type. The model may call spice_list_kernels with no `kind` filter, so
+  the trace leaves its args unconstrained. requires_spice — skipped without the
+  extra or the cached kernels.

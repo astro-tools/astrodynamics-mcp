@@ -1,0 +1,30 @@
+prompt: |
+  Furnish the leap-second kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls
+  and the planetary-constants kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc
+  with SPICE. Rotate the position [4000, 5000, 6000] km from J2000 into the
+  Moon body-fixed frame IAU_MOON at 2026-01-01T00:00:00Z, then unload the
+  planetary-constants kernel from the pool.
+tier: sequential
+tools_required: [spice_load_kernel, spice_frame_transform, spice_unload_kernel]
+requires_spice: true
+permitted_traces:
+  - - tool: spice_load_kernel
+    - tool: spice_frame_transform
+      arg_constraints:
+        from_frame: {case_insensitive_equals: "J2000"}
+        to_frame: {case_insensitive_equals: "IAU_MOON"}
+    - tool: spice_unload_kernel
+functional_answer:
+  - path: "$.unloaded"
+    present: true
+  - path: "$.remaining_count"
+    present: true
+notes: |
+  Sequential: body-fixed rotation then a pool unload. Gives
+  spice_frame_transform and spice_unload_kernel a sequential-tier appearance.
+  IAU_MOON needs the lunar orientation from the PCK; the model unloads by the
+  `name` spice_load_kernel returned. The chain ends on the unload, so the
+  functional checks are the echoed `unloaded` and `remaining_count`.
+  requires_spice — skipped without the extra or the cached kernels.

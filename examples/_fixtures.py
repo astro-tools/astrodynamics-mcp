@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -226,6 +227,125 @@ def mock_horizons_earth_mars_2028() -> Iterator[None]:
         ),
     ):
         yield
+
+
+# ---------------------------------------------------------------------------
+# SPICE — synthetic Mars heliocentric state matching the Horizons geometry
+# ---------------------------------------------------------------------------
+
+
+def mars_heliocentric_state_eclipj2000(epoch: datetime) -> tuple[list[float], list[float]]:
+    """Mars's heliocentric state at *epoch* on the synthetic example orbit.
+
+    Uses the *same* circular ecliptic-plane orbit the Horizons mock feeds
+    porkchop (semi-major axis 1.523679 AU, phased 44° at 2028-01-01), so the
+    SPICE SPK state the example queries and the porkchop's Mars ephemeris
+    describe the same body. Returns ``([x, y, z] km, [vx, vy, vz] km/s)`` —
+    expressed in the ecliptic-of-J2000 plane, which is what the example's
+    ``spice_state(frame='ECLIPJ2000')`` query reports.
+    """
+    period_s = 2 * np.pi * np.sqrt(_MARS_SMA_KM**3 / _MU_SUN)
+    v_circ = float(np.sqrt(_MU_SUN / _MARS_SMA_KM))
+    dt_s = (epoch - _FIXTURE_START).total_seconds()
+    m = float(np.radians(44.0)) + 2 * np.pi * dt_s / period_s
+    cos_m, sin_m = float(np.cos(m)), float(np.sin(m))
+    position = [_MARS_SMA_KM * cos_m, _MARS_SMA_KM * sin_m, 0.0]
+    velocity = [-v_circ * sin_m, v_circ * cos_m, 0.0]
+    return position, velocity
+
+
+class _ExampleSpiceyError(Exception):
+    """Stand-in for ``spiceypy.SpiceyError`` — what CSPICE raises on failure."""
+
+
+class _ExampleSpice:
+    """Minimal ``spiceypy`` stand-in for example session (e): furnish + SPK state.
+
+    The test environment ships no ``spiceypy`` (it lives behind the ``[spice]``
+    extra) and no real planetary SPK, so the example injects this fake via
+    ``sys.modules`` exactly as the SPICE unit tests do. It implements only the
+    surface ``spice_load_kernel`` and ``spice_state`` reach — ``furnsh`` /
+    ``ktotal`` / ``kdata`` over a real in-process pool, ``str2et`` / ``spkezr``
+    for the state, and the three error-handling setters — and returns the
+    planned Mars heliocentric state. As with the unit-test golden, this
+    validates the tool's *packaging* of a known reference state, not CSPICE's
+    own ephemeris math.
+    """
+
+    SpiceyError = _ExampleSpiceyError
+
+    def __init__(self, mars_state: tuple[float, ...]) -> None:
+        self._pool: list[dict[str, Any]] = []
+        self._next_handle = 1
+        self._mars_state = list(mars_state)
+
+    # Error-handling setters — recorded behaviour is irrelevant to the example.
+    def erract(self, op: str, action: str | None = None) -> str:
+        return action or "RETURN"
+
+    def errdev(self, op: str, device: str | None = None) -> str:
+        return device or "NULL"
+
+    def errprt(self, op: str, value: str | None = None) -> str:
+        return value or "NONE"
+
+    # Kernel pool — an SPK gets a non-zero handle; text kernels (LSK) get 0.
+    def furnsh(self, path: str) -> None:
+        ktype = "SPK" if path.endswith(".bsp") else "TEXT"
+        handle = 0
+        if ktype == "SPK":
+            handle = self._next_handle
+            self._next_handle += 1
+        if not any(entry["name"] == path for entry in self._pool):
+            self._pool.append({"name": path, "type": ktype, "source": "", "handle": handle})
+
+    def ktotal(self, kind: str) -> int:
+        return len(self._pool)
+
+    def kdata(
+        self, which: int, kind: str, *args: Any, **kwargs: Any
+    ) -> tuple[str, str, str, int, bool]:
+        if which < 0 or which >= len(self._pool):
+            return ("", "", "", 0, False)
+        entry = self._pool[which]
+        return (entry["name"], entry["type"], entry["source"], int(entry["handle"]), True)
+
+    def _has_type(self, ktype: str) -> bool:
+        return any(entry["type"] == ktype for entry in self._pool)
+
+    def str2et(self, time: str) -> float:
+        if not self._has_type("TEXT"):
+            raise _ExampleSpiceyError("SPICE(NOLEAPSECONDS): no leapseconds kernel loaded")
+        return 0.0
+
+    def spkezr(
+        self, targ: str, et: float, ref: str, abcorr: str, obs: str
+    ) -> tuple[list[float], float]:
+        if not self._has_type("SPK"):
+            raise _ExampleSpiceyError("SPICE(SPKINSUFFDATA): no ephemeris data loaded")
+        return (list(self._mars_state), 0.0)
+
+
+@contextmanager
+def mock_spice_mars_state(epoch_iso: str) -> Iterator[None]:
+    """Inject the SPICE fake for the lifetime of the block, seeded for *epoch_iso*.
+
+    The fake must be in ``sys.modules`` *before* ``astrodynamics_mcp.tools.spice``
+    is first imported — its registration is gated on ``spiceypy`` being
+    importable — so enter this context before opening :func:`mcp_session`.
+    """
+    epoch = datetime.fromisoformat(epoch_iso.replace("Z", "+00:00"))
+    position, velocity = mars_heliocentric_state_eclipj2000(epoch)
+    fake = _ExampleSpice(tuple(position) + tuple(velocity))
+    previous = sys.modules.get("spiceypy")
+    sys.modules["spiceypy"] = fake  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        if previous is None:
+            sys.modules.pop("spiceypy", None)
+        else:
+            sys.modules["spiceypy"] = previous
 
 
 # ---------------------------------------------------------------------------

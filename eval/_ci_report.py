@@ -188,7 +188,7 @@ def render_markdown(summary: EvalSummary, threshold: float) -> str:
     if summary.skipped:
         lines.append(
             f"- **Skipped:** {len(summary.skipped)} "
-            "(credentialed / GMAT prompts whose prerequisites are absent — "
+            "(credentialed / GMAT / SPICE prompts whose prerequisites are absent — "
             "not counted for or against the gate)"
         )
     lines.append("")

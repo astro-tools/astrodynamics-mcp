@@ -1,0 +1,35 @@
+prompt: |
+  Using SPICE, find the Moon's position and velocity relative to Earth at
+  2026-01-01T00:00:00Z in the J2000 frame. First furnish the leap-second
+  kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls
+  and the planetary ephemeris
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp
+  then query the state.
+tier: single_tool
+tools_required: [spice_load_kernel, spice_state]
+requires_spice: true
+permitted_traces:
+  - - tool: spice_load_kernel
+    - tool: spice_state
+      arg_constraints:
+        target: {case_insensitive_equals: "MOON"}
+        observer: {case_insensitive_equals: "EARTH"}
+functional_answer:
+  - path: "$.frame"
+    equals: "J2000"
+  - path: "$.states[0].position.unit"
+    equals: "km"
+  - path: "$.states[0].velocity.unit"
+    equals: "km/s"
+  - path: "$.states[0].position.value"
+    l2_in_range: [356500, 406700]
+notes: |
+  SPICE single-tool primary: kernel furnish (LSK + SPK) then an SPK state
+  query. requires_spice — skipped where the [spice] extra or the cached
+  generic kernels are absent. The load step's constraints are left loose
+  because the model may furnish the two kernels in either order or as
+  separate calls; the trace subsequence still requires a load before the
+  query. The l2 bound brackets the Earth-Moon distance (perigee ~356500 km,
+  apogee ~406700 km) — a "this is a real geocentric lunar state" check, not a
+  per-epoch golden, since the exact vector depends on the furnished DE.

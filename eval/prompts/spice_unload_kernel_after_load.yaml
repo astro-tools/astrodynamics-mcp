@@ -1,0 +1,23 @@
+prompt: |
+  Furnish the planetary ephemeris
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp
+  with SPICE, then unload it again from the pool and tell me how many kernels
+  remain.
+tier: single_tool
+tools_required: [spice_load_kernel, spice_unload_kernel]
+requires_spice: true
+permitted_traces:
+  - - tool: spice_load_kernel
+    - tool: spice_unload_kernel
+functional_answer:
+  - path: "$.unloaded"
+    present: true
+  - path: "$.remaining_count"
+    present: true
+notes: |
+  SPICE single-tool primary: the pool-mutation round-trip (furnish then
+  unload). The unload key is the `name` spice_load_kernel returned (the cached
+  local path), not the original URL — the model must thread it through, so the
+  trace leaves the unload arg unconstrained and the functional check asserts
+  the echoed `unloaded` and `remaining_count` are present. requires_spice —
+  skipped without the extra or the cached kernel.

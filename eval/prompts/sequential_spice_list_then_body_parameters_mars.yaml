@@ -1,0 +1,30 @@
+prompt: |
+  Furnish the planetary-constants kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc
+  and the gravity kernel
+    https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/gm_de440.tpc
+  with SPICE, list the loaded kernels to confirm both are present, then read
+  Mars's triaxial radii and GM.
+tier: sequential
+tools_required: [spice_load_kernel, spice_list_kernels, spice_body_parameters]
+requires_spice: true
+permitted_traces:
+  - - tool: spice_load_kernel
+    - tool: spice_list_kernels
+    - tool: spice_body_parameters
+      arg_constraints:
+        body: {case_insensitive_equals: "MARS"}
+functional_answer:
+  - path: "$.parameters[0].values"
+    length: 3
+  - path: "$.parameters[0].values[0].value"
+    numeric_tolerance: {expected: 3396.19, abs: 5}
+  - path: "$.parameters[1].values[0].value"
+    numeric_tolerance: {expected: 42828.4, abs: 5}
+notes: |
+  Sequential: furnish -> introspect pool -> read constants. Gives
+  spice_list_kernels and spice_body_parameters a sequential-tier appearance.
+  The chain ends on spice_body_parameters, so the functional checks are the
+  Mars radii (3 km values, equatorial ~3396.19) and GM (~42828.4 km^3/s^2)
+  from the default [radii, gm] set. requires_spice — skipped without the extra
+  or the cached kernels.
