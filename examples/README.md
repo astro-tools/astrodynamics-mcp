@@ -1,6 +1,6 @@
 # Examples
 
-Three runnable client sessions demonstrating the canonical
+Four runnable client sessions demonstrating the canonical
 astrodynamics-mcp workflows.
 
 | # | Tier | Question | Tool path |
@@ -8,6 +8,7 @@ astrodynamics-mcp workflows.
 | [01](01_hohmann_dv.md) | single-tool | "Compute the Hohmann Δv from a 250 km circular LEO to GEO." | `lambert_solve` |
 | [02](02_hubble_passes_madrid.md) | sequential | "Plot Hubble passes from Madrid for the next seven days." | `tle_lookup` → `access_windows` |
 | [03](03_mars_launch_window_2028.md) | planning | "What's the best Mars launch window in 2028?" | `porkchop` (+ follow-up `lambert_solve`) |
+| [04](04_spice_mars_state.md) | sequential | "Use SPICE to get Mars's state, then confirm a porkchop agrees on where Mars is." | `spice_load_kernel` → `spice_state` → `porkchop` |
 
 ## How each example is structured
 
@@ -30,6 +31,7 @@ Each example ships as a pair:
 uv run python examples/run_example_01_hohmann.py
 uv run python examples/run_example_02_hubble_passes.py
 uv run python examples/run_example_03_mars_launch_window.py
+uv run python examples/run_example_04_spice_mars_state.py
 ```
 
 Each script exits 0 on success and prints a short summary of the tool
@@ -51,6 +53,14 @@ live data is the same workflow but with results that change as the
 upstream catalogues drift. Example 01 (Hohmann) is pure orbital
 mechanics with no data source; it produces the same number every run
 against any deployment shape.
+
+Example 04 (SPICE / Horizons) additionally injects a small `spiceypy`
+fake — the test environment ships no `[spice]` extra and no real
+planetary SPK, so the SPICE half runs against a stand-in seeded with the
+same synthetic Mars geometry the Horizons mock feeds `porkchop` (the
+same approach the SPICE unit tests take). Against a live `[spice]`
+install with the real kernels, the identical tool calls return CSPICE's
+own ephemeris.
 
 ## Linking out
 

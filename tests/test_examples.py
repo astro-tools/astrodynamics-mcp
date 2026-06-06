@@ -26,6 +26,7 @@ _EXAMPLE_SCRIPTS = [
     "run_example_01_hohmann.py",
     "run_example_02_hubble_passes.py",
     "run_example_03_mars_launch_window.py",
+    "run_example_04_spice_mars_state.py",
 ]
 
 
