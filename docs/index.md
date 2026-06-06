@@ -26,6 +26,12 @@ Installing the [`[gmat]` extra](gmat-integration.md) adds five GMAT
 mission-analysis tools, letting a client author, validate, run, and sweep
 NASA GMAT mission scripts and read back their reports and ephemerides.
 
+Installing the [`[spice]` extra](spice-integration.md) adds the SPICE tools —
+backed by NASA NAIF's CSPICE via [`spiceypy`](https://github.com/AndrewAnnex/SpiceyPy) —
+so a client can furnish kernels, query a body's state from an SPK, rotate
+vectors between kernel-defined frames (including non-Earth body-fixed ones),
+read body constants, and convert between the SPICE time systems.
+
 ## Quick start
 
 Install the server:

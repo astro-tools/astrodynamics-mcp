@@ -198,6 +198,52 @@ recent cached values for the conversion. The conversion result is still
 correct up to the residual UT1-UTC error introduced by the staleness,
 typically below a millisecond.
 
+## NAIF generic kernels — `spice_load_kernel`
+
+[NAIF](https://naif.jpl.nasa.gov/naif/) — NASA's Navigation and Ancillary
+Information Facility — publishes the generic SPICE kernels (leap-second tables,
+planetary ephemerides, planetary-constants kernels, frame kernels) that the
+optional `[spice]` tools read. Unlike every source above, **nothing is fetched
+at install time and nothing is fetched on its own**: a kernel is downloaded only
+when a `spice_load_kernel` call explicitly names a URL, and a call that furnishes
+a local filesystem path makes no network request at all. The `[spice]` extra is
+covered end-to-end on [SPICE integration](spice-integration.md).
+
+A URL is an SSRF / path-traversal surface, so URL loads are constrained before
+any request is made:
+
+- **`https` only.** An `http://` URL is refused with a typed
+  `invalid_input.spice_kernel_url_scheme` error.
+- **NAIF allowlist.** The host must be `naif.jpl.nasa.gov`. Any other host —
+  and any redirect that *leaves* the allowlist — is refused with
+  `invalid_input.spice_kernel_url_host`; every redirect hop is re-validated
+  before it is followed. Host a kernel elsewhere? Mirror it locally and furnish
+  the file path.
+- **Size cap.** Downloads are capped (default 512 MB — generous for a planetary
+  SPK such as `de440` at ~114 MB, well below a runaway fetch) via both the
+  server's `Content-Length` and the streamed body; an over-cap kernel surfaces
+  as `upstream.spice_kernel_too_large`. Raise it with
+  `ASTRODYNAMICS_MCP_KERNEL_MAX_BYTES` for a genuinely larger kernel.
+
+A fetched kernel is written into a `kernels/` subdirectory of the same XDG
+cache root described under [On-disk cache](#on-disk-cache) — raw kernel blobs
+keyed by a hash of the URL and written with the same atomic-rename discipline,
+*not* the JSON-per-entry layout the response adapters use. The default TTL is
+**30 days**: NAIF versions kernel filenames, so a cached kernel is effectively
+immutable and the TTL mainly governs how often a long-lived deployment
+re-validates. Override it with `ASTRODYNAMICS_MCP_KERNEL_CACHE_TTL`. A repeat
+URL load within the TTL is served from disk with no network round-trip (the
+load tool reports this as `from_cache=true`).
+
+Because furnish-from-URL routes through this cache, disabling the cache
+(`ASTRODYNAMICS_MCP_CACHE_DIR=""`) disables URL loads — the tool returns
+`upstream.spice_kernel_cache_disabled` and asks for a local path instead. A
+local-path furnish never touches the cache or the network and is unaffected.
+
+The kernel pool itself is process-global, persists across calls, and (on an
+HTTP deployment) is shared by every caller — that lifecycle and its trust
+boundary are documented on [SPICE integration](spice-integration.md).
+
 ## On-disk cache
 
 All three adapters write to the same XDG-aware cache directory:

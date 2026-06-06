@@ -79,8 +79,9 @@ Restart Claude Code. The no-auth core (`tle_lookup`, `sgp4_propagate`,
 `lambert_solve`, `access_windows`, `time_convert`, `frame_transform`,
 `porkchop`, `bplane_target`) plus `satellite_metadata` appears in the tool
 list; the GMAT tools join it when the `[gmat]` extra is installed (see
-[GMAT integration](gmat-integration.md)). The [tool reference](tool-reference.md)
-is the live catalogue.
+[GMAT integration](gmat-integration.md)), and the SPICE tools when the
+`[spice]` extra is (see [SPICE integration](spice-integration.md)). The
+[tool reference](tool-reference.md) is the live catalogue.
 
 To enable verbose server-side logging while debugging, swap the `args`:
 
