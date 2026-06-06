@@ -15,3 +15,4 @@ from astrodynamics_mcp.tools import satellite_metadata as _satellite_metadata  #
 from astrodynamics_mcp.tools import spice as _spice  # noqa: F401
 from astrodynamics_mcp.tools import time as _time  # noqa: F401
 from astrodynamics_mcp.tools import tle as _tle  # noqa: F401
+from astrodynamics_mcp.tools import viz as _viz  # noqa: F401

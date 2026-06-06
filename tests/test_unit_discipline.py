@@ -84,6 +84,16 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
     # TimeConvertResponse is deliberately excluded — see import-level note above.
 ]
 
+# Registry of attachment-bearing tool output schemas — those that carry a PNG
+# or CZML attachment alongside a structured summary. Their summary may include a
+# non-physical cardinality (a pixel count, a CZML packet count) that has no
+# {value, unit} envelope, so each entry pairs the model with the exact set of
+# field paths exempt from the bare-numeric rule. Every physical quantity in the
+# same model is still policed — the exemption is per-path, never blanket. Empty
+# until the visualisation tools land their real response models; the self-test
+# fixtures below exercise the relaxation mechanism in the meantime.
+ATTACHMENT_OUTPUT_SCHEMAS: list[tuple[type[BaseModel], frozenset[str]]] = []
+
 
 class _GoodSchema(BaseModel):
     """Self-test fixture: a schema that satisfies unit discipline."""
@@ -118,6 +128,35 @@ class _NestedGoodSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     inner: _GoodSchema
+
+
+class _AttachmentBearingSchema(BaseModel):
+    """Self-test fixture: an attachment-bearing summary with non-physical counts.
+
+    Mirrors the shape a static-plot tool's structured summary takes — the PNG
+    rides as a separate content block, while the summary carries the image's
+    pixel dimensions (cardinalities, not physical quantities) next to a genuine
+    physical field that must still obey unit discipline.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    width_px: int  # ← bare cardinality; exempt for attachment-bearing outputs
+    height_px: int  # ← bare cardinality; exempt for attachment-bearing outputs
+    arc_duration: Quantity  # physical quantity; policed regardless of exemptions
+
+
+class _LeakyAttachmentSchema(BaseModel):
+    """Self-test fixture: a non-physical count beside a bare *physical* numeric.
+
+    Proves the exemption is path-specific: exempting the pixel count must not
+    excuse ``altitude_km``, a physical quantity that bypassed the wrapper.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    width_px: int  # ← cardinality; legitimately exempt
+    altitude_km: float  # ← physical quantity with no wrapper — a real violation
 
 
 class TestWalkerSelfChecks:
@@ -173,6 +212,61 @@ class TestRegisteredOutputSchemas:
     def test_registry_is_a_list(self) -> None:
         # Sanity that future tool issues can extend it in place.
         assert isinstance(OUTPUT_SCHEMAS_TO_CHECK, list)
+
+
+class TestAttachmentBearingRelaxation:
+    """The per-field exemption relaxes attachment outputs without weakening tools."""
+
+    def test_attachment_counts_are_flagged_without_an_exemption(self) -> None:
+        """With no exemption, the pixel counts are ordinary bare-numeric violations."""
+        violations = find_unit_discipline_violations(
+            _AttachmentBearingSchema.model_json_schema(),
+            schema_name="_AttachmentBearingSchema",
+        )
+        flagged = {v.field_path for v in violations}
+        assert flagged == {"width_px", "height_px"}
+        # The genuine physical field is wrapped, so it is never among them.
+        assert "arc_duration" not in flagged
+
+    def test_exempting_the_counts_clears_the_schema(self) -> None:
+        """Exempting the cardinalities leaves a clean schema — the relaxation."""
+        violations = find_unit_discipline_violations(
+            _AttachmentBearingSchema.model_json_schema(),
+            schema_name="_AttachmentBearingSchema",
+            exempt_field_paths=frozenset({"width_px", "height_px"}),
+        )
+        assert violations == []
+
+    def test_exemption_does_not_excuse_a_physical_bare_numeric(self) -> None:
+        """A path-specific exemption cannot blanket-excuse a real physical leak."""
+        violations = find_unit_discipline_violations(
+            _LeakyAttachmentSchema.model_json_schema(),
+            schema_name="_LeakyAttachmentSchema",
+            exempt_field_paths=frozenset({"width_px"}),
+        )
+        assert len(violations) == 1
+        assert violations[0].field_path == "altitude_km"
+
+    def test_registered_attachment_schemas_satisfy_discipline(self) -> None:
+        """Every registered attachment schema is clean under its declared exemptions."""
+        all_violations = []
+        for model_cls, exempt in ATTACHMENT_OUTPUT_SCHEMAS:
+            all_violations.extend(
+                find_unit_discipline_violations(
+                    model_cls.model_json_schema(),
+                    schema_name=model_cls.__name__,
+                    exempt_field_paths=exempt,
+                )
+            )
+        assert all_violations == [], (
+            "attachment-bearing output schemas violate unit discipline outside "
+            "their declared exemptions:\n"
+            + "\n".join(f"  - {v.schema_name}.{v.field_path}: {v.reason}" for v in all_violations)
+        )
+
+    def test_registry_is_a_list(self) -> None:
+        # Sanity that the visualisation tool issues can extend it in place.
+        assert isinstance(ATTACHMENT_OUTPUT_SCHEMAS, list)
 
 
 @pytest.mark.parametrize(
