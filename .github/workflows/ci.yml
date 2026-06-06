@@ -186,7 +186,7 @@ jobs:
   viz-extra-install:
     name: "[viz] extra install smoke"
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -230,3 +230,11 @@ jobs:
           assert render_png(build()).startswith(b"\x89PNG\r\n\x1a\n"), "not a PNG"
           assert render_png(build()) == render_png(build()), "non-deterministic PNG render"
           PY
+      # With matplotlib present (only here), run the static-plot tool tests so
+      # the PNG-bearing tool bodies are actually exercised — the standard test
+      # job above skips them (matplotlib is not in the dev environment). The
+      # pure-helper layer of these files runs there; this is the rendering half.
+      - name: viz static-plot tool tests
+        run: |
+          pip install pytest pytest-asyncio
+          pytest tests/test_tool_viz_plots.py tests/test_viz_render.py
