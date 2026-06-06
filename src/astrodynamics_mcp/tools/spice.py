@@ -39,12 +39,12 @@ from astrodynamics_mcp.server import register_tool
 from astrodynamics_mcp.spice_kernels import (
     KernelCache,
     default_kernel_cache,
-    validate_kernel_url,
 )
 from astrodynamics_mcp.spice_runtime import (
     SPICE_ABERRATION_CORRECTIONS,
     SPICE_KERNEL_CATEGORIES,
     SPICE_TIME_SYSTEMS,
+    KernelRow,
     furnish_and_describe,
     list_pool,
     normalize_aberration,
@@ -132,6 +132,11 @@ class SpiceKernelInfo(BaseModel):
             "unitless."
         ),
     )
+
+    @classmethod
+    def from_row(cls, row: KernelRow) -> SpiceKernelInfo:
+        """Build the wire model from a runtime :class:`KernelRow` pool entry."""
+        return cls(name=row.name, type=row.type, source=row.source, handle=row.handle)
 
 
 class SpiceLoadKernelResponse(BaseModel):
@@ -493,7 +498,9 @@ async def _do_load_kernel(
 ) -> SpiceLoadKernelResponse:
     """Resolve *source* (URL → allowlist + cache, else local path) and furnish it."""
     if _looks_like_url(source):
-        validate_kernel_url(source)
+        # KernelCache.fetch validates the URL (scheme + NAIF allowlist) before
+        # any network access, and re-validates every redirect hop, so no separate
+        # validate_kernel_url call is needed here.
         kernel_cache = cache if cache is not None else default_kernel_cache()
         from_cache = kernel_cache.is_cached(source)
         local_path = await kernel_cache.fetch(source)
@@ -504,10 +511,7 @@ async def _do_load_kernel(
 
     rows = await run_on_spice_thread(furnish_and_describe, furnish_target)
     return SpiceLoadKernelResponse(
-        loaded=[
-            SpiceKernelInfo(name=r.name, type=r.type, source=r.source, handle=r.handle)
-            for r in rows
-        ],
+        loaded=[SpiceKernelInfo.from_row(r) for r in rows],
         from_cache=from_cache,
     )
 
@@ -517,10 +521,7 @@ async def _do_list_kernels(kind: list[SpiceKernelCategory] | None) -> SpiceListK
     category = normalize_kind_filter(list(kind) if kind is not None else None)
     rows = await run_on_spice_thread(list_pool, category)
     return SpiceListKernelsResponse(
-        kernels=[
-            SpiceKernelInfo(name=r.name, type=r.type, source=r.source, handle=r.handle)
-            for r in rows
-        ],
+        kernels=[SpiceKernelInfo.from_row(r) for r in rows],
     )
 
 
