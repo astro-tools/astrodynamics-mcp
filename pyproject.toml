@@ -50,13 +50,15 @@ dependencies = [
   "platformdirs>=4.0",
 ]
 
-# [viz] is a placeholder extra, deferred until its tools land.
 [project.optional-dependencies]
 gmat = ["gmat-run>=0.6", "gmat-sweep>=0.6"]
 # Pin the spiceypy minor: a minor bump can swap the bundled CSPICE toolkit
 # under the numeric goldens, so allow 8.1.x patch fixes but not 8.2.
 spice = ["spiceypy>=8.1,<8.2"]
-viz = []
+# matplotlib backs the static-plot tools; gmat-czml backs the CZML 3D-view
+# tool. Both ship only behind this extra — the base install stays viz-free,
+# the same gate the [gmat] / [spice] extras use.
+viz = ["matplotlib>=3.8", "gmat-czml>=0.3"]
 
 [project.scripts]
 astrodynamics-mcp = "astrodynamics_mcp.cli:main"
@@ -172,6 +174,22 @@ ignore_missing_imports = true
 module = ["astropy", "astropy.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
+
+# matplotlib ships with the [viz] extra only; the unit-test environment does
+# not install it, and the deterministic-render helper imports it lazily behind
+# the [viz] import guard. Treat the surface we touch (pyplot, Figure.savefig)
+# as opaque rather than failing strict mode — mirrors the astropy override.
+[[tool.mypy.overrides]]
+module = ["matplotlib", "matplotlib.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+# gmat-czml ships with the [viz] extra only; the CZML tool slot is gated on its
+# import, the way the [gmat] / [spice] slots are gated on theirs. The test
+# environment doesn't install it, so treat the unresolved module as opaque.
+[[tool.mypy.overrides]]
+module = ["gmat_czml", "gmat_czml.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "8.0"

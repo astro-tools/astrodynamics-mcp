@@ -246,6 +246,7 @@ def _iter_violations(
     path: str,
     root_schema: dict[str, Any],
     schema_name: str,
+    exempt_field_paths: frozenset[str],
 ) -> Iterator[_UnitDisciplineViolation]:
     """Recursively walk a JSON-Schema node, yielding bare-numeric-field violations.
 
@@ -254,6 +255,13 @@ def _iter_violations(
     descend into ``properties``, ``items`` (array element schemas),
     ``anyOf`` / ``oneOf`` / ``allOf`` unions, and ``$defs`` referenced via
     ``$ref``.
+
+    A bare-numeric field whose exact ``path`` is in *exempt_field_paths* is not
+    flagged — the single relaxation point for attachment-bearing outputs whose
+    summary carries a non-physical cardinality (a pixel count, a packet count)
+    that has no place in the ``{value, unit}`` envelope. The exemption is
+    per-path, so it can never silently excuse a genuine physical quantity
+    elsewhere in the schema.
     """
     if not isinstance(node, dict):
         return
@@ -264,6 +272,7 @@ def _iter_violations(
             path=path,
             root_schema=root_schema,
             schema_name=schema_name,
+            exempt_field_paths=exempt_field_paths,
         )
         return
 
@@ -275,11 +284,12 @@ def _iter_violations(
         types_set = {t for t in node_type if isinstance(t, str)}
 
     if types_set & _NUMERIC_JSON_TYPES and not _is_quantity_shape(node):
-        yield _UnitDisciplineViolation(
-            schema_name=schema_name,
-            field_path=path,
-            reason="bare_numeric_field",
-        )
+        if path not in exempt_field_paths:
+            yield _UnitDisciplineViolation(
+                schema_name=schema_name,
+                field_path=path,
+                reason="bare_numeric_field",
+            )
         return
 
     if _is_quantity_shape(node):
@@ -294,6 +304,7 @@ def _iter_violations(
                 path=f"{path}.{key}[{i}]",
                 root_schema=root_schema,
                 schema_name=schema_name,
+                exempt_field_paths=exempt_field_paths,
             )
 
     properties = node.get("properties")
@@ -304,6 +315,7 @@ def _iter_violations(
                 path=f"{path}.{prop_name}" if path else prop_name,
                 root_schema=root_schema,
                 schema_name=schema_name,
+                exempt_field_paths=exempt_field_paths,
             )
 
     items = node.get("items")
@@ -313,6 +325,7 @@ def _iter_violations(
             path=f"{path}[]",
             root_schema=root_schema,
             schema_name=schema_name,
+            exempt_field_paths=exempt_field_paths,
         )
 
 
@@ -320,6 +333,7 @@ def find_unit_discipline_violations(
     schema: dict[str, Any],
     *,
     schema_name: str,
+    exempt_field_paths: frozenset[str] = frozenset(),
 ) -> list[_UnitDisciplineViolation]:
     """Return every bare-numeric-field violation in *schema*.
 
@@ -329,8 +343,24 @@ def find_unit_discipline_violations(
 
     An empty list means the schema satisfies the unit-discipline rule: every
     numeric field is wrapped in a :class:`Quantity` or :class:`QuantityVector`.
+
+    *exempt_field_paths* relaxes the rule for the listed field paths only —
+    the mechanism attachment-bearing tool outputs use to carry a non-physical
+    cardinality (a pixel count, a packet count) that does not fit the
+    ``{value, unit}`` envelope. The numeric tool surface passes no exemptions,
+    so the rule stays strict for every physical quantity. Each entry must match
+    a field's exact dotted path (e.g. ``"image.width_px"``); a path that
+    matches nothing is simply inert.
     """
-    return list(_iter_violations(schema, path="", root_schema=schema, schema_name=schema_name))
+    return list(
+        _iter_violations(
+            schema,
+            path="",
+            root_schema=schema,
+            schema_name=schema_name,
+            exempt_field_paths=exempt_field_paths,
+        )
+    )
 
 
 # NaN/inf-checking convenience surfaced for tool authors; not used by the

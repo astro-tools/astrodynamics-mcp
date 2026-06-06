@@ -174,3 +174,59 @@ jobs:
           missing = expected - tools
           assert not missing, f"missing SPICE tool slots after [spice] install: {missing}"
           PY
+
+  # Parallel smoke-check that `pip install astrodynamics-mcp[viz]` resolves
+  # (pulls matplotlib + gmat-czml) and the four viz placeholder tool slots
+  # register on import. The bodies are NotImplementedError placeholders and
+  # never execute here. matplotlib isn't in the standard test env, so this is
+  # also where the PNG-determinism guarantee is exercised: the same figure must
+  # render to byte-identical bytes (what the transport-equivalence contract
+  # relies on). The base install path stays viz-free — `minimal-install` above
+  # confirms the viz slots are absent without the extra.
+  viz-extra-install:
+    name: "[viz] extra install smoke"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install '.[viz]'
+      - name: viz tool slots register
+        run: |
+          python - <<'PY'
+          import asyncio
+
+          from astrodynamics_mcp.server import mcp
+
+          tools = {t.name for t in asyncio.run(mcp.list_tools())}
+          expected = {
+              "plot_ground_track",
+              "plot_trajectory",
+              "plot_porkchop",
+              "czml_trajectory",
+          }
+          missing = expected - tools
+          assert not missing, f"missing viz tool slots after [viz] install: {missing}"
+          PY
+      - name: PNG rendering is deterministic
+        run: |
+          python - <<'PY'
+          from matplotlib.figure import Figure
+
+          from astrodynamics_mcp.viz_render import render_png, use_agg_backend
+
+
+          def build():
+              fig = Figure(figsize=(4.0, 3.0))
+              ax = fig.add_subplot(111)
+              ax.plot([0.0, 1.0, 2.0, 3.0], [3.0, 1.0, 2.0, 0.0])
+              ax.set_title("determinism")
+              return fig
+
+
+          use_agg_backend()
+          assert render_png(build()).startswith(b"\x89PNG\r\n\x1a\n"), "not a PNG"
+          assert render_png(build()) == render_png(build()), "non-deterministic PNG render"
+          PY
