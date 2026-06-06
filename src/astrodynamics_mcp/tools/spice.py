@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 from datetime import timezone
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NamedTuple
 from urllib.parse import urlparse
 
 from mcp.types import ToolAnnotations
@@ -47,6 +47,7 @@ from astrodynamics_mcp.spice_runtime import (
     list_pool,
     normalize_aberration,
     normalize_kind_filter,
+    query_body_constant,
     query_frame_transform,
     query_state,
     run_on_spice_thread,
@@ -358,6 +359,55 @@ class SpiceFrameTransformResponse(BaseModel):
     )
 
 
+class SpiceBodyParameter(BaseModel):
+    """One body constant: its element values (each ``{value, unit}``) and source."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str = Field(
+        ...,
+        description=(
+            "The requested parameter name, echoed (one of 'radii', 'gm', 'pole_ra', "
+            "'pole_dec', 'pm')."
+        ),
+    )
+    source: str = Field(
+        ...,
+        description=(
+            "The CSPICE kernel-pool variable the values were read from, e.g. "
+            "'BODY499_RADII'. CSPICE does not expose the source kernel *file* for a "
+            "pool variable; this is the authoritative provenance it does expose."
+        ),
+    )
+    values: list[Quantity] = Field(
+        ...,
+        description=(
+            "The constant's elements, one {value, unit} each. A scalar like GM is a "
+            "single-element list; RADII is three km elements [a, b, c]; an orientation "
+            "item is its polynomial coefficients with per-element units (e.g. POLE_RA = "
+            "[deg, deg/century, deg/century^2], PM = [deg, deg/day, deg/day^2])."
+        ),
+    )
+
+
+class SpiceBodyParametersResponse(BaseModel):
+    """Requested physical / orientation constants for a body."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    body: str = Field(
+        ...,
+        description="The body, echoed from the request (name or NAIF ID as supplied).",
+    )
+    parameters: list[SpiceBodyParameter] = Field(
+        ...,
+        description=(
+            "One entry per requested parameter, in request order — or the default "
+            "common set [radii, gm] when none were specified."
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tool-body implementations (module-level for direct testability; the
 # registered slots below are thin wrappers, mirroring the GMAT layout).
@@ -538,6 +588,108 @@ async def _do_frame_transform(
     )
 
 
+class _BodyParameterSpec(NamedTuple):
+    """How a requested body parameter maps to a CSPICE pool item and its units.
+
+    ``item`` is the CSPICE constant name (``bodvcd`` reads ``BODY<id>_<item>``).
+    ``units`` is the per-element unit assignment: when ``uniform`` every element
+    takes ``units[0]`` (RADII → all km, GM → the single km^3/s^2); otherwise
+    element ``i`` takes ``units[i]`` — the polynomial-coefficient units of an
+    orientation item (constant term, linear rate, quadratic rate).
+    """
+
+    item: str
+    units: tuple[str, ...]
+    uniform: bool
+
+
+# The body-constant catalogue. Orientation items follow the SPICE PCK
+# convention: POLE_RA / POLE_DEC are a polynomial in Julian centuries past
+# J2000 (deg, deg/century, deg/century^2), PM in days past J2000 (deg, deg/day,
+# deg/day^2). RADII is a length-3 km vector; GM a single km^3/s^2 scalar.
+_BODY_PARAMETER_CATALOGUE: dict[str, _BodyParameterSpec] = {
+    "radii": _BodyParameterSpec(item="RADII", units=("km",), uniform=True),
+    "gm": _BodyParameterSpec(item="GM", units=("km^3/s^2",), uniform=True),
+    "pole_ra": _BodyParameterSpec(
+        item="POLE_RA", units=("deg", "deg/century", "deg/century^2"), uniform=False
+    ),
+    "pole_dec": _BodyParameterSpec(
+        item="POLE_DEC", units=("deg", "deg/century", "deg/century^2"), uniform=False
+    ),
+    "pm": _BodyParameterSpec(item="PM", units=("deg", "deg/day", "deg/day^2"), uniform=False),
+}
+
+# Returned when `parameters` is omitted — the issue's headline pair (the inline
+# example is "Mars triaxial radii + GM"). Orientation items are opt-in.
+_DEFAULT_PARAMETERS: tuple[str, ...] = ("radii", "gm")
+
+
+def _resolve_parameter_names(parameters: list[str] | None) -> list[str]:
+    """Validate and de-duplicate the requested parameter names (or the default set)."""
+    if parameters is None:
+        return list(_DEFAULT_PARAMETERS)
+    if not parameters:
+        raise InvalidInputError(
+            "parameters must name at least one constant, or be omitted for the "
+            f"default common set {list(_DEFAULT_PARAMETERS)}",
+            code="invalid_input.spice_empty_parameters",
+        )
+    resolved: list[str] = []
+    for name in parameters:
+        key = name.strip().lower()
+        if key not in _BODY_PARAMETER_CATALOGUE:
+            raise InvalidInputError(
+                f"unknown body parameter {name!r}; supported: {sorted(_BODY_PARAMETER_CATALOGUE)}",
+                code="invalid_input.spice_unknown_parameter",
+            )
+        if key not in resolved:
+            resolved.append(key)
+    return resolved
+
+
+def _units_for(spec: _BodyParameterSpec, count: int) -> list[str]:
+    """Per-element units for a constant of *count* values under *spec*."""
+    if spec.uniform:
+        return [spec.units[0]] * count
+    if count > len(spec.units):
+        raise InvalidInputError(
+            f"{spec.item} returned {count} coefficients, beyond the {len(spec.units)} "
+            "this tool assigns units to — the orientation model is higher-order than "
+            "supported.",
+            code="invalid_input.spice_unsupported_constant_order",
+        )
+    return list(spec.units[:count])
+
+
+async def _do_body_parameters(
+    body: str, parameters: list[str] | None
+) -> SpiceBodyParametersResponse:
+    """Read the requested (or default common-set) constants for *body* from the pool.
+
+    Each parameter resolves to a CSPICE item read with ``bodvcd`` on the worker
+    thread; the per-element units come from the catalogue. An unknown body, an
+    unknown parameter name, or a constant no furnished kernel supplies each
+    surfaces as a typed error rather than a silent gap.
+    """
+    requested = _resolve_parameter_names(parameters)
+    results: list[SpiceBodyParameter] = []
+    for name in requested:
+        spec = _BODY_PARAMETER_CATALOGUE[name]
+        constant = await run_on_spice_thread(query_body_constant, body, spec.item)
+        units = _units_for(spec, len(constant.values))
+        results.append(
+            SpiceBodyParameter(
+                name=name,
+                source=constant.source,
+                values=[
+                    Quantity(value=value, unit=unit)
+                    for value, unit in zip(constant.values, units, strict=True)
+                ],
+            )
+        )
+    return SpiceBodyParametersResponse(body=body, parameters=results)
+
+
 # ---------------------------------------------------------------------------
 # Placeholder slots — reserved output shape; bodies raise loudly
 # ---------------------------------------------------------------------------
@@ -633,9 +785,20 @@ _FRAME_TRANSFORM_DESCRIPTION = (
 )
 
 _BODY_PARAMETERS_DESCRIPTION = (
-    "Read physical and orientation constants for a body from furnished PCK "
-    "kernels — radii, GM, orientation models — e.g. the triaxial radii of Mars. "
-    "Reserved slot — not yet implemented; lands in follow-up work."
+    "Read physical and orientation constants for a body from furnished PCK kernels — "
+    "triaxial radii (km), GM (km^3/s^2), and the pole / prime-meridian orientation "
+    "coefficients — e.g. spice_body_parameters(body='MARS') returns Mars's triaxial "
+    "radii and GM (the default common set), and spice_body_parameters(body='499', "
+    "parameters=['radii','pole_ra','pm']) adds the orientation coefficients. `body` "
+    "accepts a name ('MARS') or a NAIF ID as a string ('499'). `parameters` names the "
+    "constants to fetch — radii, gm, pole_ra, pole_dec, pm — or is omitted for the "
+    "common set (radii + gm). Each constant comes back as a list of {value, unit} "
+    "elements (RADII is three km values; GM one km^3/s^2 value; an orientation item its "
+    "polynomial coefficients, e.g. POLE_RA = [deg, deg/century, deg/century^2]), with "
+    "the kernel-pool variable it came from (e.g. 'BODY499_RADII'). The PCK providing "
+    "each constant must be furnished first via spice_load_kernel — radii / pole / PM "
+    "from a planetary-constants PCK, GM from a gravity PCK — and a constant no loaded "
+    "kernel supplies returns a typed error, never a silent gap."
 )
 
 _TIME_CONVERT_DESCRIPTION = (
@@ -848,8 +1011,29 @@ def _register_spice_tools() -> None:
             title="SPICE Body Parameters", readOnlyHint=True, openWorldHint=False
         ),
     )
-    async def spice_body_parameters() -> SpicePlaceholderResult:
-        raise NotImplementedError("spice_body_parameters lands in follow-up work")
+    async def spice_body_parameters(
+        body: Annotated[
+            str,
+            Field(
+                description=(
+                    "The body whose constants to read — a body name ('MARS', 'MOON') or "
+                    "a NAIF integer ID as a string ('499', '301'). Resolved by CSPICE; an "
+                    "unrecognised body returns a typed error."
+                ),
+            ),
+        ],
+        parameters: Annotated[
+            list[str] | None,
+            Field(
+                description=(
+                    "Which constants to fetch: any of 'radii', 'gm', 'pole_ra', "
+                    "'pole_dec', 'pm' (case-insensitive). Omit for the default common set "
+                    "['radii', 'gm']. e.g. ['radii', 'pole_ra', 'pm']."
+                ),
+            ),
+        ] = None,
+    ) -> SpiceBodyParametersResponse:
+        return await _do_body_parameters(body, parameters)
 
     @register_tool(
         name="spice_time_convert",

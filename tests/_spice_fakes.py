@@ -67,6 +67,8 @@ class FakeSpice:
         self._rotation_plan: dict[
             tuple[str, str], tuple[list[list[float]], list[list[float]] | None, str | None]
         ] = {}
+        self._body_code_plan: dict[str, int] = {}
+        self._body_constant_plan: dict[tuple[int, str], tuple[list[float], str | None]] = {}
         self._next_handle = 1
         self.calls: dict[str, list[Any]] = {
             "erract": [],
@@ -78,6 +80,8 @@ class FakeSpice:
             "spkezr": [],
             "pxform": [],
             "sxform": [],
+            "bods2c": [],
+            "bodvcd": [],
         }
 
     # -- test configuration --------------------------------------------------
@@ -122,6 +126,22 @@ class FakeSpice:
             state_transform,
             requires,
         )
+
+    def plan_body_code(self, name: str, code: int) -> None:
+        """Pin the NAIF code ``bods2c`` resolves a body *name* to (case-insensitive)."""
+        self._body_code_plan[name.upper()] = code
+
+    def plan_body_constant(
+        self, code: int, item: str, values: list[float], requires: str | None = None
+    ) -> None:
+        """Pin the values ``bodvcd`` returns for ``BODY<code>_<item>``.
+
+        ``requires`` names a kernel category (e.g. ``"PCK"``) that must be in the
+        pool, mirroring CSPICE reading the constant from a furnished kernel; the
+        constant is otherwise absent, so a missing-constant query raises
+        ``SPICE(KERNELVARNOTFOUND)``. Keyed case-insensitively on the item.
+        """
+        self._body_constant_plan[(code, item.upper())] = (list(values), requires)
 
     # -- error-handling setters (recorded, no behaviour) ---------------------
 
@@ -267,3 +287,42 @@ class FakeSpice:
                 f"SPICE(NOFRAMEDATA): the kernel data defining frame {to!r} has not been loaded"
             )
         return [list(row) for row in state_transform]
+
+    # -- body constants ------------------------------------------------------
+
+    def bods2c(self, name: str) -> tuple[int, bool]:
+        """Resolve a body name / ID string to a NAIF code, with a found flag.
+
+        Digit strings resolve to their integer (CSPICE's built-in code mapping);
+        names resolve via :meth:`plan_body_code`; anything else is not found —
+        the unknown-body path.
+        """
+        self.calls["bods2c"].append(name)
+        key = name.strip().upper()
+        if key in self._body_code_plan:
+            return (self._body_code_plan[key], True)
+        if key.lstrip("-").isdigit():
+            return (int(key), True)
+        return (0, False)
+
+    def bodvcd(self, bodyid: int, item: str, maxn: int) -> tuple[int, list[float]]:
+        """Return the pinned values for ``BODY<bodyid>_<item>``; mirror CSPICE's errors.
+
+        Without a value pinned for the pair — or with its required kernel category
+        absent from the pool — CSPICE raises ``SPICE(KERNELVARNOTFOUND)``; we mimic
+        that so the missing-constant path is exercised through real pool state.
+        """
+        self.calls["bodvcd"].append((bodyid, item, maxn))
+        plan = self._body_constant_plan.get((bodyid, item.upper()))
+        if plan is None:
+            raise FakeSpiceyError(
+                f"SPICE(KERNELVARNOTFOUND): the variable BODY{bodyid}_{item} could not be "
+                "found in the kernel pool"
+            )
+        values, requires = plan
+        if requires is not None and not self._has_type(requires):
+            raise FakeSpiceyError(
+                f"SPICE(KERNELVARNOTFOUND): the variable BODY{bodyid}_{item} could not be "
+                "found in the kernel pool"
+            )
+        return (len(values), list(values))

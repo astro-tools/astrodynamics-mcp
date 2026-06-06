@@ -47,6 +47,13 @@ ALLOWED_UNITS: frozenset[str] = frozenset(
         # Angle.
         "rad",
         "deg",
+        # Angular rate — body-orientation polynomial coefficients (POLE_RA /
+        # POLE_DEC are per Julian century, PM is per day; squared forms cover a
+        # quadratic term where a body's model carries one).
+        "deg/day",
+        "deg/century",
+        "deg/day^2",
+        "deg/century^2",
         # Time.
         "s",
         "min",

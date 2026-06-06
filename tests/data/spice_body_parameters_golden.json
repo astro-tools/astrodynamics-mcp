@@ -1,0 +1,21 @@
+{
+  "body": "MARS",
+  "parameters": [
+    {
+      "name": "radii",
+      "source": "BODY499_RADII",
+      "values": [
+        {"value": 3396.19, "unit": "km"},
+        {"value": 3396.19, "unit": "km"},
+        {"value": 3376.2, "unit": "km"}
+      ]
+    },
+    {
+      "name": "gm",
+      "source": "BODY499_GM",
+      "values": [
+        {"value": 42828.375214, "unit": "km^3/s^2"}
+      ]
+    }
+  ]
+}
