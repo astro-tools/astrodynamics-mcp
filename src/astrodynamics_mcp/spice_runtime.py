@@ -63,6 +63,12 @@ SPICE_ABERRATION_CORRECTIONS: tuple[str, ...] = (
     "XCN+S",
 )
 
+# Upper bound on the element count ``bodvcd`` may return for a single body
+# constant. RADII has 3, GM has 1, and orientation coefficient arrays
+# (POLE_RA / POLE_DEC / PM) are short; 256 is far above any real value while
+# still bounding the CSPICE call.
+_MAX_BODY_CONSTANT_VALUES = 256
+
 
 @dataclass(frozen=True)
 class KernelRow:
@@ -114,6 +120,22 @@ class FrameRotation:
     rotation: tuple[tuple[float, float, float], ...]
     rotated_position: tuple[float, float, float] | None
     rotated_velocity: tuple[float, float, float] | None
+
+
+@dataclass(frozen=True)
+class BodyConstant:
+    """One body constant read from the kernel pool, as ``bodvcd`` reports it.
+
+    ``source`` is the pool variable CSPICE read the value from (e.g.
+    ``BODY499_RADII``) — the authoritative provenance the pool exposes; CSPICE
+    does not attribute a pool variable to its source file. ``values`` is the raw
+    constant array: one element for a scalar like GM, three for RADII, the
+    polynomial coefficients for an orientation item (POLE_RA / POLE_DEC / PM).
+    The tool layer assigns the per-element units.
+    """
+
+    source: str
+    values: tuple[float, ...]
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +436,44 @@ def query_frame_transform(
         rotation=rotation,
         rotated_position=rotated_position,
         rotated_velocity=rotated_velocity,
+    )
+
+
+def query_body_constant(body: str, item: str) -> BodyConstant:
+    """Read body constant *item* for *body* from the furnished PCK pool.
+
+    Resolves *body* (a name like ``"MARS"`` or a NAIF ID string like ``"499"``)
+    to its integer code with ``bods2c`` — an unrecognised body is a typed
+    :class:`~astrodynamics_mcp.errors.InvalidInputError`, distinct from a missing
+    constant — then reads ``BODY<code>_<item>`` with ``bodvcd``. A constant no
+    furnished kernel supplies makes CSPICE raise, which becomes a typed
+    :class:`~astrodynamics_mcp.errors.UpstreamError` rather than a silent gap, so
+    the consumer never mistakes an unfurnished pool for an absent constant. Runs
+    on the worker thread.
+    """
+    sp = _spiceypy()
+    code, found = sp.bods2c(body)
+    if not found:
+        raise InvalidInputError(
+            f"unknown body {body!r}; pass a body name ('MARS') or a NAIF ID ('499') "
+            "CSPICE can resolve",
+            code="invalid_input.spice_unknown_body",
+            data={"body": body},
+        )
+    try:
+        _dim, values = sp.bodvcd(int(code), item, _MAX_BODY_CONSTANT_VALUES)
+    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+        raise UpstreamError(
+            f"CSPICE has no value for {item!r} of body {body!r} (BODY{int(code)}_{item}): "
+            f"{exc}. Furnish the PCK that defines it first (spice_load_kernel) — radii / "
+            "pole / PM constants come from a planetary-constants PCK, GM from a gravity PCK.",
+            code="upstream.spice_body_parameters_failed",
+            original_exception=exc,
+            data={"body": body, "item": item, "code": int(code)},
+        ) from exc
+    return BodyConstant(
+        source=f"BODY{int(code)}_{item}",
+        values=tuple(float(v) for v in values),
     )
 
 

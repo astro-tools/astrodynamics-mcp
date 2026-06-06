@@ -34,13 +34,14 @@ _EXPECTED_TOOL_NAMES = frozenset(
 
 # Slots still landing in follow-up work. Tools with real bodies are excluded from
 # the placeholder-body parametrize so this file stays accurate as each slot
-# graduates — the kernel-management trio (load / list / unload), spice_state, and
-# spice_frame_transform now have real bodies, covered by
-# tests/test_tool_spice_kernels.py, tests/test_tool_spice_state.py, and
-# tests/test_tool_spice_frame_transform.py respectively.
+# graduates — the kernel-management trio (load / list / unload), spice_state,
+# spice_frame_transform, and spice_body_parameters now have real bodies, covered
+# by tests/test_tool_spice_kernels.py, tests/test_tool_spice_state.py,
+# tests/test_tool_spice_frame_transform.py, and
+# tests/test_tool_spice_body_parameters.py respectively. spice_time_convert is the
+# last placeholder.
 _PLACEHOLDER_TOOL_NAMES = frozenset(
     {
-        "spice_body_parameters",
         "spice_time_convert",
     }
 )
@@ -104,7 +105,12 @@ class TestPositiveCase:
         for mutating in ("spice_load_kernel", "spice_unload_kernel"):
             ann = by_name[mutating].annotations
             assert ann is not None and ann.readOnlyHint is False
-        for query in ("spice_state", "spice_frame_transform", "spice_time_convert"):
+        for query in (
+            "spice_state",
+            "spice_frame_transform",
+            "spice_body_parameters",
+            "spice_time_convert",
+        ):
             ann = by_name[query].annotations
             assert ann is not None and ann.readOnlyHint is True
 
