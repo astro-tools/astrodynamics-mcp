@@ -1,0 +1,9 @@
+{
+  "value": {
+    "value": 820497669.184,
+    "unit": "s past J2000 TDB"
+  },
+  "from_scale": "UTC",
+  "to_scale": "ET",
+  "spacecraft": null
+}

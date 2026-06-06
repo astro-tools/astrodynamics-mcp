@@ -35,6 +35,7 @@ from astrodynamics_mcp.tools.spice import (
     SpiceBodyParametersResponse,
     SpiceFrameTransformResponse,
     SpiceStateResponse,
+    SpiceTimeConvertResponse,
 )
 from astrodynamics_mcp.tools.tle import TleLookupResponse
 
@@ -75,6 +76,11 @@ OUTPUT_SCHEMAS_TO_CHECK: list[type[BaseModel]] = [
     SpiceStateResponse,
     SpiceFrameTransformResponse,
     SpiceBodyParametersResponse,
+    # SpiceTimeConvertResponse's `value` is `Quantity | str`: ET output is a
+    # {value, unit} seconds quantity (walker-recognised), UTC / SCLK output is a
+    # non-numeric string — so unlike the kernel-free TimeConvertResponse it does
+    # satisfy unit discipline and is policed here.
+    SpiceTimeConvertResponse,
     # TimeConvertResponse is deliberately excluded — see import-level note above.
 ]
 

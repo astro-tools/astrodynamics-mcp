@@ -59,6 +59,11 @@ ALLOWED_UNITS: frozenset[str] = frozenset(
         "min",
         "hours",
         "days",
+        # Ephemeris time as a coordinate, not a duration: SPICE ET is seconds
+        # past the J2000 TDB epoch (the leap-second-kernel-defined zero), so it
+        # carries its anchor in the unit string to distinguish it from a plain
+        # `s` interval. Emitted only by spice_time_convert's ET output.
+        "s past J2000 TDB",
         # Area / specific energy (C3 is canonically reported in km^2/s^2).
         "km^2/s^2",
         # Gravitational parameter (mu).

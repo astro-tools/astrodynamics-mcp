@@ -48,13 +48,18 @@ class FakeSpice:
     """A behaviour-compatible subset of the ``spiceypy`` module surface.
 
     Implements only what the SPICE surface calls: ``furnsh`` / ``unload`` /
-    ``ktotal`` / ``kdata`` for kernel management, ``str2et`` / ``spkezr`` for
-    state queries, plus the three error-handling setters (``erract`` /
-    ``errdev`` / ``errprt``). Tests pin behaviour with :meth:`plan_furnish`
-    (e.g. a meta-kernel fanning out to several kernels), :meth:`fail_furnsh` (a
-    corrupt kernel), and :meth:`plan_state` (a pinned spkezr result). To mirror
-    CSPICE's kernel dependence, ``str2et`` raises unless a leap-second (TEXT)
-    kernel is in the pool and ``spkezr`` raises unless an SPK is.
+    ``ktotal`` / ``kdata`` for kernel management; ``str2et`` / ``spkezr`` for
+    state queries; ``pxform`` / ``sxform`` for frame rotations; ``bods2c`` /
+    ``bodvcd`` for body constants; ``et2utc`` / ``sce2s`` / ``scs2e`` for time
+    conversions; plus the three error-handling setters (``erract`` / ``errdev``
+    / ``errprt``). Tests pin behaviour with :meth:`plan_furnish` (e.g. a
+    meta-kernel fanning out to several kernels), :meth:`fail_furnsh` (a corrupt
+    kernel), :meth:`plan_state`, :meth:`plan_rotation`, :meth:`plan_body_code` /
+    :meth:`plan_body_constant`, :meth:`plan_time`, and :meth:`plan_sclk`. To
+    mirror CSPICE's kernel dependence, ``str2et`` / ``et2utc`` raise unless a
+    leap-second (TEXT) kernel is in the pool, ``spkezr`` raises unless an SPK is,
+    and ``sce2s`` / ``scs2e`` raise unless a spacecraft-clock kernel (``.tsc``)
+    is.
     """
 
     SpiceyError = FakeSpiceyError
@@ -69,6 +74,10 @@ class FakeSpice:
         ] = {}
         self._body_code_plan: dict[str, int] = {}
         self._body_constant_plan: dict[tuple[int, str], tuple[list[float], str | None]] = {}
+        self._str2et_plan: dict[str, float] = {}
+        self._et2utc_plan: dict[float, str] = {}
+        self._scs2e_plan: dict[tuple[int, str], float] = {}
+        self._sce2s_plan: dict[tuple[int, float], str] = {}
         self._next_handle = 1
         self.calls: dict[str, list[Any]] = {
             "erract": [],
@@ -82,6 +91,9 @@ class FakeSpice:
             "sxform": [],
             "bods2c": [],
             "bodvcd": [],
+            "et2utc": [],
+            "sce2s": [],
+            "scs2e": [],
         }
 
     # -- test configuration --------------------------------------------------
@@ -221,7 +233,7 @@ class FakeSpice:
         self.calls["str2et"].append(time)
         if not self._has_type("TEXT"):
             raise FakeSpiceyError("SPICE(NOLEAPSECONDS): no leapseconds kernel has been loaded")
-        return 0.0
+        return self._str2et_plan.get(time, 0.0)
 
     def spkezr(
         self, targ: str, et: float, ref: str, abcorr: str, obs: str
@@ -326,3 +338,91 @@ class FakeSpice:
                 "found in the kernel pool"
             )
         return (len(values), list(values))
+
+    # -- time conversions ----------------------------------------------------
+
+    def plan_time(self, utc: str, et: float) -> None:
+        """Pin a bidirectional UTC<->ET pair: ``str2et(utc)`` and ``et2utc(et)``.
+
+        *utc* is the offset-free calendar string CSPICE sees — the form the tool
+        layer hands ``str2et`` (a trailing ``Z`` / zone offset already stripped),
+        which is also what ``et2utc`` returns for the inverse. Pinning both
+        directions makes a UTC<->ET round-trip exact without modelling CSPICE's
+        leap-second math.
+        """
+        self._str2et_plan[utc] = float(et)
+        self._et2utc_plan[float(et)] = utc
+
+    def plan_sclk(self, sc: int, sclk: str, et: float) -> None:
+        """Pin a bidirectional SCLK<->ET pair for spacecraft *sc*.
+
+        ``scs2e(sc, sclk)`` returns *et* and ``sce2s(sc, et)`` returns *sclk*, so
+        an SCLK round-trip is exact. Keyed on the integer NAIF spacecraft ID the
+        tool resolves the request's `spacecraft` to.
+        """
+        self._scs2e_plan[(sc, sclk)] = float(et)
+        self._sce2s_plan[(sc, float(et))] = sclk
+
+    def _has_sclk(self) -> bool:
+        """Whether a spacecraft-clock kernel (``.tsc``) is furnished.
+
+        CSPICE reports an SCLK kernel as ``TEXT`` like an LSK, so the category
+        alone cannot tell them apart; the fake keys SCLK availability on the
+        ``.tsc`` suffix of a furnished path, mirroring "an SCLK kernel must be
+        loaded" precisely enough to exercise the tool's missing-SCLK error path.
+        """
+        return any(entry["name"].endswith(".tsc") for entry in self._pool)
+
+    def et2utc(self, et: float, format_str: str, prec: int) -> str:
+        """Render ephemeris time as a UTC calendar string; needs a leap-second kernel.
+
+        Without an LSK furnished CSPICE raises ``SPICE(NOLEAPSECONDS)``; we mimic
+        that. With one loaded, a value pinned via :meth:`plan_time` is returned,
+        else a deterministic stand-in so unplanned calls still produce a string.
+        """
+        self.calls["et2utc"].append((et, format_str, prec))
+        if not self._has_type("TEXT"):
+            raise FakeSpiceyError("SPICE(NOLEAPSECONDS): no leapseconds kernel has been loaded")
+        planned = self._et2utc_plan.get(et)
+        if planned is not None:
+            return planned
+        return f"ET{et}"
+
+    def sce2s(self, sc: int, et: float) -> str:
+        """Encode ephemeris time as a spacecraft-clock string; needs an SCLK kernel.
+
+        Without an SCLK kernel furnished for *sc* CSPICE raises an SCLK error; we
+        mimic that with :meth:`_has_sclk`. With one loaded, the value pinned via
+        :meth:`plan_sclk` is returned; an unpinned (sc, et) raises rather than
+        fabricating a clock reading.
+        """
+        self.calls["sce2s"].append((sc, et))
+        if not self._has_sclk():
+            raise FakeSpiceyError(
+                f"SPICE(NOSCLKFILEFOUND): no spacecraft-clock kernel loaded for spacecraft {sc}"
+            )
+        planned = self._sce2s_plan.get((sc, et))
+        if planned is None:
+            raise FakeSpiceyError(
+                f"SPICE(SPKINSUFFDATA): no SCLK mapping for spacecraft {sc} at et {et}"
+            )
+        return planned
+
+    def scs2e(self, sc: int, sclkch: str) -> float:
+        """Decode a spacecraft-clock string to ephemeris time; needs an SCLK kernel.
+
+        Without an SCLK kernel furnished for *sc* CSPICE raises an SCLK error; we
+        mimic that. An SCLK string with no pinned mapping raises
+        ``SPICE(INVALIDSCLKSTRING)``, exercising the tool's unparseable-SCLK path.
+        """
+        self.calls["scs2e"].append((sc, sclkch))
+        if not self._has_sclk():
+            raise FakeSpiceyError(
+                f"SPICE(NOSCLKFILEFOUND): no spacecraft-clock kernel loaded for spacecraft {sc}"
+            )
+        planned = self._scs2e_plan.get((sc, sclkch))
+        if planned is None:
+            raise FakeSpiceyError(
+                f"SPICE(INVALIDSCLKSTRING): cannot parse SCLK string {sclkch!r} for spacecraft {sc}"
+            )
+        return planned
