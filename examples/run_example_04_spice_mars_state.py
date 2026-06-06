@@ -151,12 +151,15 @@ async def main() -> int:
         )
         return 1
 
-    print("SPICE / Horizons deep query — Mars ephemeris cross-check:")
+    # ASCII-only stdout: Windows' default cp1252 console can't encode Greek
+    # (e.g. a delta), so the run script keeps prints plain (the .md transcript
+    # carries the typeset symbols).
+    print("SPICE / Horizons deep query - Mars ephemeris cross-check:")
     print(f"  spice_state MARS rel SUN ({_FRAME}) at {_EPOCH}:")
     print(f"    |r| = {spice_r_au:.4f} AU ({np.linalg.norm(position):.0f} km)")
     print(
         f"  porkchop EARTH->MARS best cell: depart {best['depart_epoch']}, "
-        f"total Δv {total_dv:.3f} km/s"
+        f"total dv {total_dv:.3f} km/s"
     )
     print(f"  agreement: SPICE and the Horizons-fed grid both place Mars at {spice_r_au:.4f} AU.")
     return 0
