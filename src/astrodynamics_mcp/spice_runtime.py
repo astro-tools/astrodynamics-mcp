@@ -314,10 +314,17 @@ def unload_kernel(name: str) -> int:
 
     CSPICE ``unload`` silently no-ops on a file that is not furnished, so we
     pre-check pool membership and raise a typed not-loaded error rather than
-    let an unload-of-missing succeed vacuously. Runs on the worker thread.
+    let an unload-of-missing succeed vacuously. The membership check matches by
+    :func:`_same_path` (so a normalised-but-equal form of the furnished path is
+    accepted), but CSPICE ``unload`` keys on the *literal* furnished string — so
+    we hand it the matched pool row's stored name, not the caller's argument. A
+    normpath-equal-but-not-identical name would otherwise pass the check yet
+    ``unload`` would no-op on it, leaving the kernel loaded while the tool
+    reported success. Runs on the worker thread.
     """
     sp = _spiceypy()
-    if not any(_same_path(row.name, name) for row in list_pool()):
+    matched = next((row.name for row in list_pool() if _same_path(row.name, name)), None)
+    if matched is None:
         raise InvalidInputError(
             f"no kernel named {name!r} is loaded; call spice_list_kernels to see the "
             "loaded names, and unload by the name returned from spice_load_kernel "
@@ -326,7 +333,7 @@ def unload_kernel(name: str) -> int:
             data={"name": name},
         )
     try:
-        sp.unload(name)
+        sp.unload(matched)
     except Exception as exc:  # spiceypy raises SpiceyError / subclasses
         raise UpstreamError(
             f"CSPICE could not unload the kernel {name!r}: {exc}",

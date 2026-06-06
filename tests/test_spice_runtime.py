@@ -242,6 +242,17 @@ class TestUnloadKernel:
         assert excinfo.value.code == "invalid_input.spice_kernel_not_loaded"
         assert excinfo.value.data["name"] == "/k/never-loaded.bsp"
 
+    def test_normpath_equal_name_actually_unloads(self, fake_spice: FakeSpice) -> None:
+        # The membership check matches by _same_path (normalised), but CSPICE
+        # unload keys on the literal furnished string. A normpath-equal-but-not-
+        # identical name must therefore unload the *matched* pool entry, not no-op
+        # on the caller's variant and report a false success.
+        furnish_and_describe("/k/de440.bsp")
+        remaining = unload_kernel("/k/./de440.bsp")  # same file, non-canonical form
+        assert remaining == 0
+        assert list_pool() == []  # the kernel is actually gone, not just claimed gone
+        assert fake_spice.calls["unload"] == ["/k/de440.bsp"]  # the stored name reached CSPICE
+
     def test_unload_does_not_touch_cspice_when_missing(self, fake_spice: FakeSpice) -> None:
         with pytest.raises(InvalidInputError):
             unload_kernel("/k/never-loaded.bsp")
