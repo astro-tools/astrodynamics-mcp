@@ -9,33 +9,52 @@ the ``[gmat]`` and ``[spice]`` tools use.
 The three static-plot tools (``plot_ground_track`` / ``plot_trajectory`` /
 ``plot_porkchop``) each return a deterministic PNG carried *alongside* a
 structured summary model and a leading ASCII text block, via
-:mod:`astrodynamics_mcp.attachments`. ``czml_trajectory`` is still a
-``NotImplementedError`` placeholder — it graduates in the CZML follow-up the way
-the GMAT and SPICE slots graduated one at a time.
+:mod:`astrodynamics_mcp.attachments`. ``czml_trajectory`` returns a CZML document
+the same way — a CZML ``EmbeddedResource`` alongside a structured summary — by
+wrapping the ``gmat-czml`` sibling's :func:`gmat_czml.to_czml`, which owns the
+CZML schema and emission.
 
 Import-cost discipline: this module is imported unconditionally by
 :mod:`astrodynamics_mcp.tools` (the registration only happens behind the guard),
-so the response models and the pure geometry helpers stay matplotlib-free at
-module scope — every matplotlib import lives inside a figure-builder function,
-and astropy is imported lazily too. Importing this module on a base install is
-free and never pulls the plotting stack in.
+so the response models and the pure helpers stay matplotlib- and gmat-czml-free
+at module scope — every matplotlib import lives inside a figure-builder function,
+gmat-czml and pandas are imported lazily inside the ``czml_trajectory`` body, and
+astropy is imported lazily too. Importing this module on a base install is free
+and never pulls the visualisation stack in.
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 import numpy as np
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from astrodynamics_mcp.attachments import png_image_content, tool_result_with_attachments
+from astrodynamics_mcp.attachments import (
+    czml_embedded_resource,
+    png_image_content,
+    tool_result_with_attachments,
+)
 from astrodynamics_mcp.errors import InvalidInputError
-from astrodynamics_mcp.schemas.base import Epoch, Frame, Observer, StateVector, _epoch_to_instant
+from astrodynamics_mcp.schemas.base import (
+    _ANGLE_UNITS,
+    _LENGTH_UNITS,
+    _VELOCITY_UNITS,
+    Epoch,
+    Frame,
+    Observer,
+    StateVector,
+    _epoch_to_instant,
+    _require_unit_in,
+    _require_vector_unit_in,
+)
 from astrodynamics_mcp.server import register_tool
 from astrodynamics_mcp.tools.porkchop import PorkchopResponse
-from astrodynamics_mcp.units import Quantity
+from astrodynamics_mcp.units import Quantity, QuantityVector
 from astrodynamics_mcp.viz_render import render_png, use_agg_backend
 
 if TYPE_CHECKING:
@@ -88,21 +107,146 @@ _HEIGHT_PX = round(_FIGSIZE_IN[1] * _RENDER_DPI)
 # ---------------------------------------------------------------------------
 
 
-class VizPlaceholderResult(BaseModel):
-    """Reserved output shape for the not-yet-implemented ``czml_trajectory`` slot.
+class CzmlTrajectoryState(BaseModel):
+    """One state of the series ``czml_trajectory`` renders — like :class:`StateVector`,
+    but velocity is optional.
 
-    The slot declares this return type only so the server can derive an output
-    schema for it; the body raises ``NotImplementedError`` and never constructs
-    one. The CZML follow-up replaces this with the tool's real response model — a
-    structured summary carried alongside the CZML attachment via
-    :mod:`astrodynamics_mcp.attachments`.
+    CZML animates positions, so velocity is not load-bearing for the orbit path:
+    a position-only series is rendered with the velocity NaN-padded (gmat-czml's
+    own contract). ``r`` / ``frame`` / ``epoch`` are required; ``v`` may be
+    omitted (for the whole series — mixing states with and without velocity is
+    rejected). The unit envelope matches :class:`StateVector` so an
+    sgp4_propagate / gmat-ephemeris series feeds straight in.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid")
 
-    detail: str = Field(
+    r: QuantityVector = Field(
         ...,
-        description="Placeholder marker; never populated at runtime.",
+        description="Cartesian position vector [x, y, z]. Unit must be a length (km / m / AU).",
+        examples=[{"value": [7000.0, 0.0, 0.0], "unit": "km"}],
+    )
+    v: QuantityVector | None = Field(
+        default=None,
+        description=(
+            "Cartesian velocity vector [vx, vy, vz]. Unit must be a velocity (km/s / m/s). "
+            "Optional — omit for a position-only series (rendered with NaN-padded velocity)."
+        ),
+        examples=[{"value": [0.0, 7.5, 0.0], "unit": "km/s"}],
+    )
+    frame: Frame = Field(
+        ...,
+        description="Reference frame in which r and v are expressed.",
+        examples=["TEME", "ICRF"],
+    )
+    epoch: Epoch = Field(
+        ...,
+        description="UTC ISO 8601 epoch at which the state is valid.",
+    )
+
+    @field_validator("r")
+    @classmethod
+    def _position(cls, v: QuantityVector) -> QuantityVector:
+        return _require_vector_unit_in(v, _LENGTH_UNITS, field="r", expected_length=3)
+
+    @field_validator("v")
+    @classmethod
+    def _velocity(cls, v: QuantityVector | None) -> QuantityVector | None:
+        if v is None:
+            return None
+        return _require_vector_unit_in(v, _VELOCITY_UNITS, field="v", expected_length=3)
+
+
+class ContactStationInput(BaseModel):
+    """A ground station for a contact annotation: identity plus geodetic placement.
+
+    The wrapper builds a :class:`gmat_czml.GroundStation` from this. ``name`` is
+    the observer's CZML entity id and label; ``lat`` / ``lon`` are geodetic
+    (east-positive longitude) and ``height`` is above the WGS-84 ellipsoid.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(
+        ...,
+        description="Observer id and label text, e.g. 'madrid'.",
+        examples=["madrid"],
+    )
+    lat: Quantity = Field(
+        ...,
+        description="Geodetic latitude, deg.",
+        examples=[{"value": 40.43, "unit": "deg"}],
+    )
+    lon: Quantity = Field(
+        ...,
+        description="Geodetic longitude (east-positive), deg.",
+        examples=[{"value": -4.25, "unit": "deg"}],
+    )
+    height: Quantity | None = Field(
+        default=None,
+        description="Height above the WGS-84 ellipsoid, km. Omit for sea level (0 km).",
+        examples=[{"value": 0.8, "unit": "km"}],
+    )
+
+    @field_validator("lat", "lon")
+    @classmethod
+    def _angle_unit(cls, v: Quantity) -> Quantity:
+        return _require_unit_in(v, _ANGLE_UNITS, field="lat/lon")
+
+    @field_validator("height")
+    @classmethod
+    def _length_unit(cls, v: Quantity | None) -> Quantity | None:
+        if v is None:
+            return None
+        return _require_unit_in(v, _LENGTH_UNITS, field="height")
+
+
+class ContactWindowInput(BaseModel):
+    """One access window — a UTC start/end pair the line of sight is shown during."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    start: Epoch = Field(..., description="Window start (UTC ISO 8601).")
+    end: Epoch = Field(..., description="Window end (UTC ISO 8601).")
+
+    @model_validator(mode="after")
+    def _end_after_start(self) -> ContactWindowInput:
+        if _epoch_to_instant(self.end) <= _epoch_to_instant(self.start):
+            raise InvalidInputError(
+                f"window end {self.end!r} must be strictly after start {self.start!r}",
+                code="invalid_input.interval_end_not_after_start",
+            )
+        return self
+
+
+class ContactInput(BaseModel):
+    """A ground-station contact: observer geometry, target object, and access windows.
+
+    Maps to a :class:`gmat_czml.Contact`. ``target`` is the rendered object the
+    line of sight points to; it defaults to the trajectory's single object
+    (``'satellite'``) and need only be set for a different name. ``windows`` are
+    UTC; an empty list still places the observer but draws no link.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    station: ContactStationInput = Field(
+        ..., description="The observing ground station (placement and label)."
+    )
+    target: str | None = Field(
+        default=None,
+        description=(
+            "Rendered object name the line of sight points to. Defaults to the "
+            "trajectory's object, 'satellite'."
+        ),
+        examples=["satellite"],
+    )
+    windows: list[ContactWindowInput] = Field(
+        default_factory=list,
+        description=(
+            "UTC access windows during which the line of sight is shown. An empty "
+            "list places the station but draws no link."
+        ),
     )
 
 
@@ -248,13 +392,92 @@ class PorkchopPlotResponse(BaseModel):
     image: PngImageInfo = Field(..., description="Pixel dimensions of the attached PNG.")
 
 
+class CzmlResourceInfo(BaseModel):
+    """Identity and cardinalities of the attached CZML document.
+
+    ``packet_count`` / ``object_count`` / ``contact_count`` are document
+    *cardinalities* (counts, not physical quantities), so they sit outside the
+    ``{value, unit}`` envelope and are declared exempt where the unit-discipline
+    meta-test polices the attachment-bearing schemas. The CZML text itself rides
+    as a separate ``EmbeddedResource`` block keyed by ``uri``, not in this summary.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    packet_count: int = Field(
+        ...,
+        description=(
+            "CZML packets emitted (a cardinality): the document preamble, one per "
+            "object, plus any contact observer / line-of-sight entities."
+        ),
+    )
+    object_count: int = Field(..., description="Rendered trajectory objects (a cardinality).")
+    contact_count: int = Field(
+        ..., description="Ground-station contacts annotated (a cardinality)."
+    )
+    format: Literal["czml"] = Field(
+        default="czml",
+        description="Attachment document format; always 'czml' for this tool.",
+    )
+    media_type: Literal["application/json"] = Field(
+        default="application/json",
+        description="MIME type the embedded CZML resource carries (CZML is JSON).",
+    )
+    uri: str = Field(
+        ...,
+        description="Stable URI the embedded CZML resource is keyed by.",
+        examples=["czml://trajectory/satellite"],
+    )
+
+
+class CzmlTrajectoryResponse(BaseModel):
+    """Structured summary accompanying a ``czml_trajectory`` CZML document.
+
+    The CZML rides as an additive ``EmbeddedResource``; this summary is always
+    present and is what a text-only client reads. ``time_span`` carries its unit;
+    the packet / object / contact counts live on :class:`CzmlResourceInfo`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    time_span: Quantity = Field(
+        ...,
+        description="Wall-clock span from the first to the last state epoch, hours.",
+        examples=[{"value": 1.5, "unit": "hours"}],
+    )
+    frame: str = Field(
+        ...,
+        description="Recognised CZML reference frame the states were tagged with (echo).",
+        examples=["TEME"],
+    )
+    style: str = Field(
+        ...,
+        description="Resolved gmat-czml style preset name.",
+        examples=["sat-default"],
+    )
+    has_velocity: bool = Field(
+        ...,
+        description=(
+            "Whether the input series carried velocity; a position-only series is "
+            "rendered with the velocity NaN-padded."
+        ),
+    )
+    resource: CzmlResourceInfo = Field(
+        ..., description="The emitted CZML document's identity and cardinalities."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Shared validation
 # ---------------------------------------------------------------------------
 
 
-def _require_states(states: list[StateVector], *, minimum: int, what: str) -> None:
-    """Reject an empty or too-short state series with a typed error."""
+def _require_states(states: Sequence[object], *, minimum: int, what: str) -> None:
+    """Reject an empty or too-short state series with a typed error.
+
+    Typed broadly so both the static plots' :class:`StateVector` series and
+    ``czml_trajectory``'s :class:`CzmlTrajectoryState` series reuse it.
+    """
     if not isinstance(states, list) or len(states) < minimum:
         raise InvalidInputError(
             f"{what} needs at least {minimum} state{'s' if minimum != 1 else ''}, "
@@ -390,8 +613,12 @@ def _arc_length_km(positions_km: np.ndarray) -> float:
     return float(np.sum(np.linalg.norm(segments, axis=1)))
 
 
-def _time_span_hours(states: list[StateVector]) -> float:
-    """Wall-clock span from the first to the last state epoch, hours."""
+def _time_span_hours(states: Sequence[StateVector | CzmlTrajectoryState]) -> float:
+    """Wall-clock span from the first to the last state epoch, hours.
+
+    Accepts either state series — both carry an ``epoch`` string — so the static
+    trajectory plot and ``czml_trajectory`` share it.
+    """
     first = _epoch_to_instant(states[0].epoch)
     last = _epoch_to_instant(states[-1].epoch)
     return abs((last - first).total_seconds()) / 3600.0
@@ -576,6 +803,191 @@ def _close(figure: Figure) -> None:
 
 
 # ---------------------------------------------------------------------------
+# CZML conversion (pure helpers + lazy gmat-czml / pandas bridges)
+# ---------------------------------------------------------------------------
+
+
+# The single object every czml_trajectory call renders. gmat-czml keys contact
+# line-of-sight links to a rendered object's name, so the object carries a
+# stable, documented name a contact's `target` can default to.
+_DEFAULT_OBJECT_NAME = "satellite"
+
+# The friendly style alias the tool accepts on top of the gmat-czml preset names,
+# mapped to the real default preset.
+_DEFAULT_STYLE_ALIAS = "default"
+_DEFAULT_PRESET = "sat-default"
+
+# astrodynamics-mcp Frame -> the gmat-czml-recognised reference-frame name
+# (what gmat_czml.recognised_frame accepts). GCRS / ITRS are astropy's spellings
+# of GCRF / ITRF — identical axes (see orbit-formats convert.frames) — so they
+# map across; CIRS / TIRS and the IAU body-fixed frames have no CZML reference
+# frame and are rejected at the wrapper boundary with a typed error.
+_FRAME_TO_CZML: dict[Frame, str] = {
+    Frame.TEME: "TEME",
+    Frame.ICRF: "ICRF",
+    Frame.GCRS: "GCRF",
+    Frame.ITRS: "ITRF",
+}
+
+# Angle unit -> degrees, for the contact station coordinates (gmat-czml's
+# GroundStation takes geodetic degrees).
+_ANGLE_TO_DEG: dict[str, float] = {"deg": 1.0, "rad": 180.0 / math.pi}
+
+
+def _czml_frame(states: list[CzmlTrajectoryState]) -> str:
+    """The single CZML reference-frame name for the series, or a typed error.
+
+    A CZML document carries one ``coordinate_system`` per object, so every state
+    must share one frame; a mixed-frame series is rejected. The frame must be one
+    gmat-czml can render (TEME / ICRF / GCRS / ITRS) — the others have no CZML
+    reference frame.
+    """
+    frames = {state.frame for state in states}
+    if len(frames) != 1:
+        names = sorted(frame.value for frame in frames)
+        raise InvalidInputError(
+            f"all states must share one reference frame; got {names}",
+            code="invalid_input.mixed_frames",
+        )
+    frame = next(iter(frames))
+    czml_name = _FRAME_TO_CZML.get(frame)
+    if czml_name is None:
+        supported = ", ".join(f.value for f in _FRAME_TO_CZML)
+        raise InvalidInputError(
+            f"frame {frame.value!r} has no CZML reference frame; use one of {supported}",
+            code="invalid_input.unsupported_frame",
+        )
+    return czml_name
+
+
+def _resolve_style_name(style: str, preset_names: Sequence[str]) -> str:
+    """Resolve the tool's ``style`` arg to a gmat-czml preset name, or a typed error.
+
+    Maps the friendly ``'default'`` alias to ``'sat-default'`` and validates the
+    rest against the live preset registry (sourced from ``PRESET_NAMES`` so the
+    two stay in lockstep), rather than a hardcoded list.
+    """
+    name = _DEFAULT_PRESET if style == _DEFAULT_STYLE_ALIAS else style
+    if name not in preset_names:
+        allowed = [_DEFAULT_STYLE_ALIAS, *preset_names]
+        raise InvalidInputError(
+            f"unknown style {style!r}; choose one of {allowed}",
+            code="invalid_input.unknown_style",
+        )
+    return name
+
+
+def _naive_utc(epoch: str) -> datetime:
+    """A validated epoch string as a naive UTC ``datetime``.
+
+    The epoch may carry any timezone designator the schema accepts; it is parsed
+    to its true instant, converted to UTC, then made naive. The canonical
+    DataFrame's epochs are naive UTC (it declares ``time_scale='UTC'``), which
+    also avoids the ``datetime64`` timezone warning the upstream parse emits for
+    offset-bearing strings.
+    """
+    return _epoch_to_instant(epoch).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _vector_scaled(vector: QuantityVector, table: dict[str, float]) -> list[float]:
+    """The vector's components rescaled to the canonical unit via *table*."""
+    scale = table[vector.unit]
+    return [component * scale for component in vector.value]
+
+
+def _velocity_present(states: list[CzmlTrajectoryState]) -> bool:
+    """Whether the series carries velocity throughout, rejecting a partial series.
+
+    Velocity is all-or-nothing for the DataFrame (the canonical schema's velocity
+    columns are present together or absent together), so a series mixing states
+    with and without velocity is rejected rather than silently dropped.
+    """
+    have = [state.v is not None for state in states]
+    if any(have) and not all(have):
+        raise InvalidInputError(
+            "velocity must be supplied for every state or none; the series mixes "
+            "states with and without velocity",
+            code="invalid_input.inconsistent_velocity",
+        )
+    return all(have)
+
+
+def _build_dataframe(
+    states: list[CzmlTrajectoryState],
+    *,
+    frame_name: str,
+    object_name: str,
+    has_velocity: bool,
+) -> Any:
+    """The canonical state-series ``DataFrame`` gmat-czml's ``to_czml`` consumes.
+
+    Positions (and, when present, velocities) are converted to the org's km-native
+    units and declared as such on the ``attrs`` spine, alongside the recognised
+    frame, the UTC time scale, and the object name. A position-only series omits
+    the velocity columns, which gmat-czml NaN-pads. pandas is imported lazily —
+    it ships with the ``[viz]`` extra (via gmat-czml), not the base install.
+    """
+    import pandas as pd
+
+    data: dict[str, Any] = {
+        "Epoch": [_naive_utc(state.epoch) for state in states],
+    }
+    positions = [_vector_scaled(state.r, _LENGTH_TO_KM) for state in states]
+    data["X"] = [row[0] for row in positions]
+    data["Y"] = [row[1] for row in positions]
+    data["Z"] = [row[2] for row in positions]
+    units: dict[str, str] = {"length": "km"}
+    if has_velocity:
+        # `has_velocity` is True only when every state carries velocity, so `state.v`
+        # is non-None here; the cast-free guard keeps the type checker honest.
+        velocities = [
+            _vector_scaled(state.v, _VELOCITY_TO_KMPS) for state in states if state.v is not None
+        ]
+        data["VX"] = [row[0] for row in velocities]
+        data["VY"] = [row[1] for row in velocities]
+        data["VZ"] = [row[2] for row in velocities]
+        units["speed"] = "km/s"
+
+    frame: pd.DataFrame = pd.DataFrame(data)
+    frame.attrs = {
+        "coordinate_system": frame_name,
+        "time_scale": "UTC",
+        "units": units,
+        "object_name": object_name,
+    }
+    return frame
+
+
+def _build_contacts(intervals: list[ContactInput], *, default_target: str) -> list[Any]:
+    """Build gmat-czml ``Contact`` records from the tool's ``intervals`` input.
+
+    Each entry's station becomes a :class:`gmat_czml.GroundStation` (geodetic
+    degrees, height in km) and its windows become UTC ``(start, end)`` datetime
+    pairs; a contact's ``target`` defaults to the single rendered object.
+    """
+    from gmat_czml import Contact, GroundStation
+
+    contacts: list[Any] = []
+    for entry in intervals:
+        station = entry.station
+        height_km = (
+            0.0
+            if station.height is None
+            else station.height.value * _LENGTH_TO_KM[station.height.unit]
+        )
+        observer = GroundStation(
+            name=station.name,
+            latitude=station.lat.value * _ANGLE_TO_DEG[station.lat.unit],
+            longitude=station.lon.value * _ANGLE_TO_DEG[station.lon.unit],
+            height=height_km,
+        )
+        windows = [(_naive_utc(w.start), _naive_utc(w.end)) for w in entry.windows]
+        target = entry.target if entry.target is not None else default_target
+        contacts.append(Contact(observer=observer, target=target, windows=windows))
+    return contacts
+
+
+# ---------------------------------------------------------------------------
 # Tool descriptions (subject to server_lint)
 # ---------------------------------------------------------------------------
 
@@ -620,10 +1032,20 @@ _PLOT_PORKCHOP_DESCRIPTION = (
 )
 
 _CZML_TRAJECTORY_DESCRIPTION = (
-    "Emit a trajectory as a CZML document for a Cesium 3D client, e.g. an SGP4 "
-    "propagation series rendered as an animated orbit, returned as an embedded "
-    "resource with an inline summary (packet count, time span). Reserved slot "
-    "— not yet implemented; lands in follow-up work."
+    "Convert a trajectory into a CZML document for a Cesium 3D client and return it "
+    "as an embedded resource, with an inline summary (packet count, time span). e.g. "
+    "czml_trajectory(trajectory=<sgp4_propagate output series>) renders an animated "
+    "orbit. Pass the whole state SERIES (each entry a {r, v, frame, epoch}); velocity "
+    "is optional — a position-only series is rendered with the velocity NaN-padded. "
+    "All states must share one CZML-renderable frame (TEME, ICRF, GCRS, ITRS). COMMON "
+    "MISTAKES: the output is a CZML document for a Cesium client — NOT an image, and "
+    "not every client renders it; and 'trajectory' must be the canonical state series, "
+    "NOT raw TLE text (propagate the TLE first). The single rendered object is named "
+    "'satellite'; optional 'intervals' annotate ground-station contacts (a station, a "
+    "target object defaulting to 'satellite', and UTC access windows) as a line of "
+    "sight shown only during each window. 'style' is a preset: default / sat-default / "
+    "sat-red / sat-green / sat-magenta. Empty or single-state input returns a typed "
+    "error."
 )
 
 
@@ -845,8 +1267,107 @@ def _register_viz_tools() -> None:
             title="CZML Trajectory", readOnlyHint=True, openWorldHint=False
         ),
     )
-    async def czml_trajectory() -> VizPlaceholderResult:
-        raise NotImplementedError("czml_trajectory lands in follow-up work")
+    async def czml_trajectory(
+        trajectory: Annotated[
+            list[CzmlTrajectoryState],
+            Field(
+                description=(
+                    "The state SERIES to render, e.g. the `states` from an sgp4_propagate "
+                    "call or a gmat ephemeris. Each entry is a {r, v, frame, epoch}; at "
+                    "least two states are required and all must share one frame (TEME / "
+                    "ICRF / GCRS / ITRS). Velocity is optional — omit it for a "
+                    "position-only series."
+                ),
+            ),
+        ],
+        intervals: Annotated[
+            list[ContactInput] | None,
+            Field(
+                description=(
+                    "Optional ground-station contacts to annotate. Each entry is a "
+                    "{station, target, windows}: the station's name + geodetic lat / lon "
+                    "/ height, the rendered object the line of sight points to (defaults "
+                    "to 'satellite'), and the UTC access windows it is shown during. Omit "
+                    "for none. This is NOT a station-less 'shade these time spans' "
+                    "primitive."
+                ),
+            ),
+        ] = None,
+        style: Annotated[
+            str,
+            Field(
+                description=(
+                    "Visual style preset: 'default' (alias of 'sat-default'), or one of "
+                    "the gmat-czml presets sat-default / sat-red / sat-green / "
+                    "sat-magenta. An unrecognised name returns a typed error."
+                ),
+            ),
+        ] = "default",
+    ) -> CzmlTrajectoryResponse:
+        _require_states(trajectory, minimum=2, what="czml_trajectory")
+        frame_name = _czml_frame(trajectory)
+        has_velocity = _velocity_present(trajectory)
+
+        from gmat_czml import PRESET_NAMES, preset, to_czml
+        from gmat_czml.errors import (
+            ContactEntityCollisionError,
+            SchemaError,
+            UnknownContactTargetError,
+            UnknownStyleError,
+        )
+
+        style_name = _resolve_style_name(style, PRESET_NAMES)
+        dataframe = _build_dataframe(
+            trajectory,
+            frame_name=frame_name,
+            object_name=_DEFAULT_OBJECT_NAME,
+            has_velocity=has_velocity,
+        )
+        contacts = (
+            _build_contacts(intervals, default_target=_DEFAULT_OBJECT_NAME) if intervals else None
+        )
+
+        try:
+            document = to_czml(dataframe, style=preset(style_name), contacts=contacts)
+        except (UnknownContactTargetError, ContactEntityCollisionError) as exc:
+            raise InvalidInputError(str(exc), code="invalid_input.contact_unresolved") from exc
+        except UnknownStyleError as exc:  # defensive — _resolve_style_name already gates this
+            raise InvalidInputError(str(exc), code="invalid_input.unknown_style") from exc
+        except SchemaError as exc:
+            raise InvalidInputError(str(exc), code="invalid_input.malformed_trajectory") from exc
+
+        czml = document.to_json()
+        packet_count = len(document.to_dict())
+        contact_count = len(contacts) if contacts else 0
+        span_hours = _time_span_hours(trajectory)
+        uri = f"czml://trajectory/{_DEFAULT_OBJECT_NAME}"
+
+        summary_model = CzmlTrajectoryResponse(
+            time_span=Quantity(value=span_hours, unit="hours"),
+            frame=frame_name,
+            style=style_name,
+            has_velocity=has_velocity,
+            resource=CzmlResourceInfo(
+                packet_count=packet_count,
+                object_count=1,
+                contact_count=contact_count,
+                uri=uri,
+            ),
+        )
+        velocity_note = "" if has_velocity else ", position-only"
+        contact_note = ""
+        if contact_count:
+            contact_note = f", {contact_count} contact{'s' if contact_count != 1 else ''}"
+        summary = (
+            f"CZML trajectory: 1 object, {packet_count} packets, "
+            f"span {span_hours:.2f} h ({frame_name}, style {style_name}{velocity_note}"
+            f"{contact_note}). Embedded CZML resource attached."
+        )
+        return tool_result_with_attachments(  # type: ignore[return-value]
+            structured=summary_model,
+            summary=summary,
+            attachments=[czml_embedded_resource(czml, uri=uri)],
+        )
 
 
 if _VIZ_AVAILABLE:
