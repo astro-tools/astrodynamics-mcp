@@ -49,9 +49,9 @@ from astrodynamics_mcp.spice_runtime import (
     list_pool,
     normalize_aberration,
     normalize_kind_filter,
-    query_body_constant,
+    query_body_constants,
     query_frame_transform,
-    query_state,
+    query_states,
     query_time_convert,
     run_on_spice_thread,
     unload_kernel,
@@ -553,28 +553,26 @@ async def _do_state(
     """Query the state of *target* relative to *observer* at each of *epochs*.
 
     Validates the aberration correction up front (a malformed one never reaches
-    CSPICE), then runs one ``str2et`` + ``spkezr`` per epoch on the worker
-    thread. Light time is surfaced only for a non-``NONE`` correction, per the
-    tool contract; a geometric query reports null light time.
+    CSPICE), normalises every epoch to a CSPICE-parseable UTC string, then runs
+    the whole batch — one ``str2et`` + ``spkezr`` per epoch — in a single worker
+    call, so the multi-epoch query is one atomic CSPICE interaction. Light time
+    is surfaced only for a non-``NONE`` correction, per the tool contract; a
+    geometric query reports null light time.
     """
     abcorr = normalize_aberration(aberration)
     report_light_time = abcorr != "NONE"
 
-    states: list[SpiceStateAtEpoch] = []
-    for epoch in epochs:
-        result = await run_on_spice_thread(
-            query_state, target, observer, _to_cspice_utc(epoch), frame, abcorr
+    utc_epochs = [_to_cspice_utc(epoch) for epoch in epochs]
+    results = await run_on_spice_thread(query_states, target, observer, utc_epochs, frame, abcorr)
+    states = [
+        SpiceStateAtEpoch(
+            epoch=epoch,
+            position=QuantityVector(value=list(result.position), unit="km"),
+            velocity=QuantityVector(value=list(result.velocity), unit="km/s"),
+            light_time=(Quantity(value=result.light_time, unit="s") if report_light_time else None),
         )
-        states.append(
-            SpiceStateAtEpoch(
-                epoch=epoch,
-                position=QuantityVector(value=list(result.position), unit="km"),
-                velocity=QuantityVector(value=list(result.velocity), unit="km/s"),
-                light_time=(
-                    Quantity(value=result.light_time, unit="s") if report_light_time else None
-                ),
-            )
-        )
+        for epoch, result in zip(epochs, results, strict=True)
+    ]
 
     return SpiceStateResponse(
         target=target,
@@ -712,16 +710,18 @@ async def _do_body_parameters(
 ) -> SpiceBodyParametersResponse:
     """Read the requested (or default common-set) constants for *body* from the pool.
 
-    Each parameter resolves to a CSPICE item read with ``bodvcd`` on the worker
-    thread; the per-element units come from the catalogue. An unknown body, an
-    unknown parameter name, or a constant no furnished kernel supplies each
-    surfaces as a typed error rather than a silent gap.
+    Each parameter resolves to a CSPICE item read with ``bodvcd``; the whole set
+    is read in a single worker call, so a multi-parameter lookup is one atomic
+    CSPICE interaction. The per-element units come from the catalogue. An unknown
+    body, an unknown parameter name, or a constant no furnished kernel supplies
+    each surfaces as a typed error rather than a silent gap.
     """
     requested = _resolve_parameter_names(parameters)
+    specs = [_BODY_PARAMETER_CATALOGUE[name] for name in requested]
+    constants = await run_on_spice_thread(query_body_constants, body, [spec.item for spec in specs])
+
     results: list[SpiceBodyParameter] = []
-    for name in requested:
-        spec = _BODY_PARAMETER_CATALOGUE[name]
-        constant = await run_on_spice_thread(query_body_constant, body, spec.item)
+    for name, spec, constant in zip(requested, specs, constants, strict=True):
         units = _units_for(spec, len(constant.values))
         results.append(
             SpiceBodyParameter(

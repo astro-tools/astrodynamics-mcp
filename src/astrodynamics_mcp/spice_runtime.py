@@ -11,9 +11,13 @@ pool persists in-process across calls.
 
 The pool primitives (:func:`furnish_and_describe`, :func:`list_pool`,
 :func:`unload_kernel`) run *inside* that worker; the tool bodies in
-:mod:`astrodynamics_mcp.tools.spice` call them through
-:func:`run_on_spice_thread`, one call per tool invocation so each tool's whole
-CSPICE interaction is atomic against any other.
+:mod:`astrodynamics_mcp.tools.spice` reach them through
+:func:`run_on_spice_thread`. Each tool dispatches all of its CSPICE work in a
+single worker call — the batch helpers (:func:`query_states`,
+:func:`query_body_constants`) loop over their epochs / parameters *inside* the
+worker rather than dispatching once per item — so each tool's whole CSPICE
+interaction runs to completion without another tool's calls interleaving into
+it.
 
 ``spiceypy`` is imported lazily, inside the worker, so importing this module on
 a bare install (no ``[spice]`` extra) does not require CSPICE — matching the
@@ -394,6 +398,21 @@ def query_state(target: str, observer: str, utc_epoch: str, frame: str, abcorr: 
     )
 
 
+def query_states(
+    target: str, observer: str, utc_epochs: Sequence[str], frame: str, abcorr: str
+) -> list[SpiceState]:
+    """Return *target*'s state relative to *observer* at each of *utc_epochs*.
+
+    Loops :func:`query_state` over the epochs *inside* one worker call, so a
+    multi-epoch query is a single atomic CSPICE interaction — no other tool's
+    calls interleave between epochs — and the per-epoch ``str2et`` + ``spkezr``
+    cost one thread round-trip rather than one per epoch. Each epoch must
+    already be a CSPICE-parseable UTC string (the tool layer normalises the
+    ISO 8601 input). Runs on the worker thread.
+    """
+    return [query_state(target, observer, utc_epoch, frame, abcorr) for utc_epoch in utc_epochs]
+
+
 def query_frame_transform(
     from_frame: str,
     to_frame: str,
@@ -521,6 +540,16 @@ def query_body_constant(body: str, item: str) -> BodyConstant:
         source=f"BODY{int(code)}_{item}",
         values=tuple(float(v) for v in values),
     )
+
+
+def query_body_constants(body: str, items: Sequence[str]) -> list[BodyConstant]:
+    """Read each of *items* for *body* from the furnished PCK pool.
+
+    Loops :func:`query_body_constant` over the items *inside* one worker call,
+    so a multi-parameter lookup is a single atomic CSPICE interaction at one
+    thread round-trip rather than one per item. Runs on the worker thread.
+    """
+    return [query_body_constant(body, item) for item in items]
 
 
 def _resolve_spacecraft_id(sp: Any, spacecraft: str | int) -> int:
