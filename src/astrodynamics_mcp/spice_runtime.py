@@ -26,8 +26,9 @@ import asyncio
 import logging
 import os
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
@@ -214,6 +215,31 @@ async def run_on_spice_thread(fn: Callable[..., _T], /, *args: Any, **kwargs: An
 # ---------------------------------------------------------------------------
 
 
+@contextmanager
+def _cspice_call(*, code: str, action: str, hint: str, data: dict[str, Any]) -> Iterator[None]:
+    """Run a CSPICE call, turning any ``spiceypy`` failure into a typed error.
+
+    Centralises the one error-translation shape every pool query helper needs:
+    a ``spiceypy`` exception (``SpiceyError`` / subclasses) becomes an
+    :class:`~astrodynamics_mcp.errors.UpstreamError` carrying the stable *code*,
+    the original exception, and the *data* context — so a missing kernel, an
+    unrecognised name, or an out-of-coverage epoch surfaces as a typed error
+    rather than a raw CSPICE abort or a silent result. The raised message is
+    ``f"{action}: {exc}. {hint}"`` — *action* describes what CSPICE was asked to
+    do, *hint* the remediation (which kernel to furnish) — so the consumer sees
+    both the CSPICE diagnostic and how to fix it.
+    """
+    try:
+        yield
+    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
+        raise UpstreamError(
+            f"{action}: {exc}. {hint}",
+            code=code,
+            original_exception=exc,
+            data=data,
+        ) from exc
+
+
 def _spiceypy() -> Any:
     """Import and return the ``spiceypy`` module (lazy; worker-thread only)."""
     import spiceypy
@@ -328,33 +354,32 @@ def query_state(target: str, observer: str, utc_epoch: str, frame: str, abcorr: 
     :data:`SPICE_ABERRATION_CORRECTIONS`; the tool layer validates it first.
     """
     sp = _spiceypy()
-    try:
+    with _cspice_call(
+        code="upstream.spice_state_failed",
+        action=f"CSPICE could not resolve the epoch {utc_epoch!r} to ephemeris time",
+        hint="A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
+        data={"target": target, "observer": observer, "epoch": utc_epoch},
+    ):
         et = sp.str2et(utc_epoch)
-    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-        raise UpstreamError(
-            f"CSPICE could not resolve the epoch {utc_epoch!r} to ephemeris time: {exc}. "
-            "A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
-            code="upstream.spice_state_failed",
-            original_exception=exc,
-            data={"target": target, "observer": observer, "epoch": utc_epoch},
-        ) from exc
-    try:
-        state, light_time = sp.spkezr(target, et, frame, abcorr, observer)
-    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-        raise UpstreamError(
+    with _cspice_call(
+        code="upstream.spice_state_failed",
+        action=(
             f"CSPICE could not compute the state of {target!r} relative to {observer!r} "
-            f"at {utc_epoch!r} in frame {frame!r}: {exc}. Confirm the relevant SPK is "
-            "furnished (spice_load_kernel) and the body names / NAIF IDs are valid.",
-            code="upstream.spice_state_failed",
-            original_exception=exc,
-            data={
-                "target": target,
-                "observer": observer,
-                "epoch": utc_epoch,
-                "frame": frame,
-                "aberration": abcorr,
-            },
-        ) from exc
+            f"at {utc_epoch!r} in frame {frame!r}"
+        ),
+        hint=(
+            "Confirm the relevant SPK is furnished (spice_load_kernel) and the body "
+            "names / NAIF IDs are valid."
+        ),
+        data={
+            "target": target,
+            "observer": observer,
+            "epoch": utc_epoch,
+            "frame": frame,
+            "aberration": abcorr,
+        },
+    ):
+        state, light_time = sp.spkezr(target, et, frame, abcorr, observer)
     return SpiceState(
         position=(float(state[0]), float(state[1]), float(state[2])),
         velocity=(float(state[3]), float(state[4]), float(state[5])),
@@ -388,27 +413,25 @@ def query_frame_transform(
     vectors to rotate, or ``None`` to request the rotation matrix alone.
     """
     sp = _spiceypy()
-    try:
+    with _cspice_call(
+        code="upstream.spice_frame_transform_failed",
+        action=f"CSPICE could not resolve the epoch {utc_epoch!r} to ephemeris time",
+        hint="A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
+        data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
+    ):
         et = sp.str2et(utc_epoch)
-    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-        raise UpstreamError(
-            f"CSPICE could not resolve the epoch {utc_epoch!r} to ephemeris time: {exc}. "
-            "A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
-            code="upstream.spice_frame_transform_failed",
-            original_exception=exc,
-            data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
-        ) from exc
-    try:
+    with _cspice_call(
+        code="upstream.spice_frame_transform_failed",
+        action=(
+            f"CSPICE could not rotate from frame {from_frame!r} to {to_frame!r} at {utc_epoch!r}"
+        ),
+        hint=(
+            "Confirm the FK / PCK defining the frame is furnished (spice_load_kernel) "
+            "and both frame names are recognised."
+        ),
+        data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
+    ):
         matrix = sp.pxform(from_frame, to_frame, et)
-    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-        raise UpstreamError(
-            f"CSPICE could not rotate from frame {from_frame!r} to {to_frame!r} at "
-            f"{utc_epoch!r}: {exc}. Confirm the FK / PCK defining the frame is furnished "
-            "(spice_load_kernel) and both frame names are recognised.",
-            code="upstream.spice_frame_transform_failed",
-            original_exception=exc,
-            data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
-        ) from exc
     rotation = (
         (float(matrix[0][0]), float(matrix[0][1]), float(matrix[0][2])),
         (float(matrix[1][0]), float(matrix[1][1]), float(matrix[1][2])),
@@ -419,17 +442,19 @@ def query_frame_transform(
     rotated_velocity: tuple[float, float, float] | None = None
 
     if position is not None and velocity is not None:
-        try:
+        with _cspice_call(
+            code="upstream.spice_frame_transform_failed",
+            action=(
+                f"CSPICE could not build the state transform from frame {from_frame!r} "
+                f"to {to_frame!r} at {utc_epoch!r}"
+            ),
+            hint=(
+                "Confirm the FK / PCK defining the frame is furnished (spice_load_kernel) "
+                "and both frame names are recognised."
+            ),
+            data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
+        ):
             xform = sp.sxform(from_frame, to_frame, et)
-        except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-            raise UpstreamError(
-                f"CSPICE could not build the state transform from frame {from_frame!r} to "
-                f"{to_frame!r} at {utc_epoch!r}: {exc}. Confirm the FK / PCK defining the "
-                "frame is furnished (spice_load_kernel) and both frame names are recognised.",
-                code="upstream.spice_frame_transform_failed",
-                original_exception=exc,
-                data={"from_frame": from_frame, "to_frame": to_frame, "epoch": utc_epoch},
-            ) from exc
         state: tuple[float, ...] = (*position, *velocity)
         out = [sum((float(xform[i][j]) * state[j] for j in range(6)), 0.0) for i in range(6)]
         rotated_position = (out[0], out[1], out[2])
@@ -475,17 +500,16 @@ def query_body_constant(body: str, item: str) -> BodyConstant:
             code="invalid_input.spice_unknown_body",
             data={"body": body},
         )
-    try:
+    with _cspice_call(
+        code="upstream.spice_body_parameters_failed",
+        action=f"CSPICE has no value for {item!r} of body {body!r} (BODY{int(code)}_{item})",
+        hint=(
+            "Furnish the PCK that defines it first (spice_load_kernel) — radii / pole / PM "
+            "constants come from a planetary-constants PCK, GM from a gravity PCK."
+        ),
+        data={"body": body, "item": item, "code": int(code)},
+    ):
         _dim, values = sp.bodvcd(int(code), item, _MAX_BODY_CONSTANT_VALUES)
-    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-        raise UpstreamError(
-            f"CSPICE has no value for {item!r} of body {body!r} (BODY{int(code)}_{item}): "
-            f"{exc}. Furnish the PCK that defines it first (spice_load_kernel) — radii / "
-            "pole / PM constants come from a planetary-constants PCK, GM from a gravity PCK.",
-            code="upstream.spice_body_parameters_failed",
-            original_exception=exc,
-            data={"body": body, "item": item, "code": int(code)},
-        ) from exc
     return BodyConstant(
         source=f"BODY{int(code)}_{item}",
         values=tuple(float(v) for v in values),
@@ -525,28 +549,24 @@ def _input_to_et(sp: Any, value: str | float, from_system: str, sc_id: int | Non
     if from_system == "ET":
         return float(value)
     if from_system == "UTC":
-        try:
-            return float(sp.str2et(value))
-        except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-            raise UpstreamError(
-                f"CSPICE could not resolve the UTC epoch {value!r} to ephemeris time: {exc}. "
-                "A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
-                code="upstream.spice_time_convert_failed",
-                original_exception=exc,
-                data={"value": value, "from_system": from_system},
-            ) from exc
-    # SCLK — sc_id is guaranteed non-None by the tool layer for any SCLK leg.
-    try:
-        return float(sp.scs2e(sc_id, value))
-    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-        raise UpstreamError(
-            f"CSPICE could not resolve the spacecraft-clock string {value!r} to ephemeris "
-            f"time for spacecraft {sc_id}: {exc}. An SCLK kernel for that spacecraft must be "
-            "furnished first (spice_load_kernel).",
+        with _cspice_call(
             code="upstream.spice_time_convert_failed",
-            original_exception=exc,
-            data={"value": value, "from_system": from_system, "spacecraft": sc_id},
-        ) from exc
+            action=f"CSPICE could not resolve the UTC epoch {value!r} to ephemeris time",
+            hint="A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
+            data={"value": value, "from_system": from_system},
+        ):
+            return float(sp.str2et(value))
+    # SCLK — sc_id is guaranteed non-None by the tool layer for any SCLK leg.
+    with _cspice_call(
+        code="upstream.spice_time_convert_failed",
+        action=(
+            f"CSPICE could not resolve the spacecraft-clock string {value!r} to ephemeris "
+            f"time for spacecraft {sc_id}"
+        ),
+        hint="An SCLK kernel for that spacecraft must be furnished first (spice_load_kernel).",
+        data={"value": value, "from_system": from_system, "spacecraft": sc_id},
+    ):
+        return float(sp.scs2e(sc_id, value))
 
 
 def _et_to_output(sp: Any, et: float, to_system: str, sc_id: int | None) -> str | float:
@@ -554,28 +574,24 @@ def _et_to_output(sp: Any, et: float, to_system: str, sc_id: int | None) -> str 
     if to_system == "ET":
         return et
     if to_system == "UTC":
-        try:
-            return str(sp.et2utc(et, _ET2UTC_FORMAT, _ET2UTC_PRECISION))
-        except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-            raise UpstreamError(
-                f"CSPICE could not render ephemeris time {et!r} as a UTC calendar string: "
-                f"{exc}. A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
-                code="upstream.spice_time_convert_failed",
-                original_exception=exc,
-                data={"et": et, "to_system": to_system},
-            ) from exc
-    # SCLK — sc_id is guaranteed non-None by the tool layer for any SCLK leg.
-    try:
-        return str(sp.sce2s(sc_id, et))
-    except Exception as exc:  # spiceypy raises SpiceyError / subclasses
-        raise UpstreamError(
-            f"CSPICE could not render ephemeris time {et!r} as a spacecraft-clock string for "
-            f"spacecraft {sc_id}: {exc}. An SCLK kernel for that spacecraft must be furnished "
-            "first (spice_load_kernel).",
+        with _cspice_call(
             code="upstream.spice_time_convert_failed",
-            original_exception=exc,
-            data={"et": et, "to_system": to_system, "spacecraft": sc_id},
-        ) from exc
+            action=f"CSPICE could not render ephemeris time {et!r} as a UTC calendar string",
+            hint="A leap-second kernel (LSK) must be furnished first (spice_load_kernel).",
+            data={"et": et, "to_system": to_system},
+        ):
+            return str(sp.et2utc(et, _ET2UTC_FORMAT, _ET2UTC_PRECISION))
+    # SCLK — sc_id is guaranteed non-None by the tool layer for any SCLK leg.
+    with _cspice_call(
+        code="upstream.spice_time_convert_failed",
+        action=(
+            f"CSPICE could not render ephemeris time {et!r} as a spacecraft-clock string "
+            f"for spacecraft {sc_id}"
+        ),
+        hint="An SCLK kernel for that spacecraft must be furnished first (spice_load_kernel).",
+        data={"et": et, "to_system": to_system, "spacecraft": sc_id},
+    ):
+        return str(sp.sce2s(sc_id, et))
 
 
 def query_time_convert(
