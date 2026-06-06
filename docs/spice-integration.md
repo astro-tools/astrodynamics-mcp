@@ -25,6 +25,45 @@ facts — statefulness and thread-unsafety — drive the design decisions below.
 This page records those decisions; it is the contract the individual SPICE
 tools are built against.
 
+## The SPICE tools
+
+The extra adds three kernel-management tools that mutate or read the pool, and
+four query tools that read whatever the pool currently holds. Every query needs
+its kernels furnished first — a missing kernel returns a typed error, never a
+silent empty result.
+
+**Kernel management:**
+
+- **`spice_load_kernel`** — furnish a kernel into the process pool from a local
+  filesystem path or a NAIF `https` URL. A meta-kernel furnishes everything it
+  lists in one call. Returns each furnished kernel's name (the unload key),
+  type, and handle.
+- **`spice_list_kernels`** — enumerate the kernels currently furnished in the
+  pool, optionally filtered to a set of CSPICE categories (`SPK`, `PCK`, …).
+- **`spice_unload_kernel`** — drop a furnished kernel by the `name`
+  `spice_load_kernel` returned (not its original URL).
+
+**Queries:**
+
+- **`spice_state`** — position and velocity of a target body relative to an
+  observer at one or more epochs, read from furnished SPK kernels, with an
+  optional light-time / stellar-aberration correction. Needs an SPK and a
+  leap-second kernel (LSK).
+- **`spice_frame_transform`** — rotate a vector between SPICE reference frames
+  defined by furnished FK / PCK kernels — in particular the non-Earth
+  body-fixed frames the astropy `frame_transform` cannot provide — or return
+  the 3×3 rotation matrix alone.
+- **`spice_body_parameters`** — read a body's physical and orientation
+  constants (triaxial radii, GM, pole / prime-meridian coefficients) from
+  furnished PCK kernels.
+- **`spice_time_convert`** — convert a time between the kernel-defined systems
+  ET (TDB seconds past J2000), UTC, and SCLK (spacecraft clock), using furnished
+  leap-second and spacecraft-clock kernels.
+
+Each tool's full input / output JSON schema — every argument, unit, and default
+— lives on the [Tool reference](tool-reference.md) page, generated from the live
+tool registry.
+
 ## Concurrency and the kernel pool
 
 CSPICE is not thread-safe, and its kernel pool is a single block of

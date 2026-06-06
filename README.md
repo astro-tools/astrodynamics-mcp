@@ -5,7 +5,8 @@ gives any MCP-capable LLM client (Claude Code, Cursor, ChatGPT desktop,
 custom agents) authoritative astrodynamics tools: TLE/SGP4 propagation,
 Lambert solving, ground-station access, time-scale and coordinate-frame
 conversions, porkchop scans, B-plane targeting, satellite metadata, and
-— with the optional `[gmat]` extra — full NASA GMAT mission execution.
+— with optional extras — full NASA GMAT mission execution (`[gmat]`) and
+NASA SPICE / NAIF kernel queries (`[spice]`).
 
 ## Why
 
@@ -53,6 +54,28 @@ install, and five more tools register for driving real GMAT missions
 | `gmat_validate_script`  | Parse-validate a script without running it; returns errors, warnings, and the resource/command structure. | `gmat-run` |
 | `gmat_read_run_artefact`| Read the raw text of a file produced by a prior run (ephemerides, reports too large to inline). | run registry |
 
+### SPICE tools (optional `[spice]` extra)
+
+Install the `[spice]` extra and seven more tools register, backed by NASA
+NAIF's CSPICE through [`spiceypy`](https://github.com/AndrewAnnex/SpiceyPy)
+(they stay hidden otherwise). They furnish kernels into a process-global
+pool and query whatever the pool holds:
+
+| Tool                    | What it does                                              | Backed by      |
+| ----------------------- | --------------------------------------------------------- | -------------- |
+| `spice_load_kernel`     | Furnish a kernel into the pool from a local path or a NAIF `https` URL (allowlisted, cached); a meta-kernel furnishes all it lists. | `spiceypy` · NAIF |
+| `spice_list_kernels`    | List the kernels currently furnished in the pool, optionally filtered by category. | `spiceypy` |
+| `spice_unload_kernel`   | Drop a furnished kernel by the `name` `spice_load_kernel` returned. | `spiceypy` |
+| `spice_state`           | Position / velocity of a target relative to an observer at one or more epochs, from furnished SPK kernels. | `spiceypy` (SPK) |
+| `spice_frame_transform` | Rotate a vector between kernel-defined frames — in particular non-Earth body-fixed frames — or return the rotation matrix. | `spiceypy` (FK / PCK) |
+| `spice_body_parameters` | Read a body's radii, GM, and pole / prime-meridian orientation constants from furnished PCK kernels. | `spiceypy` (PCK) |
+| `spice_time_convert`    | Convert between the kernel-defined time systems ET / UTC / SCLK using furnished LSK / SCLK kernels. | `spiceypy` (LSK / SCLK) |
+
+The kernel model, the NAIF furnish-from-URL allowlist, and the
+process-global pool's trust boundary are covered on the
+[SPICE integration](https://astro-tools.github.io/astrodynamics-mcp/spice-integration/)
+page.
+
 Full input / output JSON schemas live on the
 [Tool reference](https://astro-tools.github.io/astrodynamics-mcp/tool-reference/)
 page of the docs site.
@@ -64,6 +87,7 @@ Install:
 ```bash
 uv tool install astrodynamics-mcp            # or: pipx install astrodynamics-mcp
 uv tool install "astrodynamics-mcp[gmat]"    # adds the GMAT mission tools (needs a local GMAT install)
+uv tool install "astrodynamics-mcp[spice]"   # adds the SPICE tools (pulls spiceypy / bundled CSPICE)
 ```
 
 ### Claude Code

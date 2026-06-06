@@ -171,6 +171,62 @@ arguments. See [`time_convert`](tool-reference.md) for the full scale and
 format lists; the time-scale Python type is
 [`astrodynamics_mcp.schemas.base.TimeScale`](api.md#schemas).
 
+## Query a body's state from SPICE kernels
+
+Requires the `[spice]` extra — see [SPICE integration](spice-integration.md)
+for the kernel model and the full tool surface.
+
+> **You:** Use SPICE to get the Moon's geocentric state on
+> 2026-01-01T00:00:00Z.
+
+An SPK state query needs two kernels furnished first — a leap-second kernel
+(to resolve the UTC epoch) and a planetary ephemeris SPK (the states
+themselves). The model furnishes both from the NAIF allowlist with
+`spice_load_kernel`:
+
+```jsonc
+// tools/call → spice_load_kernel
+{ "source": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls" }
+```
+```jsonc
+// tools/call → spice_load_kernel
+{ "source": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp" }
+```
+
+The pool is additive and persists across calls, so both stay loaded together;
+a repeat URL load within the cache TTL skips the network (`from_cache=true`).
+Then it queries the state — the Moon relative to the Earth, in the default
+`J2000` frame:
+
+```jsonc
+// tools/call → spice_state
+{
+  "target": "MOON",
+  "observer": "EARTH",
+  "epochs": ["2026-01-01T00:00:00Z"]
+}
+```
+
+The response carries one state per requested epoch — `position` (km) and
+`velocity` (km/s) as `{value, unit}` quantities in the requested frame, each
+epoch self-describing. `aberration` defaults to `NONE` (the geometric state),
+so `light_time` comes back null; pass `LT` or `LT+S` for a light-time /
+stellar-aberration-corrected state and the one-way light time is populated. A
+missing kernel returns a typed error rather than a silent empty state — confirm
+the pool with `spice_list_kernels` if a query reports a kernel gap.
+
+Reach for the `spice_*` tools when an operation needs furnished kernels — an
+SPK state, a non-Earth body-fixed frame (`spice_frame_transform`), body
+constants (`spice_body_parameters`), or ET / SCLK time (`spice_time_convert`).
+For plain UTC / TAI / TT and Earth-centred frames the kernel-free
+[`time_convert`](tool-reference.md) and [`frame_transform`](tool-reference.md)
+need no kernels at all.
+
+**Worked example:**
+[SPICE Mars state](https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/04_spice_mars_state.md)
+— full transcript furnishing an LSK + planetary SPK and cross-checking
+`spice_state` against a Horizons-backed `porkchop` for Mars.
+
 ## Run a GMAT mission from a skeleton
 
 Requires the `[gmat]` extra — see [GMAT integration](gmat-integration.md) for

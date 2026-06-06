@@ -25,10 +25,12 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      # --extra gmat installs gmat-run so the GMAT tool slots register and
-      # land in the auto-generated tool reference. gmat-run imports without
-      # a GMAT binary, so no setup-gmat step is needed for the catalogue.
-      - run: uv sync --all-groups --extra gmat
+      # --extra gmat and --extra spice install the optional-tool dependencies
+      # so the GMAT and SPICE tool slots register and land in the
+      # auto-generated tool reference. gmat-run imports without a GMAT binary,
+      # and spiceypy bundles CSPICE (no system SPICE install needed), so no
+      # extra setup step is required for the catalogue.
+      - run: uv sync --all-groups --extra gmat --extra spice
       - run: uv run mkdocs build --strict
 
   deploy:
@@ -52,7 +54,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - run: uv sync --all-groups --extra gmat
+      - run: uv sync --all-groups --extra gmat --extra spice
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
