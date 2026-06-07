@@ -1013,8 +1013,9 @@ _PLOT_TRAJECTORY_DESCRIPTION = (
     "carried alongside the image. e.g. plot_trajectory(states=<state series>, "
     "projection='2D', central_body='earth') for a GTO arc. Pass the whole state "
     "SERIES, not a single state. Positions are plotted in the states' own frame "
-    "axes (km); the central body is drawn at the origin to scale for known "
-    "bodies. The PNG is additive — the numeric summary (arc length km, apsides "
+    "axes (km); in a 2D plot the central body is drawn at the origin to scale for "
+    "known bodies, while a 3D plot marks the origin (no to-scale sphere). The PNG "
+    "is additive — the numeric summary (arc length km, apsides "
     "km) is always inline. Empty or single-state input returns a typed error, "
     "never an empty image. Client renders the returned PNG."
 )
@@ -1044,8 +1045,9 @@ _CZML_TRAJECTORY_DESCRIPTION = (
     "'satellite'; optional 'intervals' annotate ground-station contacts (a station, a "
     "target object defaulting to 'satellite', and UTC access windows) as a line of "
     "sight shown only during each window. 'style' is a preset: default / sat-default / "
-    "sat-red / sat-green / sat-magenta. Empty or single-state input returns a typed "
-    "error."
+    "sat-red / sat-green / sat-magenta. The document carries one position sample per "
+    "state, so a very long series yields a correspondingly large CZML payload. Empty "
+    "or single-state input returns a typed error."
 )
 
 
@@ -1174,8 +1176,9 @@ def _register_viz_tools() -> None:
             Field(
                 description=(
                     "Central body drawn at the origin, e.g. 'earth' (default), 'mars', "
-                    "'moon', 'sun'. Known bodies are drawn to scale; an unknown name "
-                    "still plots, with the origin marked."
+                    "'moon', 'sun'. In a 2D plot known bodies are drawn to scale; in 3D "
+                    "the origin is marked (no to-scale sphere). An unknown name still "
+                    "plots, with the origin marked."
                 ),
             ),
         ] = "earth",
