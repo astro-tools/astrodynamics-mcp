@@ -26,7 +26,7 @@ and never pulls the visualisation stack in.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
@@ -688,6 +688,25 @@ def _new_figure() -> Figure:
     return MplFigure(figsize=_FIGSIZE_IN)
 
 
+def _render(build: Callable[[Figure], None]) -> bytes:
+    """Build a fixed-size headless figure, render it to deterministic PNG bytes, release it.
+
+    Centralises the figure lifecycle the three plot builders share: each passes a
+    closure that draws onto the supplied figure and this owns construction, rendering,
+    and cleanup. The figure is the object-oriented :class:`~matplotlib.figure.Figure`
+    (never ``pyplot``), so it is never held in pyplot's global registry — it is freed
+    when this returns, with no across-call accumulation to leak. ``figure.clear()`` in
+    the ``finally`` drops the axes/artist references explicitly and needs no pyplot
+    import.
+    """
+    figure = _new_figure()
+    try:
+        build(figure)
+        return render_png(figure)
+    finally:
+        figure.clear()
+
+
 def _split_at_dateline(lon: np.ndarray, lat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Insert NaN breaks where the longitude wraps the ±180° dateline.
 
@@ -710,63 +729,62 @@ def _render_ground_track(
     lat: np.ndarray, lon: np.ndarray, stations: list[tuple[float, float, str]]
 ) -> bytes:
     """Render a sub-satellite ground track over a lat/lon graticule to PNG bytes."""
-    figure = _new_figure()
-    axes = figure.add_subplot(111)
-    axes.set_xlim(-180.0, 180.0)
-    axes.set_ylim(-90.0, 90.0)
-    axes.set_xticks(range(-180, 181, 60))
-    axes.set_yticks(range(-90, 91, 30))
-    axes.grid(True, linewidth=0.4, color="0.8")
-    axes.axhline(0.0, color="0.6", linewidth=0.6)  # equator
-    axes.set_xlabel("Longitude (deg, east-positive)")
-    axes.set_ylabel("Latitude (deg)")
-    axes.set_title("Sub-satellite ground track")
 
-    lon_split, lat_split = _split_at_dateline(lon, lat)
-    axes.plot(lon_split, lat_split, color="C0", linewidth=1.2)
-    axes.plot(lon[0], lat[0], marker="o", color="C2", markersize=5)  # start
-    axes.plot(lon[-1], lat[-1], marker="s", color="C3", markersize=5)  # end
-    for st_lat, st_lon, name in stations:
-        axes.plot(st_lon, st_lat, marker="^", color="C1", markersize=7)
-        axes.annotate(name, (st_lon, st_lat), textcoords="offset points", xytext=(4, 4), fontsize=7)
+    def build(figure: Figure) -> None:
+        axes = figure.add_subplot(111)
+        axes.set_xlim(-180.0, 180.0)
+        axes.set_ylim(-90.0, 90.0)
+        axes.set_xticks(range(-180, 181, 60))
+        axes.set_yticks(range(-90, 91, 30))
+        axes.grid(True, linewidth=0.4, color="0.8")
+        axes.axhline(0.0, color="0.6", linewidth=0.6)  # equator
+        axes.set_xlabel("Longitude (deg, east-positive)")
+        axes.set_ylabel("Latitude (deg)")
+        axes.set_title("Sub-satellite ground track")
 
-    png = render_png(figure)
-    _close(figure)
-    return png
+        lon_split, lat_split = _split_at_dateline(lon, lat)
+        axes.plot(lon_split, lat_split, color="C0", linewidth=1.2)
+        axes.plot(lon[0], lat[0], marker="o", color="C2", markersize=5)  # start
+        axes.plot(lon[-1], lat[-1], marker="s", color="C3", markersize=5)  # end
+        for st_lat, st_lon, name in stations:
+            axes.plot(st_lon, st_lat, marker="^", color="C1", markersize=7)
+            axes.annotate(
+                name, (st_lon, st_lat), textcoords="offset points", xytext=(4, 4), fontsize=7
+            )
+
+    return _render(build)
 
 
 def _render_trajectory(
     positions_km: np.ndarray, projection: Literal["2D", "3D"], central_body: str
 ) -> bytes:
     """Render an orbit / transfer arc (2D or 3D) about the central body to PNG bytes."""
-    figure = _new_figure()
     body = central_body.lower()
     radius = _BODY_RADII_KM.get(body)
 
-    if projection == "3D":
-        axes = figure.add_subplot(111, projection="3d")
-        axes.plot(positions_km[:, 0], positions_km[:, 1], positions_km[:, 2], color="C0")
-        axes.scatter([0.0], [0.0], [0.0], color="C1", s=30)
-        axes.set_xlabel("x (km)")
-        axes.set_ylabel("y (km)")
-        axes.set_zlabel("z (km)")
-        axes.view_init(elev=25.0, azim=-60.0)  # fixed view → deterministic
-    else:
-        axes = figure.add_subplot(111)
-        axes.plot(positions_km[:, 0], positions_km[:, 1], color="C0")
-        if radius is not None:
-            axes.add_patch(_circle(radius))
+    def build(figure: Figure) -> None:
+        if projection == "3D":
+            axes = figure.add_subplot(111, projection="3d")
+            axes.plot(positions_km[:, 0], positions_km[:, 1], positions_km[:, 2], color="C0")
+            axes.scatter([0.0], [0.0], [0.0], color="C1", s=30)
+            axes.set_xlabel("x (km)")
+            axes.set_ylabel("y (km)")
+            axes.set_zlabel("z (km)")
+            axes.view_init(elev=25.0, azim=-60.0)  # fixed view → deterministic
         else:
-            axes.plot(0.0, 0.0, marker="o", color="C1", markersize=6)
-        axes.set_xlabel("x (km)")
-        axes.set_ylabel("y (km)")
-        axes.set_aspect("equal", adjustable="datalim")
-    axes.plot(positions_km[0, 0], positions_km[0, 1], marker="o", color="C2", markersize=5)
-    axes.set_title(f"Trajectory about {central_body} ({projection})")
+            axes = figure.add_subplot(111)
+            axes.plot(positions_km[:, 0], positions_km[:, 1], color="C0")
+            if radius is not None:
+                axes.add_patch(_circle(radius))
+            else:
+                axes.plot(0.0, 0.0, marker="o", color="C1", markersize=6)
+            axes.set_xlabel("x (km)")
+            axes.set_ylabel("y (km)")
+            axes.set_aspect("equal", adjustable="datalim")
+        axes.plot(positions_km[0, 0], positions_km[0, 1], marker="o", color="C2", markersize=5)
+        axes.set_title(f"Trajectory about {central_body} ({projection})")
 
-    png = render_png(figure)
-    _close(figure)
-    return png
+    return _render(build)
 
 
 def _render_porkchop(
@@ -779,20 +797,19 @@ def _render_porkchop(
     best_arrive_day: float,
 ) -> bytes:
     """Render a filled C3 contour over the (depart, arrive) grid to PNG bytes."""
-    figure = _new_figure()
-    axes = figure.add_subplot(111)
-    masked = np.ma.masked_invalid(c3_grid)
-    mesh_x, mesh_y = np.meshgrid(depart_days, arrive_days)
-    contour = axes.contourf(mesh_x, mesh_y, masked, levels=12, cmap="viridis")
-    figure.colorbar(contour, ax=axes, label="C3 (km^2/s^2)")
-    axes.plot(best_depart_day, best_arrive_day, marker="*", color="white", markersize=14)
-    axes.set_xlabel(f"Departure (days from {depart_labels[0][:10]})")
-    axes.set_ylabel(f"Arrival (days from {arrive_labels[0][:10]})")
-    axes.set_title("Porkchop C3 contour")
 
-    png = render_png(figure)
-    _close(figure)
-    return png
+    def build(figure: Figure) -> None:
+        axes = figure.add_subplot(111)
+        masked = np.ma.masked_invalid(c3_grid)
+        mesh_x, mesh_y = np.meshgrid(depart_days, arrive_days)
+        contour = axes.contourf(mesh_x, mesh_y, masked, levels=12, cmap="viridis")
+        figure.colorbar(contour, ax=axes, label="C3 (km^2/s^2)")
+        axes.plot(best_depart_day, best_arrive_day, marker="*", color="white", markersize=14)
+        axes.set_xlabel(f"Departure (days from {depart_labels[0][:10]})")
+        axes.set_ylabel(f"Arrival (days from {arrive_labels[0][:10]})")
+        axes.set_title("Porkchop C3 contour")
+
+    return _render(build)
 
 
 def _circle(radius_km: float) -> Any:
@@ -800,13 +817,6 @@ def _circle(radius_km: float) -> Any:
     from matplotlib.patches import Circle
 
     return Circle((0.0, 0.0), radius_km, color="C1", alpha=0.6)
-
-
-def _close(figure: Figure) -> None:
-    """Release the figure's resources after rendering."""
-    import matplotlib.pyplot as plt
-
-    plt.close(figure)
 
 
 # ---------------------------------------------------------------------------
