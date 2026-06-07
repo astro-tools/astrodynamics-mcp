@@ -1151,20 +1151,22 @@ def _register_viz_tools() -> None:
         lat, lon = _subsatellite_latlon(ecef_km)
         revs = _count_revolutions(lat)
         resolved_stations = _resolve_stations(stations)
+        lat_min, lat_max = float(np.min(lat)), float(np.max(lat))
+        lon_min, lon_max = float(np.min(lon)), float(np.max(lon))
 
         png = _render_ground_track(lat, lon, resolved_stations)
         summary_model = GroundTrackResponse(
             revolutions=Quantity(value=revs, unit="1"),
-            lat_min=Quantity(value=float(np.min(lat)), unit="deg"),
-            lat_max=Quantity(value=float(np.max(lat)), unit="deg"),
-            lon_min=Quantity(value=float(np.min(lon)), unit="deg"),
-            lon_max=Quantity(value=float(np.max(lon)), unit="deg"),
+            lat_min=Quantity(value=lat_min, unit="deg"),
+            lat_max=Quantity(value=lat_max, unit="deg"),
+            lon_min=Quantity(value=lon_min, unit="deg"),
+            lon_max=Quantity(value=lon_max, unit="deg"),
             image=PngImageInfo(width_px=_WIDTH_PX, height_px=_HEIGHT_PX),
         )
         summary = (
             f"Ground track: {len(states)} points, {revs:.2f} revs; "
-            f"lat [{float(np.min(lat)):.1f}, {float(np.max(lat)):.1f}] deg, "
-            f"lon [{float(np.min(lon)):.1f}, {float(np.max(lon)):.1f}] deg. PNG attached."
+            f"lat [{lat_min:.1f}, {lat_max:.1f}] deg, "
+            f"lon [{lon_min:.1f}, {lon_max:.1f}] deg. PNG attached."
         )
         return tool_result_with_attachments(  # type: ignore[return-value]
             structured=summary_model, summary=summary, attachments=[png_image_content(png)]
@@ -1213,21 +1215,24 @@ def _register_viz_tools() -> None:
         _require_states(states, minimum=2, what="plot_trajectory")
         positions_km = _positions_km(states)
         radii = np.linalg.norm(positions_km, axis=1)
+        arc_length = _arc_length_km(positions_km)
+        periapsis, apoapsis = float(np.min(radii)), float(np.max(radii))
+        span_hours = _time_span_hours(states)
 
         png = _render_trajectory(positions_km, projection, central_body)
         summary_model = TrajectoryResponse(
-            arc_length=Quantity(value=_arc_length_km(positions_km), unit="km"),
-            periapsis_radius=Quantity(value=float(np.min(radii)), unit="km"),
-            apoapsis_radius=Quantity(value=float(np.max(radii)), unit="km"),
-            time_span=Quantity(value=_time_span_hours(states), unit="hours"),
+            arc_length=Quantity(value=arc_length, unit="km"),
+            periapsis_radius=Quantity(value=periapsis, unit="km"),
+            apoapsis_radius=Quantity(value=apoapsis, unit="km"),
+            time_span=Quantity(value=span_hours, unit="hours"),
             projection=projection,
             central_body=central_body,
             image=PngImageInfo(width_px=_WIDTH_PX, height_px=_HEIGHT_PX),
         )
         summary = (
             f"Trajectory ({projection}) about {central_body}: "
-            f"arc {_arc_length_km(positions_km):.0f} km over {_time_span_hours(states):.2f} h; "
-            f"periapsis {float(np.min(radii)):.0f} km, apoapsis {float(np.max(radii)):.0f} km. "
+            f"arc {arc_length:.0f} km over {span_hours:.2f} h; "
+            f"periapsis {periapsis:.0f} km, apoapsis {apoapsis:.0f} km. "
             "PNG attached."
         )
         return tool_result_with_attachments(  # type: ignore[return-value]
@@ -1257,8 +1262,10 @@ def _register_viz_tools() -> None:
         depart_days = _days_from_first(departs)
         arrive_days = _days_from_first(arrives)
         best = porkchop_result.best
-        best_depart_day = float(_days_from_first([departs[0], best.depart_epoch])[1])
-        best_arrive_day = float(_days_from_first([arrives[0], best.arrive_epoch])[1])
+        # best is a cell of the grid, so its epochs are among the sorted axes; look its
+        # day-offset up on each axis instead of recomputing it from the base epoch.
+        best_depart_day = float(depart_days[departs.index(best.depart_epoch)])
+        best_arrive_day = float(arrive_days[arrives.index(best.arrive_epoch)])
 
         png = _render_porkchop(
             depart_days,
@@ -1269,20 +1276,22 @@ def _register_viz_tools() -> None:
             best_depart_day,
             best_arrive_day,
         )
+        feasible_cells = len(porkchop_result.grid)
+        n_depart, n_arrive = len(departs), len(arrives)
         summary_model = PorkchopPlotResponse(
             best_c3=Quantity(value=best.c3.value, unit="km^2/s^2"),
             best_total_dv=Quantity(value=best.total_dv.value, unit="km/s"),
             best_tof=Quantity(value=best.tof.value, unit="days"),
             best_depart_epoch=best.depart_epoch,
             best_arrive_epoch=best.arrive_epoch,
-            feasible_cells=len(porkchop_result.grid),
-            n_depart_samples=len(departs),
-            n_arrive_samples=len(arrives),
+            feasible_cells=feasible_cells,
+            n_depart_samples=n_depart,
+            n_arrive_samples=n_arrive,
             image=PngImageInfo(width_px=_WIDTH_PX, height_px=_HEIGHT_PX),
         )
         summary = (
-            f"Porkchop contour: {len(porkchop_result.grid)} feasible cells, "
-            f"{len(departs)}x{len(arrives)} grid; best C3 {best.c3.value:.2f} km^2/s^2, "
+            f"Porkchop contour: {feasible_cells} feasible cells, "
+            f"{n_depart}x{n_arrive} grid; best C3 {best.c3.value:.2f} km^2/s^2, "
             f"total delta-v {best.total_dv.value:.2f} km/s, depart {best.depart_epoch} "
             f"arrive {best.arrive_epoch}. PNG attached."
         )
