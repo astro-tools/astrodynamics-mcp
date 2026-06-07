@@ -1,0 +1,1371 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Model Context Protocol server giving LLM clients authoritative astrodynamics tools.">
+      
+      
+      
+        <link rel="canonical" href="https://astro-tools.github.io/astrodynamics-mcp/recipes/">
+      
+      
+        <link rel="prev" href="../api/">
+      
+      
+        <link rel="next" href="../data-sources/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Recipes - astrodynamics-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#recipes" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="astrodynamics-mcp" class="md-header__button md-logo" aria-label="astrodynamics-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            astrodynamics-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Recipes
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/astro-tools/astrodynamics-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    astro-tools/astrodynamics-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="astrodynamics-mcp" class="md-nav__button md-logo" aria-label="astrodynamics-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    astrodynamics-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/astro-tools/astrodynamics-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    astro-tools/astrodynamics-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pick-a-client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pick a client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#fetch-a-tle-and-propagate-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fetch a TLE and propagate it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-tle-for-a-fresh-launch-space-track" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A TLE for a fresh launch (Space-Track)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ground-station-passes-for-a-named-observer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ground-station passes for a named observer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-simple-porkchop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A simple porkchop
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hohmann-v-between-circular-orbits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hohmann Δv between circular orbits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#time-scale-conversions-for-log-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Time-scale conversions for log analysis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plot-a-satellite-ground-track" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plot a satellite ground track
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export-a-trajectory-as-czml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Export a trajectory as CZML
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#query-a-bodys-state-from-spice-kernels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Query a body's state from SPICE kernels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run-a-gmat-mission-from-a-skeleton" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run a GMAT mission from a skeleton
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-sources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data sources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../credentials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credentials
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gmat-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GMAT integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spice-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SPICE integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../visualisation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Visualisation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eval-suite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Eval suite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../supported-clients/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported clients
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../output-shaping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Output shaping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#fetch-a-tle-and-propagate-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fetch a TLE and propagate it
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-tle-for-a-fresh-launch-space-track" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A TLE for a fresh launch (Space-Track)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ground-station-passes-for-a-named-observer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ground-station passes for a named observer
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-simple-porkchop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A simple porkchop
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hohmann-v-between-circular-orbits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hohmann Δv between circular orbits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#time-scale-conversions-for-log-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Time-scale conversions for log analysis
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plot-a-satellite-ground-track" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plot a satellite ground track
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#export-a-trajectory-as-czml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Export a trajectory as CZML
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#query-a-bodys-state-from-spice-kernels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Query a body's state from SPICE kernels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#run-a-gmat-mission-from-a-skeleton" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run a GMAT mission from a skeleton
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/astro-tools/astrodynamics-mcp/edit/main/docs/recipes.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="recipes">Recipes<a class="headerlink" href="#recipes" title="Permanent link">&para;</a></h1>
+<p>Short worked examples covering the canonical workflows. Each recipe is
+written as the natural-language exchange you'd have with an MCP-capable
+chat client; the tool calls the LLM makes are shown inline.</p>
+<p>Several recipes have a fully worked, reproducible counterpart under
+<a href="https://github.com/astro-tools/astrodynamics-mcp/tree/main/examples"><code>examples/</code></a>
+— see the <strong>Worked example</strong> link at the end of each section.</p>
+<h2 id="fetch-a-tle-and-propagate-it">Fetch a TLE and propagate it<a class="headerlink" href="#fetch-a-tle-and-propagate-it" title="Permanent link">&para;</a></h2>
+<p>The most common single-satellite question — current TLE for a named
+object, propagate it to a few epochs.</p>
+<blockquote>
+<p><strong>You:</strong> Fetch the latest TLE for the ISS and propagate it to
+2026-05-23T12:00:00Z, 14:00, and 16:00.</p>
+</blockquote>
+<p>The model calls <code>tle_lookup</code> with <code>query="25544"</code> (the ISS NORAD ID — or
+the name "ISS (ZARYA)"). The CelesTrak adapter returns the current TLE
+plus the parsed OMM JSON; the response is cached for six hours under the
+XDG cache directory so a repeat call within that window is free.</p>
+<p>It then calls <code>sgp4_propagate</code> with the fetched <code>{line1, line2}</code> and the
+three epochs. The default <code>frame="TEME"</code> (SGP4's native output frame)
+returns three <code>StateVector</code>s, each with explicit <code>km</code> and <code>km/s</code> units,
+the frame string, and the epoch they're valid at. Pass <code>frame="ICRF"</code> or
+<code>frame="GCRS"</code> to receive the same trajectory in an inertial Earth-centred
+frame; the tool transforms via astropy with the correct per-epoch
+<code>obstime</code>. See <a href="../tool-reference/"><code>tle_lookup</code></a> and
+<a href="../tool-reference/"><code>sgp4_propagate</code></a> for the full schema.</p>
+<h2 id="a-tle-for-a-fresh-launch-space-track">A TLE for a fresh launch (Space-Track)<a class="headerlink" href="#a-tle-for-a-fresh-launch-space-track" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>You:</strong> Get me the latest TLE for NORAD 62000 — it's a recent launch and I
+don't see it on CelesTrak.</p>
+</blockquote>
+<p>CelesTrak's general-perturbations feed trails the catalogue for very recent
+launches. The model retries <code>tle_lookup</code> against Space-Track, which carries
+the deeper, more current GP records:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>// tools/call → tle_lookup
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>{ &quot;query&quot;: &quot;62000&quot;, &quot;source&quot;: &quot;space-track&quot; }
+</code></pre></div>
+<p>Space-Track requires a per-user account. If no credential is configured, the
+call returns <em>before any network request</em> with the typed error
+<code>credential_required.spacetrack</code>, listing the fields it needs. The LLM relays
+that you must set <code>ASTRODYNAMICS_MCP_SPACETRACK_USERNAME</code> and
+<code>ASTRODYNAMICS_MCP_SPACETRACK_PASSWORD</code> (stdio) or pass the credential in the
+<code>initialize</code> <code>_meta</code> block (HTTP) — see <a href="../credentials/">Credentials</a>. Once
+the credential is present, the same call returns the TLE plus parsed OMM JSON,
+cached on disk for six hours so a repeat lookup within that window costs no
+request against Space-Track's per-account rate limit.</p>
+<p>A numeric query becomes a <code>NORAD_CAT_ID</code> lookup and anything else an
+<code>OBJECT_NAME</code> substring search; Space-Track has no CelesTrak-style group
+keywords. See <a href="../data-sources/#space-track-tle_lookup-with-credentials">Data sources</a>
+for the auth, caching, and rate-limit story.</p>
+<h2 id="ground-station-passes-for-a-named-observer">Ground-station passes for a named observer<a class="headerlink" href="#ground-station-passes-for-a-named-observer" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>You:</strong> Show me Hubble passes above 10° from Madrid over the next
+seven days.</p>
+</blockquote>
+<p>The model calls <code>tle_lookup</code> with <code>query="HUBBLE"</code> (or NORAD ID <code>20580</code>).
+It then calls <code>access_windows</code> with:</p>
+<ul>
+<li><code>observer={"name": "madrid"}</code> — the named-station registry covers
+  Madrid, Goldstone, Canberra, Svalbard, Wallops, Esrange, GSFC, and JPL.
+  Pass <code>observer={"lat": {...}, "lon": {...}, "alt": {...}}</code> for anything
+  else.</li>
+<li>The fetched TLE.</li>
+<li><code>start</code> / <code>end</code> epochs (UTC ISO 8601 with a mandatory time component —
+  bare dates are rejected).</li>
+<li><code>min_elevation_deg=10</code> (degrees, not radians).</li>
+</ul>
+<p>The tool returns a list of <code>AccessWindow</code>s — each with AOS, LOS,
+peak-elevation epoch and angle, range at AOS / peak / LOS, and pass
+duration. Partial passes that straddle a window boundary are omitted; only
+complete (AOS, peak, LOS) triples are emitted.</p>
+<p>Filter on range at peak elevation by passing <code>min_range_km</code> /
+<code>max_range_km</code>. See <a href="../tool-reference/"><code>access_windows</code></a> for the full
+input list.</p>
+<p><strong>Worked example:</strong>
+<a href="https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/02_hubble_passes_madrid.md">Hubble passes from Madrid</a>
+— full transcript plus a reproducible script that drives the
+<code>tle_lookup</code> → <code>access_windows</code> chain against an in-process MCP
+server.</p>
+<h2 id="a-simple-porkchop">A simple porkchop<a class="headerlink" href="#a-simple-porkchop" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>You:</strong> Run a porkchop for Earth → Mars departure 2026-09 through
+2026-12, arrival window 2027-04 through 2027-10.</p>
+</blockquote>
+<p>The model calls <code>porkchop</code> with:</p>
+<ul>
+<li><code>departure_body="earth"</code>, <code>arrival_body="mars"</code>.</li>
+<li><code>depart_window=["2026-09-01T00:00:00Z", "2026-12-31T00:00:00Z"]</code>.</li>
+<li><code>arrive_window=["2027-04-01T00:00:00Z", "2027-10-31T00:00:00Z"]</code>.</li>
+<li>Default <code>samples_per_axis</code> and <code>mu="sun"</code>.</li>
+</ul>
+<p>The tool fetches both bodies' ephemerides from JPL Horizons (cached for a
+week by default — planetary ephemerides drift on geological scales), runs
+the Lambert solves across the (depart × arrive) grid, and by default
+returns the <code>summary</code> shape: the best cell (lowest total Δv), the top
+five cells, and an ASCII contour of the C3 grid. Pass <code>output="full"</code> to
+receive every feasible cell. See
+<a href="../output-shaping/">Output shaping</a> for why the default trims the
+grid.</p>
+<p>Open the best cell from the summary and feed it straight back into a
+Lambert solve to recover the depart / arrive velocity vectors at native
+precision.</p>
+<p><strong>Worked example:</strong>
+<a href="https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/03_mars_launch_window_2028.md">Mars launch window 2028</a>
+— planning-tier transcript driving <code>porkchop</code> over a 2028 window with
+a synthetic Earth/Mars geometry; the run script asserts the best cell
+sits inside a plausible Δv envelope.</p>
+<h2 id="hohmann-v-between-circular-orbits">Hohmann Δv between circular orbits<a class="headerlink" href="#hohmann-v-between-circular-orbits" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>You:</strong> Compute the Hohmann Δv from a 250 km circular LEO to GEO.</p>
+</blockquote>
+<p>The Hohmann transfer is the half-ellipse joining perigee at the
+departure radius to apogee at the arrival radius. The model calls
+<code>lambert_solve</code> with <code>tof</code> set to half the transfer ellipse's period
+and supplies both circular-tangent velocities so the response's <code>dv</code>
+field carries the two-impulse total directly.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>// tools/call → lambert_solve
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>{
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>  &quot;r1&quot;: [6628.137, 0.0, 0.0],
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>  &quot;r2&quot;: [-42163.999..., 0.073..., 0.0],     // 179.999° offset dodges Lambert&#39;s strictly-collinear branch
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>  &quot;tof&quot;: 19035.51,
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>  &quot;mu&quot;: &quot;earth&quot;,
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>  &quot;depart_velocity&quot;: [0.0, 7.755, 0.0],
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>  &quot;arrive_velocity&quot;: [-0.000005, -3.075, 0.0]
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>}
+</code></pre></div>
+<p>Response carries <code>dv ≈ 3.91 km/s</code> plus the transfer arc's semi-major
+axis (<code>a = 24396 km</code>) and eccentricity (<code>e ≈ 0.73</code>) — the textbook
+Hohmann values.</p>
+<p><strong>Worked example:</strong>
+<a href="https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/01_hohmann_dv.md">Hohmann LEO → GEO</a>
+— full transcript with the geometric setup and the
+collinear-degeneracy workaround explained, plus a reproducible script
+asserting the Δv lands within ± 0.01 km/s of the textbook ≈ 3.912 km/s.</p>
+<h2 id="time-scale-conversions-for-log-analysis">Time-scale conversions for log analysis<a class="headerlink" href="#time-scale-conversions-for-log-analysis" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p><strong>You:</strong> Convert these telemetry timestamps from GPS to UTC and TDB:
+2026-05-23T12:00:00Z, 2026-05-23T12:00:01Z.</p>
+</blockquote>
+<p>The model calls <code>time_convert</code> twice (or in a single multi-target call if
+the prompt permits), once for each target scale. The tool wraps
+<code>astropy.time</code> so leap-second handling, UT1-UTC corrections (sourced from
+the cached IERS Bulletin A), and the TDB ↔ TT relativistic offset are all
+correct.</p>
+<p>The same tool handles ISO / JD / MJD / seconds-since-J2000 / Unix-time
+representations on either side via the <code>in_format</code> / <code>out_format</code>
+arguments. See <a href="../tool-reference/"><code>time_convert</code></a> for the full scale and
+format lists; the time-scale Python type is
+<a href="../api/#schemas"><code>astrodynamics_mcp.schemas.base.TimeScale</code></a>.</p>
+<h2 id="plot-a-satellite-ground-track">Plot a satellite ground track<a class="headerlink" href="#plot-a-satellite-ground-track" title="Permanent link">&para;</a></h2>
+<p>Requires the <code>[viz]</code> extra — see <a href="../visualisation/">Visualisation</a> for the tool
+surface and the attachment model.</p>
+<blockquote>
+<p><strong>You:</strong> Plot the ISS ground track over one orbit.</p>
+</blockquote>
+<p>A ground track is the sub-satellite latitude/longitude path, read off the
+Earth-fixed frame. So the model fetches the TLE, then propagates it in <strong>ITRS</strong>
+— the rotating frame whose plane the sub-satellite point is taken from, and the
+cheapest input for the plot tool since no inertial-to-fixed rotation is needed.
+It samples one ~92-minute revolution (here 31 epochs, three minutes apart) and
+asks for the full series so the track is smooth:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>// tools/call → sgp4_propagate
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>{
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  &quot;tle&quot;: { &quot;line1&quot;: &quot;1 25544U …&quot;, &quot;line2&quot;: &quot;2 25544  51.6400 …&quot; },
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>  &quot;epochs&quot;: [&quot;2024-01-01T00:00:00Z&quot;, &quot;…31 epochs…&quot;, &quot;2024-01-01T01:30:00Z&quot;],
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>  &quot;frame&quot;: &quot;ITRS&quot;,
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>  &quot;output&quot;: &quot;full&quot;
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>}
+</code></pre></div>
+<p>It feeds that <code>states</code> series straight into the plot tool:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>// tools/call → plot_ground_track
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>{ &quot;states&quot;: [ /* the 31 ITRS states */ ] }
+</code></pre></div>
+<p><code>plot_ground_track</code> returns three things at once: a PNG <code>ImageContent</code> (the
+rendered track), a leading ASCII line, and a structured summary —
+<code>revolutions</code>, and the latitude / longitude extent as <code>{value, unit}</code>
+quantities. For this orbit the latitude extent comes back ≈ ±51.6°, exactly the
+orbit's inclination — a circular orbit's track reaches its inclination at its
+highest and lowest points. An image-capable client shows the PNG; a text-only
+client still reads the extent from the summary, because the image is
+<a href="../visualisation/#the-attachment-model">additive</a>, never the only answer.</p>
+<p>Overlay ground stations by passing <code>stations</code>; they are drawn as markers on the
+same graticule.</p>
+<p><strong>Worked example:</strong>
+<a href="https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/05_ground_track_iss.md">ISS ground track</a>
+— full transcript plus a reproducible script that drives the
+<code>sgp4_propagate</code> → <code>plot_ground_track</code> chain and asserts the PNG and summary
+come back together.</p>
+<h2 id="export-a-trajectory-as-czml">Export a trajectory as CZML<a class="headerlink" href="#export-a-trajectory-as-czml" title="Permanent link">&para;</a></h2>
+<p>Requires the <code>[viz]</code> extra — see <a href="../visualisation/">Visualisation</a>.</p>
+<blockquote>
+<p><strong>You:</strong> Export one ISS orbit as CZML so I can load it into Cesium.</p>
+</blockquote>
+<p>CZML animates an object's position over time in an inertial frame, so the model
+propagates in <strong>TEME</strong> — sgp4's native inertial frame, which the CZML backend
+renders with no transform — and hands the state series to <code>czml_trajectory</code>.
+One revolution sampled every six minutes (16 epochs) keeps the path smooth
+without bloating the document:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>// tools/call → sgp4_propagate
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>{
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>  &quot;tle&quot;: { &quot;line1&quot;: &quot;1 25544U …&quot;, &quot;line2&quot;: &quot;2 25544  51.6400 …&quot; },
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>  &quot;epochs&quot;: [&quot;2024-01-01T00:00:00Z&quot;, &quot;…16 epochs…&quot;, &quot;2024-01-01T01:30:00Z&quot;],
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>  &quot;frame&quot;: &quot;TEME&quot;,
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  &quot;output&quot;: &quot;full&quot;
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>}
+</code></pre></div>
+<p>The <code>{r, v, frame, epoch}</code> series is exactly what the export tool consumes
+(velocity is optional but carried here):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>// tools/call → czml_trajectory
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>{ &quot;trajectory&quot;: [ /* the 16 TEME states */ ], &quot;style&quot;: &quot;default&quot; }
+</code></pre></div>
+<p><code>czml_trajectory</code> returns the CZML as an <code>EmbeddedResource</code> — an
+<code>application/json</code> document keyed by a stable <code>uri</code>
+(<code>czml://trajectory/satellite</code>) — alongside an ASCII line and a structured
+summary carrying <code>time_span</code> and the packet / object / contact counts. The
+document is a Cesium stream: a preamble with a <code>clock</code> spanning the window, plus
+one <code>satellite</code> object whose time-tagged positions Cesium interpolates into an
+animated orbit. A client saves <code>resource.text</code> to a <code>.czml</code> file or streams it
+to a Cesium viewer; no chat client renders the globe inline (astrodynamics-mcp
+ships no viewer). Annotate ground-station contacts by passing <code>intervals</code> — each
+becomes a line of sight shown only during its access window.</p>
+<p><strong>Worked example:</strong>
+<a href="https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/06_czml_export.md">CZML export for Cesium</a>
+— full transcript plus a reproducible script that drives the
+<code>sgp4_propagate</code> → <code>czml_trajectory</code> chain and asserts a non-empty CZML
+document comes back.</p>
+<h2 id="query-a-bodys-state-from-spice-kernels">Query a body's state from SPICE kernels<a class="headerlink" href="#query-a-bodys-state-from-spice-kernels" title="Permanent link">&para;</a></h2>
+<p>Requires the <code>[spice]</code> extra — see <a href="../spice-integration/">SPICE integration</a>
+for the kernel model and the full tool surface.</p>
+<blockquote>
+<p><strong>You:</strong> Use SPICE to get the Moon's geocentric state on
+2026-01-01T00:00:00Z.</p>
+</blockquote>
+<p>An SPK state query needs two kernels furnished first — a leap-second kernel
+(to resolve the UTC epoch) and a planetary ephemeris SPK (the states
+themselves). The model furnishes both from the NAIF allowlist with
+<code>spice_load_kernel</code>:</p>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>// tools/call → spice_load_kernel
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>{ &quot;source&quot;: &quot;https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls&quot; }
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>// tools/call → spice_load_kernel
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>{ &quot;source&quot;: &quot;https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp&quot; }
+</code></pre></div></p>
+<p>The pool is additive and persists across calls, so both stay loaded together;
+a repeat URL load within the cache TTL skips the network (<code>from_cache=true</code>).
+Then it queries the state — the Moon relative to the Earth, in the default
+<code>J2000</code> frame:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>// tools/call → spice_state
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>{
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>  &quot;target&quot;: &quot;MOON&quot;,
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>  &quot;observer&quot;: &quot;EARTH&quot;,
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>  &quot;epochs&quot;: [&quot;2026-01-01T00:00:00Z&quot;]
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>}
+</code></pre></div>
+<p>The response carries one state per requested epoch — <code>position</code> (km) and
+<code>velocity</code> (km/s) as <code>{value, unit}</code> quantities in the requested frame, each
+epoch self-describing. <code>aberration</code> defaults to <code>NONE</code> (the geometric state),
+so <code>light_time</code> comes back null; pass <code>LT</code> or <code>LT+S</code> for a light-time /
+stellar-aberration-corrected state and the one-way light time is populated. A
+missing kernel returns a typed error rather than a silent empty state — confirm
+the pool with <code>spice_list_kernels</code> if a query reports a kernel gap.</p>
+<p>Reach for the <code>spice_*</code> tools when an operation needs furnished kernels — an
+SPK state, a non-Earth body-fixed frame (<code>spice_frame_transform</code>), body
+constants (<code>spice_body_parameters</code>), or ET / SCLK time (<code>spice_time_convert</code>).
+For plain UTC / TAI / TT and Earth-centred frames the kernel-free
+<a href="../tool-reference/"><code>time_convert</code></a> and <a href="../tool-reference/"><code>frame_transform</code></a>
+need no kernels at all.</p>
+<p><strong>Worked example:</strong>
+<a href="https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/04_spice_mars_state.md">SPICE Mars state</a>
+— full transcript furnishing an LSK + planetary SPK and cross-checking
+<code>spice_state</code> against a Horizons-backed <code>porkchop</code> for Mars.</p>
+<h2 id="run-a-gmat-mission-from-a-skeleton">Run a GMAT mission from a skeleton<a class="headerlink" href="#run-a-gmat-mission-from-a-skeleton" title="Permanent link">&para;</a></h2>
+<p>Requires the <code>[gmat]</code> extra — see <a href="../gmat-integration/">GMAT integration</a> for
+install and the full tool surface.</p>
+<blockquote>
+<p><strong>You:</strong> Run a Hohmann transfer from a 7000 km circular LEO to GEO and give
+me the total Δv.</p>
+</blockquote>
+<p>The client lists the GMAT skeleton resources, reads
+<code>gmat-skeleton://hohmann-transfer</code>, and edits it for the requested geometry.
+Before spending a full mission run, it parses the script with
+<code>gmat_validate_script</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>// tools/call → gmat_validate_script
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>{ &quot;script&quot;: &quot;Create Spacecraft LEOSat; ... (edited skeleton text)&quot; }
+</code></pre></div>
+<p>GMAT returns the declared resources and any parse errors. The model fixes a
+mistyped field name GMAT flagged, re-validates clean, then runs it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>// tools/call → gmat_run_mission
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>{
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>  &quot;script&quot;: &quot;Create Spacecraft LEOSat; ... &quot;,
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>  &quot;overrides&quot;: { &quot;LEOSat.SMA&quot;: 7000 }
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>}
+</code></pre></div>
+<p>The response carries a <code>run_id</code>, the mission summary, and the small report
+inline; the model reads the two-impulse Δv from the report rows. Ephemerides
+and oversized reports come back as pointers — pull the full bytes with
+<code>gmat_read_run_artefact(run_id="…", name="EphemerisFile1")</code>. To explore how
+the Δv responds across a range of burn magnitudes instead of a single run,
+reach for <code>gmat_sweep</code>; see
+<a href="../gmat-integration/#worked-recipes">GMAT integration</a> for the sweep and
+validate-then-run patterns in full.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

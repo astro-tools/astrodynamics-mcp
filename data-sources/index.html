@@ -1,0 +1,1394 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Model Context Protocol server giving LLM clients authoritative astrodynamics tools.">
+      
+      
+      
+        <link rel="canonical" href="https://astro-tools.github.io/astrodynamics-mcp/data-sources/">
+      
+      
+        <link rel="prev" href="../recipes/">
+      
+      
+        <link rel="next" href="../credentials/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Data sources - astrodynamics-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#data-sources" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="astrodynamics-mcp" class="md-header__button md-logo" aria-label="astrodynamics-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            astrodynamics-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Data sources
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/astro-tools/astrodynamics-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    astro-tools/astrodynamics-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="astrodynamics-mcp" class="md-nav__button md-logo" aria-label="astrodynamics-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    astrodynamics-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/astro-tools/astrodynamics-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    astro-tools/astrodynamics-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pick-a-client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pick a client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool-reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../recipes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Recipes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data sources
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data sources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#celestrak-tle_lookup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CelesTrak — tle_lookup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#space-track-tle_lookup-with-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Space-Track — tle_lookup (with credentials)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#esa-discosweb-satellite_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ESA DISCOSweb — satellite_metadata
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ESA DISCOSweb — satellite_metadata">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getting-an-esa-space-debris-user-account" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting an ESA Space Debris User Account
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#caching-and-rate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caching and rate limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failure-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jpl-horizons-porkchop-bplane_target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JPL Horizons — porkchop, bplane_target
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#iers-time_convert-frame_transform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IERS — time_convert, frame_transform
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#naif-generic-kernels-spice_load_kernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NAIF generic kernels — spice_load_kernel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#on-disk-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        On-disk cache
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#staletrue-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stale=true semantics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unit-discipline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit discipline
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../credentials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Credentials
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gmat-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GMAT integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spice-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SPICE integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../visualisation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Visualisation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eval-suite/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Eval suite
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../supported-clients/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Supported clients
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../output-shaping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Output shaping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../privacy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Privacy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#celestrak-tle_lookup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CelesTrak — tle_lookup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#space-track-tle_lookup-with-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Space-Track — tle_lookup (with credentials)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#esa-discosweb-satellite_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ESA DISCOSweb — satellite_metadata
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ESA DISCOSweb — satellite_metadata">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#getting-an-esa-space-debris-user-account" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting an ESA Space Debris User Account
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#caching-and-rate-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caching and rate limits
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failure-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure modes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jpl-horizons-porkchop-bplane_target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JPL Horizons — porkchop, bplane_target
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#iers-time_convert-frame_transform" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IERS — time_convert, frame_transform
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#naif-generic-kernels-spice_load_kernel" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NAIF generic kernels — spice_load_kernel
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#on-disk-cache" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        On-disk cache
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#staletrue-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stale=true semantics
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unit-discipline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit discipline
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/astro-tools/astrodynamics-mcp/edit/main/docs/data-sources.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="data-sources">Data sources<a class="headerlink" href="#data-sources" title="Permanent link">&para;</a></h1>
+<p>The tool surface reaches several external data sources. Each sits behind
+an adapter that caches responses on disk so repeated tool calls don't
+hammer the upstream, and each handles network failure by falling back to
+a cached value flagged <code>stale=true</code> rather than silently returning
+nothing.</p>
+<p>For credentialled sources the credential passthrough itself is documented
+separately — see <a href="../credentials/">Credentials</a>.</p>
+<h2 id="celestrak-tle_lookup">CelesTrak — <code>tle_lookup</code><a class="headerlink" href="#celestrak-tle_lookup" title="Permanent link">&para;</a></h2>
+<p><a href="https://celestrak.org">CelesTrak</a> is the canonical no-auth source for
+current TLEs. <code>tle_lookup</code> calls the <code>gp.php</code> endpoint with the
+caller-supplied query routed to the right CelesTrak parameter — NORAD
+catalogue ID (<code>CATNR=</code>), satellite name (<code>NAME=</code>), or one of the
+recognised group / category keywords (<code>GROUP=</code>). The recognised groups
+are listed in the <a href="../tool-reference/#tle_lookup">tool's description</a>.</p>
+<p>CelesTrak honours <code>If-Modified-Since</code> for most catalogue endpoints. The
+adapter respects the upstream's soft per-IP cap (~100 MB/day) by caching
+parsed OMM JSON for six hours by default. A cached response is served
+without contacting the upstream; the <code>fetched_at</code> field carries the
+timestamp of the original fetch.</p>
+<p>When the upstream is unreachable:</p>
+<ul>
+<li>A cached value within or beyond its TTL is returned with <code>stale=True</code>
+  and the original <code>fetched_at</code>. Treat the TLE as best-effort.</li>
+<li>No cached value → the call fails with a
+  <a href="../api/#errors"><code>DataSourceError</code></a> carrying the code
+  <code>data_source.celestrak_unreachable</code>.</li>
+</ul>
+<p>The User-Agent header carries the package version and a URL pointing back
+to this project so CelesTrak's analytics can distinguish well-behaved
+traffic from anonymous scraping.</p>
+<h2 id="space-track-tle_lookup-with-credentials">Space-Track — <code>tle_lookup</code> (with credentials)<a class="headerlink" href="#space-track-tle_lookup-with-credentials" title="Permanent link">&para;</a></h2>
+<p><a href="https://www.space-track.org">Space-Track</a> is 18 SDS / USSPACECOM's
+authoritative catalogue. <code>tle_lookup(source='space-track')</code> queries the
+<code>/basicspacedata/query/class/gp/</code> endpoint over a cookie-authenticated
+session. Reach for it when CelesTrak is missing a recently-launched
+object, when you need deeper historical GP records than CelesTrak's
+working window, or as a fallback when CelesTrak is unreachable.</p>
+<p>Authentication is username + password POSTed to <code>/ajaxauth/login</code>. The
+returned session cookie is reused across tool calls for the lifetime of
+the server process so we do not re-authenticate per query — Space-Track's
+sessions silently expire after roughly two hours of inactivity, at which
+point the adapter detects the 401, transparently re-logs in once, and
+retries the original query. A missing credential surfaces <em>before</em> any
+network call as <code>credential_required.spacetrack</code> — see
+<a href="../credentials/">Credentials</a> for how to provide one.</p>
+<p>Query dispatch matches the CelesTrak adapter's shape: a numeric query
+becomes a <code>NORAD_CAT_ID</code> lookup, anything else becomes an <code>OBJECT_NAME</code>
+substring search. Space-Track has no group/category concept, so the
+CelesTrak group keywords (<code>stations</code>, <code>weather</code>, …) have no meaning here
+— passing one falls through to a name search and typically returns
+nothing useful.</p>
+<p>Responses cache on disk under the same XDG layer as CelesTrak with a
+6h TTL. Space-Track's
+<a href="https://www.space-track.org/documentation#/api">API Rules of Behaviour</a>
+explicitly require this — "make a single query for the data and save it
+locally; do not query for the same data repeatedly." Cookies are never
+written to disk; the cache stores only the GP-class response payload,
+keyed by query shape.</p>
+<p>When the upstream is unreachable:</p>
+<ul>
+<li>A cached value within or beyond its TTL is returned with <code>stale=True</code>
+  and the original <code>fetched_at</code>.</li>
+<li>No cached value → <code>DataSourceError</code> with code
+  <code>data_source.spacetrack_unreachable</code>. A refused credential (Space-Track
+  returns 200 + <code>{"Login":"Failed"}</code> rather than a 401) surfaces as
+  <code>data_source.spacetrack_auth_failed</code> so the LLM consumer can
+  distinguish "credential rejected" from "network unreachable."</li>
+</ul>
+<p>Space-Track enforces per-account rate limits — roughly 30 requests per
+minute and 300 per hour as of writing. Abusive use can get an account
+suspended; the on-disk cache plus session-cookie reuse are how the
+adapter stays within that envelope.</p>
+<h2 id="esa-discosweb-satellite_metadata">ESA DISCOSweb — <code>satellite_metadata</code><a class="headerlink" href="#esa-discosweb-satellite_metadata" title="Permanent link">&para;</a></h2>
+<p><a href="https://discosweb.esoc.esa.int">DISCOSweb</a> is ESA's Database and
+Information System Characterising Objects in Space — the catalogue of
+persistent satellite metadata that the OMM payload from <code>tle_lookup</code>
+does not carry. <code>satellite_metadata(norad_id=…)</code> queries
+<code>/api/objects?filter=eq(satno,&lt;id&gt;)&amp;include=launch,launch.site,operators,reentry</code>
+and returns a single record with mass, bounding-box dimensions, launch
+date and site, operator, mission type (Payload / Rocket Body / Debris /
+Unknown), and decay status.</p>
+<p>NORAD catalogue ID is the cross-reference key between <code>satellite_metadata</code>
+and <code>tle_lookup</code>: the same value is returned by <code>tle_lookup</code> and consumed
+here. Names and group keywords are not accepted — look up the NORAD ID
+first if you only have a name.</p>
+<h3 id="getting-an-esa-space-debris-user-account">Getting an ESA Space Debris User Account<a class="headerlink" href="#getting-an-esa-space-debris-user-account" title="Permanent link">&para;</a></h3>
+<p>DISCOSweb sits behind an <a href="https://discosweb.esoc.esa.int/auth/signup">ESA Space Debris User Account</a>.
+The signup form asks for a research / institutional purpose; approval is
+manual and typically takes a few business days. Once approved, generate a
+personal API token from the <em>Account → API Access</em> page in the DISCOSweb
+UI. The token is the only credential the adapter needs.</p>
+<p>Provide the token to the server in one of two ways, per
+<a href="../credentials/">Credentials</a>:</p>
+<ul>
+<li><strong>Stdio transport:</strong> set <code>ASTRODYNAMICS_MCP_DISCOSWEB_TOKEN=&lt;token&gt;</code>
+  in the environment of the process that launches <code>astrodynamics-mcp stdio</code>.</li>
+<li><strong>HTTP transport:</strong> include
+  <code>{"astrodynamics_mcp/credentials": {"discosweb": {"token": "&lt;token&gt;"}}}</code>
+  in the <code>_meta</code> block of the MCP <code>initialize</code> request. Session metadata
+  wins over the environment variable when both are present.</li>
+</ul>
+<p>A missing token surfaces <em>before</em> any network call as
+<code>credential_required.discosweb</code> so the LLM consumer can prompt the user
+without spending a network round-trip.</p>
+<h3 id="caching-and-rate-limits">Caching and rate limits<a class="headerlink" href="#caching-and-rate-limits" title="Permanent link">&para;</a></h3>
+<p>Responses cache on disk under the same XDG layer as CelesTrak and
+Space-Track with a <strong>24h TTL</strong>. DISCOSweb metadata changes slowly —
+decay events at most weekly per object, mass and dimensions essentially
+never — so a long TTL is appropriate. The cache also conserves the free
+DISCOSweb tier's per-account daily quota (in the low hundreds of
+requests as of writing); a busy session that re-asks for the same NORAD
+ID many times spends one request per day per object, not per call.</p>
+<p>Cookies and tokens are never written to the cache; only the JSON
+response payload is stored, keyed by NORAD ID under the <code>discosweb</code>
+source directory.</p>
+<h3 id="failure-modes">Failure modes<a class="headerlink" href="#failure-modes" title="Permanent link">&para;</a></h3>
+<p>When the upstream is unreachable:</p>
+<ul>
+<li>A cached value within or beyond its TTL is returned with <code>stale=True</code>
+  and the original <code>fetched_at</code>.</li>
+<li>No cached value → <code>DataSourceError</code> with code
+  <code>data_source.discosweb_unreachable</code>.</li>
+</ul>
+<p>A refused token (HTTP 401 or 403) surfaces as
+<code>data_source.discosweb_auth_failed</code> so the LLM consumer can distinguish
+"credential rejected" from "network unreachable". Authentication
+failures do <em>not</em> fall through to a stale cache hit — a refused
+credential is a permanent state, not a transient outage.</p>
+<p>DISCOSweb returns an empty <code>data</code> array (not a 404) when no record
+matches the NORAD ID. The tool surfaces this as
+<code>data_source.discosweb_norad_not_found</code> so very recent launches not yet
+in DISCOSweb's catalogue have an actionable error code rather than a
+silent empty response.</p>
+<p>A malformed envelope or record surfaces as
+<code>upstream.discosweb_unexpected_shape</code> (top-level shape changed) or
+<code>upstream.discosweb_invalid_record</code> (primary attributes missing).
+Malformed responses are never written to the cache.</p>
+<h2 id="jpl-horizons-porkchop-bplane_target">JPL Horizons — <code>porkchop</code>, <code>bplane_target</code><a class="headerlink" href="#jpl-horizons-porkchop-bplane_target" title="Permanent link">&para;</a></h2>
+<p><a href="https://ssd.jpl.nasa.gov/horizons/">JPL Horizons</a> supplies planetary
+ephemerides for the porkchop and B-plane tools. The adapter fetches
+vector ephemerides for the requested bodies over the requested time
+window and caches the response under a request hash.</p>
+<p>Default TTL is seven days — planetary ephemerides drift on geological
+scales, and even the highest-precision missions tolerate week-old
+ephemerides without measurable error for these tools' use cases. Horizons
+is rate-limited and tolerates one in-flight request per client; the
+adapter does not parallelise calls to the upstream.</p>
+<p>Failure modes mirror CelesTrak: a stale cached value is preferred over
+total failure; no cache → <code>data_source.horizons_unreachable</code>. Horizons
+returns HTTP 200 with an in-band error for an invalid body, center, or
+time window; the adapter surfaces that as <code>upstream.horizons_error</code> and
+never caches it.</p>
+<h2 id="iers-time_convert-frame_transform">IERS — <code>time_convert</code>, <code>frame_transform</code><a class="headerlink" href="#iers-time_convert-frame_transform" title="Permanent link">&para;</a></h2>
+<p>Earth-orientation parameters (UT1-UTC, polar motion) and leap-second
+tables come from the <a href="https://datacenter.iers.org/">IERS data center</a>.
+The adapter reuses <code>astropy.coordinates</code>' own IERS cache rather than
+maintaining a second copy — <code>astropy</code> already polls IERS Bulletin A on a
+schedule that matches its Thursday ~20:00 UTC refresh cycle.</p>
+<p>Default adapter TTL is 24 hours so the cached value is re-validated
+within one upstream cycle. When Bulletin A is unreachable and the
+on-disk copy is older than the adapter's TTL, the tool emits a warning
+through the response's <code>stale</code> field (or, for <code>time_convert</code>, a
+data-source warning in the response payload) while still using the most
+recent cached values for the conversion. The conversion result is still
+correct up to the residual UT1-UTC error introduced by the staleness,
+typically below a millisecond.</p>
+<h2 id="naif-generic-kernels-spice_load_kernel">NAIF generic kernels — <code>spice_load_kernel</code><a class="headerlink" href="#naif-generic-kernels-spice_load_kernel" title="Permanent link">&para;</a></h2>
+<p><a href="https://naif.jpl.nasa.gov/naif/">NAIF</a> — NASA's Navigation and Ancillary
+Information Facility — publishes the generic SPICE kernels (leap-second tables,
+planetary ephemerides, planetary-constants kernels, frame kernels) that the
+optional <code>[spice]</code> tools read. Unlike every source above, <strong>nothing is fetched
+at install time and nothing is fetched on its own</strong>: a kernel is downloaded only
+when a <code>spice_load_kernel</code> call explicitly names a URL, and a call that furnishes
+a local filesystem path makes no network request at all. The <code>[spice]</code> extra is
+covered end-to-end on <a href="../spice-integration/">SPICE integration</a>.</p>
+<p>A URL is an SSRF / path-traversal surface, so URL loads are constrained before
+any request is made:</p>
+<ul>
+<li><strong><code>https</code> only.</strong> An <code>http://</code> URL is refused with a typed
+  <code>invalid_input.spice_kernel_url_scheme</code> error.</li>
+<li><strong>NAIF allowlist.</strong> The host must be <code>naif.jpl.nasa.gov</code>. Any other host —
+  and any redirect that <em>leaves</em> the allowlist — is refused with
+  <code>invalid_input.spice_kernel_url_host</code>; every redirect hop is re-validated
+  before it is followed. Host a kernel elsewhere? Mirror it locally and furnish
+  the file path.</li>
+<li><strong>Size cap.</strong> Downloads are capped (default 512 MB — generous for a planetary
+  SPK such as <code>de440</code> at ~114 MB, well below a runaway fetch) via both the
+  server's <code>Content-Length</code> and the streamed body; an over-cap kernel surfaces
+  as <code>upstream.spice_kernel_too_large</code>. Raise it with
+  <code>ASTRODYNAMICS_MCP_KERNEL_MAX_BYTES</code> for a genuinely larger kernel.</li>
+</ul>
+<p>A fetched kernel is written into a <code>kernels/</code> subdirectory of the same XDG
+cache root described under <a href="#on-disk-cache">On-disk cache</a> — raw kernel blobs
+keyed by a hash of the URL and written with the same atomic-rename discipline,
+<em>not</em> the JSON-per-entry layout the response adapters use. The default TTL is
+<strong>30 days</strong>: NAIF versions kernel filenames, so a cached kernel is effectively
+immutable and the TTL mainly governs how often a long-lived deployment
+re-validates. Override it with <code>ASTRODYNAMICS_MCP_KERNEL_CACHE_TTL</code>. A repeat
+URL load within the TTL is served from disk with no network round-trip (the
+load tool reports this as <code>from_cache=true</code>).</p>
+<p>Because furnish-from-URL routes through this cache, disabling the cache
+(<code>ASTRODYNAMICS_MCP_CACHE_DIR=""</code>) disables URL loads — the tool returns
+<code>upstream.spice_kernel_cache_disabled</code> and asks for a local path instead. A
+local-path furnish never touches the cache or the network and is unaffected.</p>
+<p>The kernel pool itself is process-global, persists across calls, and (on an
+HTTP deployment) is shared by every caller — that lifecycle and its trust
+boundary are documented on <a href="../spice-integration/">SPICE integration</a>.</p>
+<h2 id="on-disk-cache">On-disk cache<a class="headerlink" href="#on-disk-cache" title="Permanent link">&para;</a></h2>
+<p>All three adapters write to the same XDG-aware cache directory:</p>
+<ul>
+<li>Linux: <code>~/.cache/astrodynamics-mcp/</code></li>
+<li>macOS: <code>~/Library/Caches/astrodynamics-mcp/</code></li>
+<li>Windows: <code>%LOCALAPPDATA%\astrodynamics-mcp\Cache\</code></li>
+</ul>
+<p>The cache is one JSON file per <code>(source, key)</code> entry, written via
+atomic rename so concurrent <code>astrodynamics-mcp stdio</code> / <code>... http</code>
+processes can share the same directory safely. Two writers racing on the
+same key both create their own tempfile; whichever <code>os.replace</code> lands
+second wins, neither write is torn, and readers never see an
+intermediate state.</p>
+<p>To disable the cache (for tests or pristine CI cells), set
+<code>ASTRODYNAMICS_MCP_CACHE_DIR=""</code> (empty string). With that override
+<code>get</code> always misses, <code>put</code> is a no-op, and every tool call goes
+straight to the upstream.</p>
+<p>To redirect the cache to a custom directory, set
+<code>ASTRODYNAMICS_MCP_CACHE_DIR=/path/to/cache</code> to any writable directory.</p>
+<p>The XDG cache layer and its API are documented under
+<a href="../api/#cache"><code>astrodynamics_mcp.cache</code></a>.</p>
+<h2 id="staletrue-semantics"><code>stale=true</code> semantics<a class="headerlink" href="#staletrue-semantics" title="Permanent link">&para;</a></h2>
+<p>Tools that return cache-backed payloads carry an explicit <code>stale</code>
+boolean (typically inside each result element — see
+<a href="../tool-reference/#tle_lookup"><code>tle_lookup</code></a>). The contract is:</p>
+<table>
+<thead>
+<tr>
+<th><code>stale</code></th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>false</code></td>
+<td>The upstream was reached this call (or within the TTL window). The result reflects the latest upstream state.</td>
+</tr>
+<tr>
+<td><code>true</code></td>
+<td>The upstream was unreachable on this call; the result is the most recently cached value. The <code>fetched_at</code> field carries the timestamp of the original fetch — usually minutes to hours, occasionally days, before the call.</td>
+</tr>
+</tbody>
+</table>
+<p>LLM clients should treat <code>stale=true</code> as a signal to mention the
+staleness in the human-facing reply ("using a TLE from N hours ago
+because CelesTrak was unreachable just now") rather than quoting the
+result as live.</p>
+<h2 id="unit-discipline">Unit discipline<a class="headerlink" href="#unit-discipline" title="Permanent link">&para;</a></h2>
+<p>Every numeric value on the wire is wrapped in <code>{value, unit}</code> (or
+<code>{value: [...], unit}</code> for vectors). Unit strings come from a closed
+registry — <code>"km"</code>, <code>"km/s"</code>, <code>"deg"</code>, <code>"s"</code>, <code>"min"</code>, <code>"hours"</code>, <code>"days"</code>,
+<code>"AU"</code>, <code>"rad"</code>, <code>"m"</code>, <code>"m/s"</code>, <code>"km^2/s^2"</code>, <code>"km^3/s^2"</code>, <code>"kg"</code>,
+<code>"K"</code>, and <code>"1"</code> for dimensionless quantities. Adding a new tool with a
+bare <code>number</code> field fails the static unit-discipline check; the
+allowed-units set is extended deliberately as new physical dimensions
+enter the tool surface.</p>
+<p>See <a href="../api/#units"><code>astrodynamics_mcp.units</code></a> for the registry and
+helpers, and the
+<a href="https://github.com/astro-tools/astrodynamics-mcp/blob/main/tests/test_unit_discipline.py">unit-discipline test source</a>
+for the static check.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
