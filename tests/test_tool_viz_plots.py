@@ -97,6 +97,28 @@ def _porkchop_result(*, with_grid: bool = True, drop_one: bool = False) -> Porkc
     )
 
 
+def _porkchop_from(departs: list[str], arrives: list[str]) -> PorkchopResponse:
+    """A porkchop result whose grid is the full departs x arrives cartesian product.
+
+    Lets a test dial the distinct-epoch counts on each axis directly — used to
+    build the degenerate (single-row / single-column) grids the contour can't draw.
+    """
+    grid = [
+        PorkchopCell(
+            depart_epoch=d,
+            arrive_epoch=a,
+            tof=Quantity(value=210.0, unit="days"),
+            c3=Quantity(value=10.0, unit="km^2/s^2"),
+            v_inf_arrival=Quantity(value=3.0, unit="km/s"),
+            dec_dep_asymptote=Quantity(value=-12.0, unit="deg"),
+            total_dv=Quantity(value=6.0, unit="km/s"),
+        )
+        for d in departs
+        for a in arrives
+    ]
+    return PorkchopResponse(best=grid[0], top_cells=grid[:5], grid=grid, ascii_summary="....")
+
+
 # ---------------------------------------------------------------------------
 # Pure helpers — no matplotlib required
 # ---------------------------------------------------------------------------
@@ -227,6 +249,25 @@ class TestPorkchopGridArrays:
         with pytest.raises(InvalidInputError) as exc:
             viz._porkchop_grid_arrays(_porkchop_result(with_grid=False))
         assert exc.value.code == "invalid_input.porkchop_grid_empty"
+
+    def test_single_departure_epoch_is_degenerate(self) -> None:
+        # One distinct departure epoch -> a 1-column grid; contourf needs at least
+        # a 2x2 grid, so this must surface a typed error rather than crashing inside
+        # matplotlib.
+        result = _porkchop_from(
+            ["2026-11-01T00:00:00Z"], ["2027-06-01T00:00:00Z", "2027-07-01T00:00:00Z"]
+        )
+        with pytest.raises(InvalidInputError) as exc:
+            viz._porkchop_grid_arrays(result)
+        assert exc.value.code == "invalid_input.porkchop_grid_degenerate"
+
+    def test_single_arrival_epoch_is_degenerate(self) -> None:
+        result = _porkchop_from(
+            ["2026-11-01T00:00:00Z", "2026-11-15T00:00:00Z"], ["2027-06-01T00:00:00Z"]
+        )
+        with pytest.raises(InvalidInputError) as exc:
+            viz._porkchop_grid_arrays(result)
+        assert exc.value.code == "invalid_input.porkchop_grid_degenerate"
 
 
 class TestDatelineSplit:

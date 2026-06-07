@@ -648,6 +648,13 @@ def _porkchop_grid_arrays(
         )
     departs = sorted({cell.depart_epoch for cell in result.grid})
     arrives = sorted({cell.arrive_epoch for cell in result.grid})
+    if len(departs) < 2 or len(arrives) < 2:
+        raise InvalidInputError(
+            "plot_porkchop needs a grid spanning at least 2 departure and 2 arrival "
+            f"epochs to contour; got {len(departs)} departure x {len(arrives)} arrival. "
+            "Re-run porkchop over wider windows so more cells are feasible.",
+            code="invalid_input.porkchop_grid_degenerate",
+        )
     depart_index = {epoch: i for i, epoch in enumerate(departs)}
     arrive_index = {epoch: i for i, epoch in enumerate(arrives)}
     c3 = np.full((len(arrives), len(departs)), np.nan, dtype=float)
