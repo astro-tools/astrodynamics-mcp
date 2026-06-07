@@ -296,7 +296,7 @@ wheels = [
 
 [[package]]
 name = "astrodynamics-mcp"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "astropy", version = "6.1.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -344,12 +344,12 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "astropy", specifier = ">=6.1" },
-    { name = "gmat-czml", marker = "extra == 'viz'", specifier = ">=0.3" },
+    { name = "gmat-czml", marker = "extra == 'viz'", specifier = ">=0.3,<0.4" },
     { name = "gmat-run", marker = "extra == 'gmat'", specifier = ">=0.6" },
     { name = "gmat-sweep", marker = "extra == 'gmat'", specifier = ">=0.6" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "lamberthub", specifier = ">=1.0" },
-    { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.8" },
+    { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.10,<3.11" },
     { name = "mcp", specifier = ">=1.27" },
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "pydantic", specifier = ">=2.6" },
