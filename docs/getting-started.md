@@ -16,12 +16,14 @@ The server is a pure-Python package; the runtime install pulls
 tools need no credential — they run offline or call a no-auth data source
 (CelesTrak, JPL Horizons, IERS). Two sources need a per-user account:
 Space-Track (deeper TLE records) and ESA DISCOSweb (`satellite_metadata`);
-see [Credentials](credentials.md). Two optional extras add more tools: `[gmat]`
-adds the GMAT mission-analysis tools — see
-[GMAT integration](gmat-integration.md) — and `[spice]` adds the SPICE tools
+see [Credentials](credentials.md). Three optional extras add more tools:
+`[gmat]` adds the GMAT mission-analysis tools — see
+[GMAT integration](gmat-integration.md); `[spice]` adds the SPICE tools
 (NAIF kernels, SPK states, frames, body constants, time systems) — see
-[SPICE integration](spice-integration.md). Both are opt-in; neither changes the
-base tool surface.
+[SPICE integration](spice-integration.md); and `[viz]` adds the visualisation
+tools (PNG ground-track / trajectory / porkchop plots and CZML export) — see
+[Visualisation](visualisation.md). All three are opt-in; none changes the base
+tool surface.
 
 The recommended install path is `uv` or `pipx` so the `astrodynamics-mcp`
 console script lives in an isolated environment that your MCP client can
@@ -31,6 +33,7 @@ launch directly.
 uv tool install astrodynamics-mcp              # preferred
 uv tool install "astrodynamics-mcp[gmat]"      # + GMAT mission tools (needs a local GMAT install)
 uv tool install "astrodynamics-mcp[spice]"     # + SPICE tools (pulls spiceypy / bundled CSPICE)
+uv tool install "astrodynamics-mcp[viz]"       # + visualisation tools (pulls matplotlib / gmat-czml)
 # or
 pipx install astrodynamics-mcp
 # or, into the current venv
@@ -80,8 +83,8 @@ your MCP client config:
 ```
 
 Restart the client. The tools appear in its tool list — the no-auth core plus
-`satellite_metadata`, and the GMAT and SPICE tools too if you installed the
-`[gmat]` or `[spice]` extra.
+`satellite_metadata`, and the GMAT, SPICE, and visualisation tools too if you
+installed the `[gmat]`, `[spice]`, or `[viz]` extra.
 
 ## The vision conversation
 
@@ -122,5 +125,6 @@ JPL Horizons responses are cached). See
 - [Pick a client](pick-a-client.md) — per-client setup details.
 - [Tool reference](tool-reference.md) — every tool with its current input / output schema.
 - [Recipes](recipes.md) — worked examples covering the canonical workflows.
+- [Visualisation](visualisation.md) — the `[viz]` plot and CZML tools and the attachment model.
 - [Data sources](data-sources.md) — CelesTrak / Horizons / IERS, cache, staleness.
 - [Eval suite](eval-suite.md) — how we measure tool-description quality on every PR.

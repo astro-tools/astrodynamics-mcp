@@ -3,7 +3,8 @@
 Model Context Protocol server giving any LLM client (Claude, ChatGPT, Cursor,
 custom agents) authoritative astrodynamics tools — TLE/SGP4, Lambert,
 ground-station access, time/frame conversions, porkchop, B-plane, satellite
-metadata, and NASA GMAT mission analysis.
+metadata, and — behind optional extras — NASA GMAT mission analysis,
+SPICE/NAIF queries, and trajectory visualisation.
 
 ## What it is
 
@@ -31,6 +32,13 @@ backed by NASA NAIF's CSPICE via [`spiceypy`](https://github.com/AndrewAnnex/Spi
 so a client can furnish kernels, query a body's state from an SPK, rotate
 vectors between kernel-defined frames (including non-Earth body-fixed ones),
 read body constants, and convert between the SPICE time systems.
+
+Installing the [`[viz]` extra](visualisation.md) adds four visualisation tools —
+backed by matplotlib and the [`gmat-czml`](https://github.com/astro-tools/gmat-czml)
+sibling — so a client can render a ground track or trajectory as a PNG, draw a
+porkchop contour, or export a trajectory as a CZML document for a Cesium 3D
+globe. Each returns the picture as an attachment *beside* the numeric summary,
+so a text-only client still gets the answer.
 
 ## Quick start
 

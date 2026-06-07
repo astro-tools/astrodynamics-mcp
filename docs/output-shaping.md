@@ -63,6 +63,44 @@ drops entries at serialisation. Calling the same prompt twice with
 matching `epochs` and switching `output` returns numerically identical
 state vectors at the kept epochs — summary is a strict subset of full.
 
+## The attachment channel
+
+The `summary` / `full` split keeps a large payload off the wire by *omitting*
+it. A second mechanism keeps a large payload off the *structured* response by
+moving it into a side channel — an **attachment**. The
+[visualisation tools](visualisation.md) use it: a rendered PNG or a CZML
+document is bulky and not JSON-shaped, so it rides as an attachment beside the
+structured summary rather than as a field inside it.
+
+A single tool result can carry three things at once:
+
+- **`structuredContent`** — the tool's declared response model, the same
+  `{value, unit}`-disciplined JSON every other tool emits.
+- **A leading `TextContent` block** — a one-line plain-text recap of the
+  summary, so a text-only client always has something to read.
+- **One or more attachment blocks** — an `ImageContent` (base64 PNG,
+  `image/png`) for the static-plot tools, or an `EmbeddedResource` (an
+  `application/json` CZML document keyed by a stable `uri`) for
+  `czml_trajectory`.
+
+```jsonc
+// a plot tool's result on the wire
+{
+  "structuredContent": { "revolutions": {"value": 1.0, "unit": "1"}, "...": "..." },
+  "content": [
+    {"type": "text",  "text": "Ground track: 31 points, 1.00 revs; … PNG attached."},
+    {"type": "image", "mimeType": "image/png", "data": "iVBORw0KGgo… (base64)"}
+  ]
+}
+```
+
+The defining property is that the attachment is **strictly additive**: the
+structured summary and the ASCII line are always present, so a client that
+cannot render the attachment — no image support, no CZML viewer — still gets a
+complete, useful answer. The picture is never the *only* answer. This is the
+same instinct as `summary` mode: never make the small-context or
+limited-capability consumer pay for bulk it cannot use.
+
 ## Future grid/series tools
 
 New tools whose output is grid-shaped (sweeps), series-shaped (per-epoch
@@ -71,6 +109,8 @@ the same convention: `output: Literal["summary", "full"] = "summary"`,
 discriminated union for the two response shapes, summary chosen so a
 ~2000-token cap is comfortably respected.
 
-A future option — MCP resource attachment — could let `output="full"`
-attach the bulk payload as a separate resource the client fetches on
-demand, rather than carrying it inline.
+The attachment channel above is the natural home for a future `output="full"`
+that wants to ship the bulk grid out-of-band — as an `EmbeddedResource` the
+client fetches on demand rather than an inline field. That is not wired today:
+`output="full"` still carries the grid inline. The plumbing exists for the viz
+payloads; extending it to the grid/series tools is a later step.

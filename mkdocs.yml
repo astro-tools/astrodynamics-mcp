@@ -60,6 +60,7 @@ nav:
   - Credentials: credentials.md
   - GMAT integration: gmat-integration.md
   - SPICE integration: spice-integration.md
+  - Visualisation: visualisation.md
   - Eval suite: eval-suite.md
   - Supported clients: supported-clients.md
   - FAQ: faq.md

@@ -171,6 +171,102 @@ arguments. See [`time_convert`](tool-reference.md) for the full scale and
 format lists; the time-scale Python type is
 [`astrodynamics_mcp.schemas.base.TimeScale`](api.md#schemas).
 
+## Plot a satellite ground track
+
+Requires the `[viz]` extra — see [Visualisation](visualisation.md) for the tool
+surface and the attachment model.
+
+> **You:** Plot the ISS ground track over one orbit.
+
+A ground track is the sub-satellite latitude/longitude path, read off the
+Earth-fixed frame. So the model fetches the TLE, then propagates it in **ITRS**
+— the rotating frame whose plane the sub-satellite point is taken from, and the
+cheapest input for the plot tool since no inertial-to-fixed rotation is needed.
+It samples one ~92-minute revolution (here 31 epochs, three minutes apart) and
+asks for the full series so the track is smooth:
+
+```jsonc
+// tools/call → sgp4_propagate
+{
+  "tle": { "line1": "1 25544U …", "line2": "2 25544  51.6400 …" },
+  "epochs": ["2024-01-01T00:00:00Z", "…31 epochs…", "2024-01-01T01:30:00Z"],
+  "frame": "ITRS",
+  "output": "full"
+}
+```
+
+It feeds that `states` series straight into the plot tool:
+
+```jsonc
+// tools/call → plot_ground_track
+{ "states": [ /* the 31 ITRS states */ ] }
+```
+
+`plot_ground_track` returns three things at once: a PNG `ImageContent` (the
+rendered track), a leading ASCII line, and a structured summary —
+`revolutions`, and the latitude / longitude extent as `{value, unit}`
+quantities. For this orbit the latitude extent comes back ≈ ±51.6°, exactly the
+orbit's inclination — a circular orbit's track reaches its inclination at its
+highest and lowest points. An image-capable client shows the PNG; a text-only
+client still reads the extent from the summary, because the image is
+[additive](visualisation.md#the-attachment-model), never the only answer.
+
+Overlay ground stations by passing `stations`; they are drawn as markers on the
+same graticule.
+
+**Worked example:**
+[ISS ground track](https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/05_ground_track_iss.md)
+— full transcript plus a reproducible script that drives the
+`sgp4_propagate` → `plot_ground_track` chain and asserts the PNG and summary
+come back together.
+
+## Export a trajectory as CZML
+
+Requires the `[viz]` extra — see [Visualisation](visualisation.md).
+
+> **You:** Export one ISS orbit as CZML so I can load it into Cesium.
+
+CZML animates an object's position over time in an inertial frame, so the model
+propagates in **TEME** — sgp4's native inertial frame, which the CZML backend
+renders with no transform — and hands the state series to `czml_trajectory`.
+One revolution sampled every six minutes (16 epochs) keeps the path smooth
+without bloating the document:
+
+```jsonc
+// tools/call → sgp4_propagate
+{
+  "tle": { "line1": "1 25544U …", "line2": "2 25544  51.6400 …" },
+  "epochs": ["2024-01-01T00:00:00Z", "…16 epochs…", "2024-01-01T01:30:00Z"],
+  "frame": "TEME",
+  "output": "full"
+}
+```
+
+The `{r, v, frame, epoch}` series is exactly what the export tool consumes
+(velocity is optional but carried here):
+
+```jsonc
+// tools/call → czml_trajectory
+{ "trajectory": [ /* the 16 TEME states */ ], "style": "default" }
+```
+
+`czml_trajectory` returns the CZML as an `EmbeddedResource` — an
+`application/json` document keyed by a stable `uri`
+(`czml://trajectory/satellite`) — alongside an ASCII line and a structured
+summary carrying `time_span` and the packet / object / contact counts. The
+document is a Cesium stream: a preamble with a `clock` spanning the window, plus
+one `satellite` object whose time-tagged positions Cesium interpolates into an
+animated orbit. A client saves `resource.text` to a `.czml` file or streams it
+to a Cesium viewer; no chat client renders the globe inline (astrodynamics-mcp
+ships no viewer). Annotate ground-station contacts by passing `intervals` — each
+becomes a line of sight shown only during its access window.
+
+**Worked example:**
+[CZML export for Cesium](https://github.com/astro-tools/astrodynamics-mcp/blob/main/examples/06_czml_export.md)
+— full transcript plus a reproducible script that drives the
+`sgp4_propagate` → `czml_trajectory` chain and asserts a non-empty CZML
+document comes back.
+
 ## Query a body's state from SPICE kernels
 
 Requires the `[spice]` extra — see [SPICE integration](spice-integration.md)

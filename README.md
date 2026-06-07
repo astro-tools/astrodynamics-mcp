@@ -5,8 +5,9 @@ gives any MCP-capable LLM client (Claude Code, Cursor, ChatGPT desktop,
 custom agents) authoritative astrodynamics tools: TLE/SGP4 propagation,
 Lambert solving, ground-station access, time-scale and coordinate-frame
 conversions, porkchop scans, B-plane targeting, satellite metadata, and
-— with optional extras — full NASA GMAT mission execution (`[gmat]`) and
-NASA SPICE / NAIF kernel queries (`[spice]`).
+— with optional extras — full NASA GMAT mission execution (`[gmat]`),
+NASA SPICE / NAIF kernel queries (`[spice]`), and trajectory visualisation
+(`[viz]`).
 
 ## Why
 
@@ -76,6 +77,27 @@ process-global pool's trust boundary are covered on the
 [SPICE integration](https://astro-tools.github.io/astrodynamics-mcp/spice-integration/)
 page.
 
+### Visualisation tools (optional `[viz]` extra)
+
+Install the `[viz]` extra and four more tools register, backed by
+[`matplotlib`](https://matplotlib.org/) (static PNG plots) and the
+[`gmat-czml`](https://github.com/astro-tools/gmat-czml) sibling (CZML export)
+— they stay hidden otherwise. Each returns its picture as an attachment
+*alongside* a numeric summary, so a text-only client still gets the answer:
+
+| Tool                | What it does                                              | Backed by      |
+| ------------------- | --------------------------------------------------------- | -------------- |
+| `plot_ground_track` | Render a satellite's sub-satellite ground track as a PNG over a lon/lat graticule, with the latitude / longitude extent inline. | `matplotlib` |
+| `plot_trajectory`   | Render an orbit or transfer arc as a 2D or 3D PNG about a central body, with arc length and apsides inline. | `matplotlib` |
+| `plot_porkchop`     | Render a porkchop C3 contour as a PNG from a full `porkchop` grid result — no recompute — with the best cell marked. | `matplotlib` |
+| `czml_trajectory`   | Export a trajectory as a CZML document for a Cesium 3D client, returned as an embedded resource. | `gmat-czml`  |
+
+The attachment model — additive PNG `ImageContent` / CZML `EmbeddedResource`
+beside the structured summary — and which clients render each kind are covered
+on the
+[Visualisation](https://astro-tools.github.io/astrodynamics-mcp/visualisation/)
+page.
+
 Full input / output JSON schemas live on the
 [Tool reference](https://astro-tools.github.io/astrodynamics-mcp/tool-reference/)
 page of the docs site.
@@ -88,6 +110,7 @@ Install:
 uv tool install astrodynamics-mcp            # or: pipx install astrodynamics-mcp
 uv tool install "astrodynamics-mcp[gmat]"    # adds the GMAT mission tools (needs a local GMAT install)
 uv tool install "astrodynamics-mcp[spice]"   # adds the SPICE tools (pulls spiceypy / bundled CSPICE)
+uv tool install "astrodynamics-mcp[viz]"     # adds the visualisation tools (pulls matplotlib / gmat-czml)
 ```
 
 ### Claude Code
@@ -180,8 +203,8 @@ stdio + Streamable HTTP transports are first-class.
 ## Docs and links
 
 - **Docs site:** [astro-tools.github.io/astrodynamics-mcp](https://astro-tools.github.io/astrodynamics-mcp/)
-  — getting started, per-client setup, tool reference, recipes, data
-  sources, eval suite, FAQ.
+  — getting started, per-client setup, tool reference, recipes,
+  visualisation, data sources, eval suite, FAQ.
 - **Issue tracker:** [astro-tools/astrodynamics-mcp/issues](https://github.com/astro-tools/astrodynamics-mcp/issues)
 - **Discussions:** [orgs/astro-tools/discussions](https://github.com/orgs/astro-tools/discussions)
   — usage help and open-ended questions.
