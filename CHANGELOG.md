@@ -5,6 +5,53 @@ All notable changes to astrodynamics-mcp are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-06-06
+
+The visualisation release. Adds four visualisation tools behind an
+optional `[viz]` extra — three matplotlib static-plot tools
+(`plot_ground_track`, `plot_trajectory`, `plot_porkchop`) returning PNG
+images, and `czml_trajectory`, which exports a CZML document for a Cesium
+3D client via the `gmat-czml` sibling. Every viz tool returns its picture
+*alongside* the numeric summary — a PNG `ImageContent` or a CZML
+`EmbeddedResource` added to, never replacing, the structured / ASCII
+output — so a text-only client still gets the answer. The tools register
+only when the extra is importable (`pip install astrodynamics-mcp[viz]`),
+so the base install stays viz-free.
+
+### Added
+
+- Visualisation tools behind an optional `[viz]` extra — three matplotlib
+  static-plot tools and one CZML export tool, plus the additive attachment
+  output channel they share. `plot_ground_track` renders a sub-satellite
+  ground track over a lon / lat graticule; `plot_trajectory` renders a 2D
+  or 3D orbit / transfer arc about a central body; `plot_porkchop` renders
+  a C3 contour from an existing `porkchop` grid with no recompute; and
+  `czml_trajectory` exports a trajectory as a CZML document for a Cesium
+  client. PNGs come back as `ImageContent`, CZML as an `EmbeddedResource`,
+  each beside the inline numeric summary that stays the default. PNG
+  rendering is deterministic — the headless Agg backend, a fixed DPI, and
+  stripped version / timestamp metadata chunks make repeated renders
+  byte-identical within a matplotlib version, so the same call returns an
+  identical image over stdio and Streamable HTTP. The slots register only
+  under the `[viz]` install, the same gate the `[gmat]` and `[spice]`
+  extras use (#131, #132, #133).
+- Eval-suite visualisation coverage — a single-tool prompt for each of the
+  four viz tools plus a sequential `sgp4_propagate` → `plot_ground_track`
+  prompt, scored by an attachment-aware hybrid scorer that asserts an
+  attachment is produced and carries its declared type (`ImageContent`
+  versus `EmbeddedResource`); a `requires_viz` gate skips these prompts
+  when the extra is absent, mirroring `requires_spice` / `requires_gmat`.
+  Plus two runnable example sessions — a static-plot session and a
+  CZML-export session — each shipping a markdown transcript and a Python
+  script that drives the same sequence against an in-process MCP server
+  (#134).
+- Documentation for the v0.4 surface: a Visualisation page covering the
+  plot tools, `czml_trajectory`, the additive attachment model
+  (`ImageContent` / `EmbeddedResource`), and which clients render images
+  versus CZML; tool-reference entries for all four tools; output-shaping
+  and supported-clients updates; the `[viz]` install line; and the viz
+  tools table in the README (#136).
+
 ## [0.3.0] — 2026-06-06
 
 The SPICE / NAIF release. Adds seven SPICE tools behind an optional
@@ -336,6 +383,7 @@ GitHub Models on every workflow dispatch.
   trusted publishing, and creates the GitHub Release on every `v*` tag.
   macOS is deferred to v0.2 (#1, #2).
 
+[0.4.0]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/astro-tools/astrodynamics-mcp/compare/v0.2.0...v0.2.1
