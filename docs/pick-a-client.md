@@ -79,9 +79,13 @@ Restart Claude Code. The no-auth core (`tle_lookup`, `sgp4_propagate`,
 `lambert_solve`, `access_windows`, `time_convert`, `frame_transform`,
 `porkchop`, `bplane_target`) plus `satellite_metadata` appears in the tool
 list; the GMAT tools join it when the `[gmat]` extra is installed (see
-[GMAT integration](gmat-integration.md)), and the SPICE tools when the
-`[spice]` extra is (see [SPICE integration](spice-integration.md)). The
-[tool reference](tool-reference.md) is the live catalogue.
+[GMAT integration](gmat-integration.md)), the SPICE tools when the `[spice]`
+extra is (see [SPICE integration](spice-integration.md)), and the
+visualisation tools when the `[viz]` extra is (see
+[Visualisation](visualisation.md)). The [tool reference](tool-reference.md) is
+the live catalogue. Claude Code renders the `[viz]` plot tools' PNG output
+inline; how other clients handle the image and CZML attachments varies — see
+[Supported clients → Attachment rendering](supported-clients.md#attachment-rendering).
 
 To enable verbose server-side logging while debugging, swap the `args`:
 

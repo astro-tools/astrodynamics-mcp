@@ -25,6 +25,34 @@ Legend:
   maintainers have not yet exercised it. Reports of working setups
   welcome via [Discussions](https://github.com/orgs/astro-tools/discussions).
 
+## Attachment rendering
+
+The [visualisation tools](visualisation.md) (the optional `[viz]` extra) return
+their output as an attachment beside the structured summary — a PNG
+`ImageContent` from the static-plot tools, or a CZML `EmbeddedResource` from
+`czml_trajectory`. A client renders the two kinds independently, and a client
+that renders neither still gets the always-present ASCII summary. What each
+verified client does with the attachment:
+
+| Client | PNG image (`plot_*`) | CZML resource (`czml_trajectory`) |
+| --- | --- | --- |
+| Claude Code | ✅ Renders inline | 💾 Resource available to save / hand off |
+| Cursor | ⏳ Image-capable; not verified | 💾 Resource available to save / hand off |
+| ChatGPT desktop | ⏳ Image-capable; not verified | 💾 Resource available to save / hand off |
+| Raw Python (`mcp` SDK) | 💾 Bytes available on the result | 💾 Resource text available on the result |
+
+- ✅ **Renders inline** — the client displays the rendered plot in the chat.
+- 💾 **Available** — the client does not render the artefact itself, but the
+  bytes (PNG) or the document text (CZML) are on the tool result for the client
+  to save to a file or hand to a viewer. No mainstream chat client renders a
+  CZML globe inline; the document is meant for a Cesium viewer, which
+  astrodynamics-mcp does not bundle.
+
+Either way the structured summary and the ASCII recap are always present, so no
+client is left without an answer. See
+[Visualisation → Which clients render what](visualisation.md#which-clients-render-what)
+for the design rationale.
+
 ## Reporting a working setup
 
 If you have astrodynamics-mcp working in a client not on this list, open

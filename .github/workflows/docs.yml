@@ -25,12 +25,13 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      # --extra gmat and --extra spice install the optional-tool dependencies
-      # so the GMAT and SPICE tool slots register and land in the
-      # auto-generated tool reference. gmat-run imports without a GMAT binary,
-      # and spiceypy bundles CSPICE (no system SPICE install needed), so no
-      # extra setup step is required for the catalogue.
-      - run: uv sync --all-groups --extra gmat --extra spice
+      # --extra gmat, --extra spice, and --extra viz install the optional-tool
+      # dependencies so the GMAT, SPICE, and visualisation tool slots register
+      # and land in the auto-generated tool reference. gmat-run imports without
+      # a GMAT binary, spiceypy bundles CSPICE (no system SPICE install
+      # needed), and matplotlib / gmat-czml are pure-Python wheels, so no extra
+      # setup step is required for the catalogue.
+      - run: uv sync --all-groups --extra gmat --extra spice --extra viz
       - run: uv run mkdocs build --strict
 
   deploy:
@@ -54,7 +55,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - run: uv sync --all-groups --extra gmat --extra spice
+      - run: uv sync --all-groups --extra gmat --extra spice --extra viz
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
