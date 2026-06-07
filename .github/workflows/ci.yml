@@ -237,7 +237,7 @@ jobs:
       - name: viz static-plot tool tests
         run: |
           pip install pytest pytest-asyncio
-          pytest tests/test_tool_viz_plots.py tests/test_viz_render.py tests/test_tool_czml_trajectory.py
+          pytest tests/test_tool_viz_plots.py tests/test_viz_render.py tests/test_tool_czml_trajectory.py tests/test_viz_coverage_gaps.py
       # Run the [viz]-gated example sessions (05 / 06) end-to-end — they need
       # matplotlib + gmat-czml to register the plot / czml tools, so they only
       # run here. They are integration-marked (subprocess smoke tests), so

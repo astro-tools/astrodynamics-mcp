@@ -26,7 +26,7 @@ and never pulls the visualisation stack in.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
@@ -648,6 +648,13 @@ def _porkchop_grid_arrays(
         )
     departs = sorted({cell.depart_epoch for cell in result.grid})
     arrives = sorted({cell.arrive_epoch for cell in result.grid})
+    if len(departs) < 2 or len(arrives) < 2:
+        raise InvalidInputError(
+            "plot_porkchop needs a grid spanning at least 2 departure and 2 arrival "
+            f"epochs to contour; got {len(departs)} departure x {len(arrives)} arrival. "
+            "Re-run porkchop over wider windows so more cells are feasible.",
+            code="invalid_input.porkchop_grid_degenerate",
+        )
     depart_index = {epoch: i for i, epoch in enumerate(departs)}
     arrive_index = {epoch: i for i, epoch in enumerate(arrives)}
     c3 = np.full((len(arrives), len(departs)), np.nan, dtype=float)
@@ -681,6 +688,25 @@ def _new_figure() -> Figure:
     return MplFigure(figsize=_FIGSIZE_IN)
 
 
+def _render(build: Callable[[Figure], None]) -> bytes:
+    """Build a fixed-size headless figure, render it to deterministic PNG bytes, release it.
+
+    Centralises the figure lifecycle the three plot builders share: each passes a
+    closure that draws onto the supplied figure and this owns construction, rendering,
+    and cleanup. The figure is the object-oriented :class:`~matplotlib.figure.Figure`
+    (never ``pyplot``), so it is never held in pyplot's global registry — it is freed
+    when this returns, with no across-call accumulation to leak. ``figure.clear()`` in
+    the ``finally`` drops the axes/artist references explicitly and needs no pyplot
+    import.
+    """
+    figure = _new_figure()
+    try:
+        build(figure)
+        return render_png(figure)
+    finally:
+        figure.clear()
+
+
 def _split_at_dateline(lon: np.ndarray, lat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Insert NaN breaks where the longitude wraps the ±180° dateline.
 
@@ -703,63 +729,72 @@ def _render_ground_track(
     lat: np.ndarray, lon: np.ndarray, stations: list[tuple[float, float, str]]
 ) -> bytes:
     """Render a sub-satellite ground track over a lat/lon graticule to PNG bytes."""
-    figure = _new_figure()
-    axes = figure.add_subplot(111)
-    axes.set_xlim(-180.0, 180.0)
-    axes.set_ylim(-90.0, 90.0)
-    axes.set_xticks(range(-180, 181, 60))
-    axes.set_yticks(range(-90, 91, 30))
-    axes.grid(True, linewidth=0.4, color="0.8")
-    axes.axhline(0.0, color="0.6", linewidth=0.6)  # equator
-    axes.set_xlabel("Longitude (deg, east-positive)")
-    axes.set_ylabel("Latitude (deg)")
-    axes.set_title("Sub-satellite ground track")
 
-    lon_split, lat_split = _split_at_dateline(lon, lat)
-    axes.plot(lon_split, lat_split, color="C0", linewidth=1.2)
-    axes.plot(lon[0], lat[0], marker="o", color="C2", markersize=5)  # start
-    axes.plot(lon[-1], lat[-1], marker="s", color="C3", markersize=5)  # end
-    for st_lat, st_lon, name in stations:
-        axes.plot(st_lon, st_lat, marker="^", color="C1", markersize=7)
-        axes.annotate(name, (st_lon, st_lat), textcoords="offset points", xytext=(4, 4), fontsize=7)
+    def build(figure: Figure) -> None:
+        axes = figure.add_subplot(111)
+        axes.set_xlim(-180.0, 180.0)
+        axes.set_ylim(-90.0, 90.0)
+        axes.set_xticks(range(-180, 181, 60))
+        axes.set_yticks(range(-90, 91, 30))
+        axes.grid(True, linewidth=0.4, color="0.8")
+        axes.axhline(0.0, color="0.6", linewidth=0.6)  # equator
+        axes.set_xlabel("Longitude (deg, east-positive)")
+        axes.set_ylabel("Latitude (deg)")
+        axes.set_title("Sub-satellite ground track")
 
-    png = render_png(figure)
-    _close(figure)
-    return png
+        lon_split, lat_split = _split_at_dateline(lon, lat)
+        axes.plot(lon_split, lat_split, color="C0", linewidth=1.2)
+        axes.plot(lon[0], lat[0], marker="o", color="C2", markersize=5)  # start
+        axes.plot(lon[-1], lat[-1], marker="s", color="C3", markersize=5)  # end
+        for st_lat, st_lon, name in stations:
+            axes.plot(st_lon, st_lat, marker="^", color="C1", markersize=7)
+            axes.annotate(
+                name, (st_lon, st_lat), textcoords="offset points", xytext=(4, 4), fontsize=7
+            )
+
+    return _render(build)
 
 
 def _render_trajectory(
     positions_km: np.ndarray, projection: Literal["2D", "3D"], central_body: str
 ) -> bytes:
     """Render an orbit / transfer arc (2D or 3D) about the central body to PNG bytes."""
-    figure = _new_figure()
     body = central_body.lower()
     radius = _BODY_RADII_KM.get(body)
 
-    if projection == "3D":
-        axes = figure.add_subplot(111, projection="3d")
-        axes.plot(positions_km[:, 0], positions_km[:, 1], positions_km[:, 2], color="C0")
-        axes.scatter([0.0], [0.0], [0.0], color="C1", s=30)
-        axes.set_xlabel("x (km)")
-        axes.set_ylabel("y (km)")
-        axes.set_zlabel("z (km)")
-        axes.view_init(elev=25.0, azim=-60.0)  # fixed view → deterministic
-    else:
-        axes = figure.add_subplot(111)
-        axes.plot(positions_km[:, 0], positions_km[:, 1], color="C0")
-        if radius is not None:
-            axes.add_patch(_circle(radius))
+    def build(figure: Figure) -> None:
+        if projection == "3D":
+            axes = figure.add_subplot(111, projection="3d")
+            axes.plot(positions_km[:, 0], positions_km[:, 1], positions_km[:, 2], color="C0")
+            axes.scatter([0.0], [0.0], [0.0], color="C1", s=30)
+            # Start marker at the true start position (z included) — a plain
+            # axes.plot(x, y) on a 3D axes would pin it to z=0, off the arc.
+            axes.scatter(
+                [positions_km[0, 0]],
+                [positions_km[0, 1]],
+                [positions_km[0, 2]],
+                marker="o",
+                color="C2",
+                s=25,
+            )
+            axes.set_xlabel("x (km)")
+            axes.set_ylabel("y (km)")
+            axes.set_zlabel("z (km)")
+            axes.view_init(elev=25.0, azim=-60.0)  # fixed view → deterministic
         else:
-            axes.plot(0.0, 0.0, marker="o", color="C1", markersize=6)
-        axes.set_xlabel("x (km)")
-        axes.set_ylabel("y (km)")
-        axes.set_aspect("equal", adjustable="datalim")
-    axes.plot(positions_km[0, 0], positions_km[0, 1], marker="o", color="C2", markersize=5)
-    axes.set_title(f"Trajectory about {central_body} ({projection})")
+            axes = figure.add_subplot(111)
+            axes.plot(positions_km[:, 0], positions_km[:, 1], color="C0")
+            if radius is not None:
+                axes.add_patch(_circle(radius))
+            else:
+                axes.plot(0.0, 0.0, marker="o", color="C1", markersize=6)
+            axes.plot(positions_km[0, 0], positions_km[0, 1], marker="o", color="C2", markersize=5)
+            axes.set_xlabel("x (km)")
+            axes.set_ylabel("y (km)")
+            axes.set_aspect("equal", adjustable="datalim")
+        axes.set_title(f"Trajectory about {central_body} ({projection})")
 
-    png = render_png(figure)
-    _close(figure)
-    return png
+    return _render(build)
 
 
 def _render_porkchop(
@@ -772,20 +807,19 @@ def _render_porkchop(
     best_arrive_day: float,
 ) -> bytes:
     """Render a filled C3 contour over the (depart, arrive) grid to PNG bytes."""
-    figure = _new_figure()
-    axes = figure.add_subplot(111)
-    masked = np.ma.masked_invalid(c3_grid)
-    mesh_x, mesh_y = np.meshgrid(depart_days, arrive_days)
-    contour = axes.contourf(mesh_x, mesh_y, masked, levels=12, cmap="viridis")
-    figure.colorbar(contour, ax=axes, label="C3 (km^2/s^2)")
-    axes.plot(best_depart_day, best_arrive_day, marker="*", color="white", markersize=14)
-    axes.set_xlabel(f"Departure (days from {depart_labels[0][:10]})")
-    axes.set_ylabel(f"Arrival (days from {arrive_labels[0][:10]})")
-    axes.set_title("Porkchop C3 contour")
 
-    png = render_png(figure)
-    _close(figure)
-    return png
+    def build(figure: Figure) -> None:
+        axes = figure.add_subplot(111)
+        masked = np.ma.masked_invalid(c3_grid)
+        mesh_x, mesh_y = np.meshgrid(depart_days, arrive_days)
+        contour = axes.contourf(mesh_x, mesh_y, masked, levels=12, cmap="viridis")
+        figure.colorbar(contour, ax=axes, label="C3 (km^2/s^2)")
+        axes.plot(best_depart_day, best_arrive_day, marker="*", color="white", markersize=14)
+        axes.set_xlabel(f"Departure (days from {depart_labels[0][:10]})")
+        axes.set_ylabel(f"Arrival (days from {arrive_labels[0][:10]})")
+        axes.set_title("Porkchop C3 contour")
+
+    return _render(build)
 
 
 def _circle(radius_km: float) -> Any:
@@ -793,13 +827,6 @@ def _circle(radius_km: float) -> Any:
     from matplotlib.patches import Circle
 
     return Circle((0.0, 0.0), radius_km, color="C1", alpha=0.6)
-
-
-def _close(figure: Figure) -> None:
-    """Release the figure's resources after rendering."""
-    import matplotlib.pyplot as plt
-
-    plt.close(figure)
 
 
 # ---------------------------------------------------------------------------
@@ -1013,8 +1040,9 @@ _PLOT_TRAJECTORY_DESCRIPTION = (
     "carried alongside the image. e.g. plot_trajectory(states=<state series>, "
     "projection='2D', central_body='earth') for a GTO arc. Pass the whole state "
     "SERIES, not a single state. Positions are plotted in the states' own frame "
-    "axes (km); the central body is drawn at the origin to scale for known "
-    "bodies. The PNG is additive — the numeric summary (arc length km, apsides "
+    "axes (km); in a 2D plot the central body is drawn at the origin to scale for "
+    "known bodies, while a 3D plot marks the origin (no to-scale sphere). The PNG "
+    "is additive — the numeric summary (arc length km, apsides "
     "km) is always inline. Empty or single-state input returns a typed error, "
     "never an empty image. Client renders the returned PNG."
 )
@@ -1044,8 +1072,9 @@ _CZML_TRAJECTORY_DESCRIPTION = (
     "'satellite'; optional 'intervals' annotate ground-station contacts (a station, a "
     "target object defaulting to 'satellite', and UTC access windows) as a line of "
     "sight shown only during each window. 'style' is a preset: default / sat-default / "
-    "sat-red / sat-green / sat-magenta. Empty or single-state input returns a typed "
-    "error."
+    "sat-red / sat-green / sat-magenta. The document carries one position sample per "
+    "state, so a very long series yields a correspondingly large CZML payload. Empty "
+    "or single-state input returns a typed error."
 )
 
 
@@ -1122,20 +1151,22 @@ def _register_viz_tools() -> None:
         lat, lon = _subsatellite_latlon(ecef_km)
         revs = _count_revolutions(lat)
         resolved_stations = _resolve_stations(stations)
+        lat_min, lat_max = float(np.min(lat)), float(np.max(lat))
+        lon_min, lon_max = float(np.min(lon)), float(np.max(lon))
 
         png = _render_ground_track(lat, lon, resolved_stations)
         summary_model = GroundTrackResponse(
             revolutions=Quantity(value=revs, unit="1"),
-            lat_min=Quantity(value=float(np.min(lat)), unit="deg"),
-            lat_max=Quantity(value=float(np.max(lat)), unit="deg"),
-            lon_min=Quantity(value=float(np.min(lon)), unit="deg"),
-            lon_max=Quantity(value=float(np.max(lon)), unit="deg"),
+            lat_min=Quantity(value=lat_min, unit="deg"),
+            lat_max=Quantity(value=lat_max, unit="deg"),
+            lon_min=Quantity(value=lon_min, unit="deg"),
+            lon_max=Quantity(value=lon_max, unit="deg"),
             image=PngImageInfo(width_px=_WIDTH_PX, height_px=_HEIGHT_PX),
         )
         summary = (
             f"Ground track: {len(states)} points, {revs:.2f} revs; "
-            f"lat [{float(np.min(lat)):.1f}, {float(np.max(lat)):.1f}] deg, "
-            f"lon [{float(np.min(lon)):.1f}, {float(np.max(lon)):.1f}] deg. PNG attached."
+            f"lat [{lat_min:.1f}, {lat_max:.1f}] deg, "
+            f"lon [{lon_min:.1f}, {lon_max:.1f}] deg. PNG attached."
         )
         return tool_result_with_attachments(  # type: ignore[return-value]
             structured=summary_model, summary=summary, attachments=[png_image_content(png)]
@@ -1174,8 +1205,9 @@ def _register_viz_tools() -> None:
             Field(
                 description=(
                     "Central body drawn at the origin, e.g. 'earth' (default), 'mars', "
-                    "'moon', 'sun'. Known bodies are drawn to scale; an unknown name "
-                    "still plots, with the origin marked."
+                    "'moon', 'sun'. In a 2D plot known bodies are drawn to scale; in 3D "
+                    "the origin is marked (no to-scale sphere). An unknown name still "
+                    "plots, with the origin marked."
                 ),
             ),
         ] = "earth",
@@ -1183,21 +1215,24 @@ def _register_viz_tools() -> None:
         _require_states(states, minimum=2, what="plot_trajectory")
         positions_km = _positions_km(states)
         radii = np.linalg.norm(positions_km, axis=1)
+        arc_length = _arc_length_km(positions_km)
+        periapsis, apoapsis = float(np.min(radii)), float(np.max(radii))
+        span_hours = _time_span_hours(states)
 
         png = _render_trajectory(positions_km, projection, central_body)
         summary_model = TrajectoryResponse(
-            arc_length=Quantity(value=_arc_length_km(positions_km), unit="km"),
-            periapsis_radius=Quantity(value=float(np.min(radii)), unit="km"),
-            apoapsis_radius=Quantity(value=float(np.max(radii)), unit="km"),
-            time_span=Quantity(value=_time_span_hours(states), unit="hours"),
+            arc_length=Quantity(value=arc_length, unit="km"),
+            periapsis_radius=Quantity(value=periapsis, unit="km"),
+            apoapsis_radius=Quantity(value=apoapsis, unit="km"),
+            time_span=Quantity(value=span_hours, unit="hours"),
             projection=projection,
             central_body=central_body,
             image=PngImageInfo(width_px=_WIDTH_PX, height_px=_HEIGHT_PX),
         )
         summary = (
             f"Trajectory ({projection}) about {central_body}: "
-            f"arc {_arc_length_km(positions_km):.0f} km over {_time_span_hours(states):.2f} h; "
-            f"periapsis {float(np.min(radii)):.0f} km, apoapsis {float(np.max(radii)):.0f} km. "
+            f"arc {arc_length:.0f} km over {span_hours:.2f} h; "
+            f"periapsis {periapsis:.0f} km, apoapsis {apoapsis:.0f} km. "
             "PNG attached."
         )
         return tool_result_with_attachments(  # type: ignore[return-value]
@@ -1227,8 +1262,10 @@ def _register_viz_tools() -> None:
         depart_days = _days_from_first(departs)
         arrive_days = _days_from_first(arrives)
         best = porkchop_result.best
-        best_depart_day = float(_days_from_first([departs[0], best.depart_epoch])[1])
-        best_arrive_day = float(_days_from_first([arrives[0], best.arrive_epoch])[1])
+        # best is a cell of the grid, so its epochs are among the sorted axes; look its
+        # day-offset up on each axis instead of recomputing it from the base epoch.
+        best_depart_day = float(depart_days[departs.index(best.depart_epoch)])
+        best_arrive_day = float(arrive_days[arrives.index(best.arrive_epoch)])
 
         png = _render_porkchop(
             depart_days,
@@ -1239,20 +1276,22 @@ def _register_viz_tools() -> None:
             best_depart_day,
             best_arrive_day,
         )
+        feasible_cells = len(porkchop_result.grid)
+        n_depart, n_arrive = len(departs), len(arrives)
         summary_model = PorkchopPlotResponse(
             best_c3=Quantity(value=best.c3.value, unit="km^2/s^2"),
             best_total_dv=Quantity(value=best.total_dv.value, unit="km/s"),
             best_tof=Quantity(value=best.tof.value, unit="days"),
             best_depart_epoch=best.depart_epoch,
             best_arrive_epoch=best.arrive_epoch,
-            feasible_cells=len(porkchop_result.grid),
-            n_depart_samples=len(departs),
-            n_arrive_samples=len(arrives),
+            feasible_cells=feasible_cells,
+            n_depart_samples=n_depart,
+            n_arrive_samples=n_arrive,
             image=PngImageInfo(width_px=_WIDTH_PX, height_px=_HEIGHT_PX),
         )
         summary = (
-            f"Porkchop contour: {len(porkchop_result.grid)} feasible cells, "
-            f"{len(departs)}x{len(arrives)} grid; best C3 {best.c3.value:.2f} km^2/s^2, "
+            f"Porkchop contour: {feasible_cells} feasible cells, "
+            f"{n_depart}x{n_arrive} grid; best C3 {best.c3.value:.2f} km^2/s^2, "
             f"total delta-v {best.total_dv.value:.2f} km/s, depart {best.depart_epoch} "
             f"arrive {best.arrive_epoch}. PNG attached."
         )
