@@ -767,6 +767,16 @@ def _render_trajectory(
             axes = figure.add_subplot(111, projection="3d")
             axes.plot(positions_km[:, 0], positions_km[:, 1], positions_km[:, 2], color="C0")
             axes.scatter([0.0], [0.0], [0.0], color="C1", s=30)
+            # Start marker at the true start position (z included) — a plain
+            # axes.plot(x, y) on a 3D axes would pin it to z=0, off the arc.
+            axes.scatter(
+                [positions_km[0, 0]],
+                [positions_km[0, 1]],
+                [positions_km[0, 2]],
+                marker="o",
+                color="C2",
+                s=25,
+            )
             axes.set_xlabel("x (km)")
             axes.set_ylabel("y (km)")
             axes.set_zlabel("z (km)")
@@ -778,10 +788,10 @@ def _render_trajectory(
                 axes.add_patch(_circle(radius))
             else:
                 axes.plot(0.0, 0.0, marker="o", color="C1", markersize=6)
+            axes.plot(positions_km[0, 0], positions_km[0, 1], marker="o", color="C2", markersize=5)
             axes.set_xlabel("x (km)")
             axes.set_ylabel("y (km)")
             axes.set_aspect("equal", adjustable="datalim")
-        axes.plot(positions_km[0, 0], positions_km[0, 1], marker="o", color="C2", markersize=5)
         axes.set_title(f"Trajectory about {central_body} ({projection})")
 
     return _render(build)
